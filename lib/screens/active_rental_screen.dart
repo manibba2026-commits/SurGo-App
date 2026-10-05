@@ -220,7 +220,7 @@ class ActiveRentalScreen extends StatelessWidget {
                                   Text(
                                       isOwnerMode
                                           ? 'Total price'
-                                          : '${passengerBooking!.days} day${passengerBooking!.days > 1 ? 's' : ''} total',
+                                          : '${passengerBooking!.days} day${passengerBooking.days > 1 ? 's' : ''} total',
                                       style: const TextStyle(
                                           color: AppColors.muted,
                                           fontSize: 12)),

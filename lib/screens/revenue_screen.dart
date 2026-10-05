@@ -105,7 +105,7 @@ class RevenueScreen extends StatelessWidget {
                       return Column(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          Text('${amount}',
+                          Text('$amount',
                               style: const TextStyle(
                                   fontSize: 9.5, color: AppColors.muted)),
                           const SizedBox(height: 4),

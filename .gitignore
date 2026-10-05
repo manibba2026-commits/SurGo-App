@@ -20,6 +20,9 @@ macos/Flutter/ephemeral/
 # Tests / coverage
 coverage/
 
+# Vercel CLI project link
+.vercel/
+
 # OS
 .DS_Store
 Thumbs.db
