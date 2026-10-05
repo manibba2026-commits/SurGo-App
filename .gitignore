@@ -1,0 +1,25 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.vscode/
+
+# Platform build artifacts
+ios/Flutter/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/
+android/.gradle/
+android/local.properties
+macos/Flutter/ephemeral/
+
+# Tests / coverage
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db

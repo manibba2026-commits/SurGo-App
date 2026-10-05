@@ -1,0 +1,372 @@
+{
+  "version": "1.0",
+  "description": "SurGo Map V1 mock data for Tandag City. User GPS is live; riders, passengers, and rental vehicles use fixed coordinates for prototype testing.",
+  "map_config": {
+    "default_center": {
+      "latitude": 9.0785,
+      "longitude": 126.1985
+    },
+    "default_zoom": 14.0,
+    "city": "Tandag City",
+    "province": "Surigao del Sur",
+    "country": "Philippines",
+    "location_mode": "live_user_mock_transport"
+  },
+  "current_user": {
+    "id": "USR001",
+    "name": "Jr Derigay",
+    "modes": [
+      "passenger",
+      "rider",
+      "vehicleOwner"
+    ],
+    "map_role": "passenger",
+    "location_source": "device_gps",
+    "latitude": null,
+    "longitude": null
+  },
+  "riders": [
+    {
+      "id": "R001",
+      "name": "Jr Derigay",
+      "vehicle_type": "tricycle",
+      "vehicle_model": "Kawasaki HD 175",
+      "marker_type": "tricycle",
+      "latitude": 9.0818,
+      "longitude": 126.1972,
+      "barangay": "Telaje",
+      "purok": "Purok 2",
+      "rating": 4.8,
+      "available": true,
+      "verified": true,
+      "estimated_fare": 50
+    },
+    {
+      "id": "R002",
+      "name": "Rider B",
+      "vehicle_type": "tricycle",
+      "vehicle_model": "Local Tricycle",
+      "marker_type": "tricycle",
+      "latitude": 9.0748,
+      "longitude": 126.2015,
+      "barangay": "Mabua",
+      "purok": "Purok 4",
+      "rating": 4.7,
+      "available": true,
+      "verified": true,
+      "estimated_fare": 60
+    },
+    {
+      "id": "R003",
+      "name": "Rider C",
+      "vehicle_type": "motorcycle",
+      "vehicle_model": "Yamaha Mio i125",
+      "marker_type": "motorcycle",
+      "latitude": 9.0872,
+      "longitude": 126.2058,
+      "barangay": "Bioto",
+      "purok": "Purok 1",
+      "rating": 4.9,
+      "available": true,
+      "verified": true,
+      "estimated_fare": 55
+    },
+    {
+      "id": "R004",
+      "name": "Rider D",
+      "vehicle_type": "tricycle",
+      "vehicle_model": "Local Tricycle",
+      "marker_type": "tricycle",
+      "latitude": 9.0689,
+      "longitude": 126.1927,
+      "barangay": "Dagocdoc",
+      "purok": "Purok 3",
+      "rating": 4.6,
+      "available": true,
+      "verified": true,
+      "estimated_fare": 65
+    },
+    {
+      "id": "R005",
+      "name": "Rider E",
+      "vehicle_type": "motorcycle",
+      "vehicle_model": "Honda TMX 125",
+      "marker_type": "motorcycle",
+      "latitude": 9.0925,
+      "longitude": 126.1904,
+      "barangay": "San Agustin Norte",
+      "purok": "Purok 5",
+      "rating": 4.8,
+      "available": false,
+      "verified": true,
+      "estimated_fare": 70
+    }
+  ],
+  "rental_vehicles": [
+    {
+      "id": "RV001",
+      "owner_id": "VOW-77213",
+      "name": "Honda Click 125i",
+      "vehicle_type": "motorcycle",
+      "marker_type": "rental",
+      "latitude": 9.0799,
+      "longitude": 126.1961,
+      "barangay": "Telaje",
+      "purok": "Purok 1",
+      "price_per_day": 500,
+      "price_per_hour": 80,
+      "rating": 4.9,
+      "available": true,
+      "verified": true
+    },
+    {
+      "id": "RV002",
+      "owner_id": "VOW-77213",
+      "name": "Local Tricycle Rental",
+      "vehicle_type": "tricycle",
+      "marker_type": "rental",
+      "latitude": 9.0728,
+      "longitude": 126.204,
+      "barangay": "Mabua",
+      "purok": "Purok 2",
+      "price_per_day": 700,
+      "price_per_hour": 120,
+      "rating": 4.7,
+      "available": true,
+      "verified": true
+    },
+    {
+      "id": "RV003",
+      "owner_id": "VOW-77213",
+      "name": "Toyota Avanza",
+      "vehicle_type": "van",
+      "marker_type": "rental",
+      "latitude": 9.0854,
+      "longitude": 126.1998,
+      "barangay": "Bioto",
+      "purok": "Purok 3",
+      "price_per_day": 1500,
+      "price_per_hour": 250,
+      "rating": 4.8,
+      "available": true,
+      "verified": true
+    },
+    {
+      "id": "RV004",
+      "owner_id": "VOW-77213",
+      "name": "Honda Wave 110",
+      "vehicle_type": "motorcycle",
+      "marker_type": "rental",
+      "latitude": 9.0671,
+      "longitude": 126.1988,
+      "barangay": "Dagocdoc",
+      "purok": "Purok 1",
+      "price_per_day": 400,
+      "price_per_hour": 70,
+      "rating": 4.6,
+      "available": false,
+      "verified": true
+    }
+  ],
+  "passengers": [
+    {
+      "id": "P001",
+        "name": "Jr Derigay",
+        "marker_type": "passenger",
+        "latitude": 9.0767,
+        "longitude": 126.1938,
+        "barangay": "Telaje",
+        "purok": "Purok 4",
+        "rating": 4.8,
+        "verified": true,
+        "request_status": "waiting"
+    },
+    {
+        "id": "P002",
+        "name": "Grace Ann Villaflor",
+        "marker_type": "passenger",
+        "latitude": 9.0831,
+        "longitude": 126.2027,
+        "barangay": "Mabua",
+        "purok": "Purok 3",
+        "rating": 4.9,
+        "verified": true,
+        "request_status": "waiting"
+    },
+    {
+        "id": "P003",
+        "name": "Nena Villareal",
+        "marker_type": "passenger",
+        "latitude": 9.0705,
+        "longitude": 126.1965,
+        "barangay": "Telaje",
+        "purok": "Purok 5",
+        "rating": 4.6,
+        "verified": true,
+        "request_status": "waiting"
+    },
+    {
+        "id": "P004",
+        "name": "Danilo Cruz",
+        "marker_type": "passenger",
+        "latitude": 9.0642,
+        "longitude": 126.1899,
+        "barangay": "San Agustin Sur",
+        "purok": "Purok 4",
+        "rating": 4.95,
+        "verified": true,
+        "request_status": "waiting"
+    },
+    {
+        "id": "P005",
+        "name": "Rosalinda Pajo",
+        "marker_type": "passenger",
+        "latitude": 9.0893,
+        "longitude": 126.2071,
+        "barangay": "Bioto",
+        "purok": "Purok 2",
+        "rating": 4.7,
+        "verified": true,
+        "request_status": "waiting"
+    }
+  ],
+  "ride_requests": [
+    {
+      "id": "RQ001",
+      "passenger_id": "P001",
+      "rider_id": null,
+      "vehicle_id": null,
+      "preferred_vehicle_type": "motorcycle",
+      "pickup": {
+        "latitude": 9.0767,
+        "longitude": 126.1938,
+        "barangay": "Telaje",
+        "purok": "Purok 4"
+      },
+      "destination": {
+        "barangay": "Mabua",
+        "purok": "Purok 2"
+      },
+      "estimated_distance_km": 2.1,
+      "estimated_fare": 50,
+      "payment_method": "cash",
+      "status": "incoming"
+    },
+    {
+      "id": "RQ002",
+      "passenger_id": "P002",
+      "rider_id": null,
+      "vehicle_id": null,
+      "preferred_vehicle_type": "tricycle",
+      "pickup": {
+        "latitude": 9.0831,
+        "longitude": 126.2027,
+        "barangay": "Bioto",
+        "purok": "Purok 2"
+      },
+      "destination": {
+        "barangay": "Dagocdoc",
+        "purok": "Purok 3"
+      },
+      "estimated_distance_km": 3.0,
+      "estimated_fare": 65,
+      "payment_method": "gcash",
+      "status": "incoming"
+    },
+    {
+      "id": "RQ003",
+      "passenger_id": "P003",
+      "rider_id": null,
+      "vehicle_id": null,
+      "preferred_vehicle_type": "tricycle",
+      "pickup": {
+        "latitude": 9.0705,
+        "longitude": 126.1965,
+        "barangay": "Dagocdoc",
+        "purok": "Purok 2"
+      },
+      "destination": {
+        "barangay": "Telaje",
+        "purok": "Purok 1"
+      },
+      "estimated_distance_km": 2.4,
+      "estimated_fare": 60,
+      "payment_method": "cash",
+      "status": "incoming"
+    },
+    {
+      "id": "RQ004",
+      "passenger_id": "P004",
+      "rider_id": null,
+      "vehicle_id": null,
+      "preferred_vehicle_type": "motorcycle",
+      "pickup": {
+        "latitude": 9.0642,
+        "longitude": 126.1899,
+        "barangay": "San Agustin Sur",
+        "purok": "Purok 4"
+      },
+      "destination": {
+        "barangay": "Buenavista",
+        "purok": "Purok 2"
+      },
+      "estimated_distance_km": 7.2,
+      "estimated_fare": 110,
+      "payment_method": "maya",
+      "status": "incoming"
+    },
+    {
+      "id": "RQ005",
+      "passenger_id": "P005",
+      "rider_id": null,
+      "vehicle_id": null,
+      "preferred_vehicle_type": "tricycle",
+      "pickup": {
+        "latitude": 9.0893,
+        "longitude": 126.2071,
+        "barangay": "Bioto",
+        "purok": "Purok 2"
+      },
+      "destination": {
+        "barangay": "Bongtod Poblacion (East West)",
+        "purok": "Purok 3"
+      },
+      "estimated_distance_km": 4.4,
+      "estimated_fare": 65,
+      "payment_method": "cash",
+      "status": "incoming"
+    }
+  ],
+  "vehicle_types": [
+    {
+      "id": "motorcycle",
+      "name": "Motorcycle",
+      "marker_icon": "motorcycle"
+    },
+    {
+      "id": "tricycle",
+      "name": "Tricycle",
+      "marker_icon": "tricycle"
+    },
+    {
+      "id": "van",
+      "name": "Van",
+      "marker_icon": "van"
+    },
+    {
+      "id": "multicab",
+      "name": "Multicab",
+      "marker_icon": "multicab"
+    }
+  ],
+  "marker_config": {
+    "style": "surgo_purple_filled_location",
+    "rider_marker_icons": {
+      "motorcycle": "motorcycle",
+      "tricycle": "tricycle"
+    },
+    "rental_marker_icon": "rental",
+    "passenger_marker_icon": "passenger",
+    "user_marker_icon": "user_location"
+  }
+}
