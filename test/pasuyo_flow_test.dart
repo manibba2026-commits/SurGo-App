@@ -70,7 +70,7 @@ void main() {
   /// An errand posted by the signed-in helper, which [AppState] must refuse.
   PasuyoTask ownTask() => PasuyoTask(
         id: 'own-1',
-        customerId: db.rider.id,
+        customerId: db.earner.id,
         category: PasuyoCategory.values.first,
         title: 'Own errand',
         items: const ['Milk'],
@@ -90,7 +90,7 @@ void main() {
       final refusal = state.acceptPasuyoTask(task);
 
       expect(refusal, isNull);
-      expect(task.helperId, db.rider.id);
+      expect(task.helperId, db.earner.id);
       expect(task.status, PasuyoStatus.accepted);
       expect(state.activePasuyoTask, same(task));
       expect(state.hasActivePasuyoTask, isTrue);

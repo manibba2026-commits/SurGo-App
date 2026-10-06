@@ -38,7 +38,7 @@ void main() {
         .toSet();
     expect(
       helperIds,
-      contains(state.rider.id),
+      contains(state.earner.id),
       reason: 'the signed-in rider must be a seeded helper, otherwise '
           'myPasuyoTasks / completedPasuyoTasks and netPasuyoEarnings are empty',
     );

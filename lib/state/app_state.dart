@@ -43,7 +43,19 @@ enum PasuyoAcceptRefusal {
   alreadyHasTask,
 
   /// The errand belongs to the same account trying to accept it.
-  ownCustomer,
+  ownCustomer;
+
+  /// What the helper is told when [AppState.acceptPasuyoTask] refuses. Each
+  /// refusal needs different advice, and a rejected tap with no explanation
+  /// reads as a broken button rather than a rule.
+  String get label => switch (this) {
+        PasuyoAcceptRefusal.notOpen =>
+          'Someone already claimed this errand.',
+        PasuyoAcceptRefusal.alreadyHasTask =>
+          'Finish your current errand before taking another.',
+        PasuyoAcceptRefusal.ownCustomer =>
+          'You posted this errand, so you cannot be the helper for it.',
+      };
 }
 
 /// Everything here lives only in memory for the lifetime of the app run.
@@ -1131,10 +1143,10 @@ class AppState extends ChangeNotifier {
 
   /// Tasks this helper has claimed but not yet delivered.
   List<PasuyoTask> get myPasuyoTasks =>
-      db.pasuyoTasks.where((t) => t.helperId == rider.id && t.isActive).toList();
+      db.pasuyoTasks.where((t) => t.helperId == earner.id && t.isActive).toList();
 
   List<PasuyoTask> get completedPasuyoTasks => db.pasuyoTasks
-      .where((t) => t.status == PasuyoStatus.delivered && t.helperId == rider.id)
+      .where((t) => t.status == PasuyoStatus.delivered && t.helperId == earner.id)
       .toList();
 
   /// Every task the signed-in customer posted, for the task tracker.
@@ -1217,7 +1229,7 @@ class AppState extends ChangeNotifier {
   /// True when the errand was posted by the account trying to accept it. One
   /// person being both customer and helper on the same errand is always a data
   /// mistake, so it is refused rather than rendered.
-  bool isOwnCustomerTask(PasuyoTask task) => task.customerId == rider.id;
+  bool isOwnCustomerTask(PasuyoTask task) => task.customerId == earner.id;
 
   /// Why [acceptPasuyoTask] turned an errand down, or null when it was claimed.
   PasuyoAcceptRefusal? acceptPasuyoTask(PasuyoTask task) {
@@ -1230,7 +1242,7 @@ class AppState extends ChangeNotifier {
     // transition is attempted before helperId is set, so a refused accept
     // leaves no trace of this helper on the task.
     if (!task.advanceTo(PasuyoStatus.accepted)) return PasuyoAcceptRefusal.notOpen;
-    task.helperId = rider.id;
+    task.helperId = earner.id;
     activePasuyoTask = task;
     activePasuyoBreakdown =
         FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);

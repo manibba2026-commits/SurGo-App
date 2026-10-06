@@ -57,7 +57,7 @@ class LiveTripScreen extends StatelessWidget {
     final state = AppState.instance;
     final db = DbService.instance;
     final activeRide = state.activeRide;
-    final rider = db.rider;
+    final earner = db.earner;
     MapPassenger? matchById;
     MapPassenger? matchByName;
     if (activeRide != null) {
@@ -121,10 +121,10 @@ class LiveTripScreen extends StatelessWidget {
         position: driverPosition,
         icon: surgoMarkerIcon('motorcycle'),
         title: 'You',
-        subtitle: '${rider.vehicleType} · ${rider.vehiclePlate}',
+        subtitle: '${earner.vehicleType} · ${earner.vehiclePlate}',
         details: [
-          MapEntry('Name', rider.name),
-          MapEntry('Vehicle', rider.vehicleModel),
+          MapEntry('Name', earner.name),
+          MapEntry('Vehicle', earner.vehicleModel),
         ],
       ),
       SurgoMapMarker(
@@ -235,7 +235,7 @@ class LiveTripScreen extends StatelessWidget {
                               secondary: true,
                             ),
                             Text(
-                              '${rider.vehicleType} · ${rider.vehiclePlate}',
+                              '${earner.vehicleType} · ${earner.vehiclePlate}',
                               style: const TextStyle(
                                   color: AppColors.muted, fontSize: 11.5),
                             ),
@@ -244,18 +244,18 @@ class LiveTripScreen extends StatelessWidget {
                         const SizedBox(height: 14),
                         Row(
                           children: [
-                            SbAvatar(initials: rider.initials),
+                            SbAvatar(initials: earner.initials),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(rider.name,
+                                  Text(earner.name,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 14)),
                                   Text(
-                                      '⭐ ${rider.rating} · ${rider.totalTrips} trips',
+                                      '⭐ ${earner.rating} · ${earner.totalTrips} trips',
                                       style: const TextStyle(
                                           color: AppColors.muted,
                                           fontSize: 11.5)),
@@ -266,7 +266,7 @@ class LiveTripScreen extends StatelessWidget {
                               icon: Icons.call_outlined,
                               onTap: () =>
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Call ${rider.name}')),
+                                SnackBar(content: Text('Call ${earner.name}')),
                               ),
                             ),
                             const SizedBox(width: 8),

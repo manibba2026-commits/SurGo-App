@@ -14,7 +14,18 @@ import '../widgets/pasuyo_stepper.dart';
 /// is reflected here without any plumbing.
 class PasuyoTaskScreen extends StatelessWidget {
   final String taskId;
-  const PasuyoTaskScreen({super.key, required this.taskId});
+
+  /// True when opened from the helper's side of the app.
+  ///
+  /// One screen serves both roles: the customer watches the stepper and uses
+  /// cancel/report, the helper works the errand. The task itself cannot answer
+  /// who is looking — every seeded errand belongs to the same customer, so
+  /// inferring the role from the data would mean the helper is never offered
+  /// an accept button. The caller therefore states which side it is on.
+  final bool helperMode;
+
+  const PasuyoTaskScreen(
+      {super.key, required this.taskId, this.helperMode = false});
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +174,42 @@ class PasuyoTaskScreen extends StatelessWidget {
               const SizedBox(height: 14),
               _receipt(breakdown),
               const SizedBox(height: 18),
+              // The helper's controls, offered only from the helper's side.
+              // Each label comes from the enum: a null label means the machine
+              // has no legal move, and a button rendered anyway would press
+              // into nothing while looking perfectly alive.
+              if (helperMode && task.isOpen) ...[
+                SbPrimaryButton(
+                  label: 'Accept task',
+                  icon: Icons.handshake_outlined,
+                  background: AppColors.yellow,
+                  onAccent: true,
+                  onPressed: () {
+                    final refusal = state.acceptPasuyoTask(task);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(refusal == null
+                            ? 'Accepted — this is now your active errand.'
+                            : refusal.label),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+              ] else if (helperMode &&
+                  task.helperId == state.earner.id &&
+                  task.status.advanceActionLabel != null) ...[
+                SbPrimaryButton(
+                  label: task.status.advanceActionLabel!,
+                  icon: Icons.arrow_forward_rounded,
+                  onPressed: () {
+                    state.advancePasuyoTask(task);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(task.status.label)));
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
               if (task.isComplete && !task.rated)
                 _ratePrompt(context, state, task)
               else if (task.isActive)

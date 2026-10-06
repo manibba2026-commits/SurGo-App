@@ -3,6 +3,7 @@ import '../data/db_service.dart';
 import '../data/db_models.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/rental_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
@@ -263,18 +264,33 @@ final status = isOwnerMode
                               Navigator.pop(context);
                             },
                           )
-                        else
+                        else if (status.advanceActionLabel != null)
                           SbPrimaryButton(
-                            label: 'Return Vehicle',
+                            label: status.advanceActionLabel!,
                             icon: Icons.check_circle_outline,
                             onPressed: () {
-                              state.completeActiveRental();
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        '$vehicleName returned — thanks for riding with SurGo!')),
-                              );
+                              // Settling is the only step that pays the owner,
+                              // and only from [RentalStatus.returned]. The
+                              // earlier steps move the booking along without
+                              // any money changing hands, so treating them all
+                              // as "return" would tell the renter the vehicle
+                              // was handed back while the guard had refused it.
+                              if (status == RentalStatus.returned) {
+                                state.completeActiveRental();
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          '$vehicleName returned — thanks for riding with SurGo!')),
+                                );
+                              } else {
+                                // accepted -> active is the pick-up, active ->
+                                // returned is bringing it back. One flag carries
+                                // both because [advanceRentalBooking] takes the
+                                // caller's intent, not the current status.
+                                state.advanceRentalBooking(
+                                    pickup: status == RentalStatus.accepted);
+                              }
                             },
                           ),
                       ],

@@ -64,7 +64,7 @@ void main() {
       // read, which is how seed drift starts.
       const expected = {
         'config.json': {'schemaVersion', 'commissionBps', 'currency', 'fare', 'payouts', '_note'},
-        'users.json': {'passenger', 'rider', 'vehicleOwner', 'credentials', 'paymentMethods', 'emergencyContacts', 'favorites', 'notifications', 'accountSettings', '_note'},
+        'users.json': {'passenger', 'earner', 'vehicleOwner', 'credentials', 'paymentMethods', 'emergencyContacts', 'favorites', 'notifications', 'accountSettings', '_note'},
         'locations.json': {'city', 'barangays', 'savedPlaces', 'places', '_note'},
         'vehicles.json': {'owned', 'documents', 'bookingRequests', '_note'},
         'rides.json': {'requests', 'history', '_note'},
@@ -164,7 +164,7 @@ void main() {
       expect(db.pasuyoTasks.map((t) => t.customerId),
           contains(db.passenger.id));
       expect(db.pasuyoTasks.whereType<PasuyoTask>().map((t) => t.helperId),
-          contains(db.rider.id));
+          contains(db.earner.id));
       expect(db.mapRentalVehicles.map((v) => v.ownerId),
           contains(db.vehicleOwner.id));
     });

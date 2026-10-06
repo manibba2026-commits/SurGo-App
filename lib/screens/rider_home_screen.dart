@@ -24,20 +24,20 @@ class RiderHomeScreen extends StatelessWidget {
     final content = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
-        final rider = state.db.rider;
+        final earner = state.db.earner;
         return ListView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 90),
           children: [
             Row(
               children: [
-                SbAvatar(initials: rider.initials),
+                SbAvatar(initials: earner.initials),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(rider.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                      Text('Rider ID ${rider.id}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                      Text(earner.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                      Text('Earner ID ${earner.id}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -48,7 +48,7 @@ class RiderHomeScreen extends StatelessWidget {
                       children: [
                         SbIconButton(
                           icon: Icons.map_outlined,
-                          onTap: () => Navigator.pushNamed(context, '/map/rider'),
+                          onTap: () => Navigator.pushNamed(context, '/map/earner'),
                         ),
                         const SizedBox(width: 8),
                         SbIconButton(
@@ -244,7 +244,7 @@ class _NearbyPasuyoCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id, helperMode: true)),
       ),
       child: SbCard(
       borderColor: AppColors.yellow.withValues(alpha: 0.25),
@@ -311,7 +311,7 @@ class _ActivePasuyoCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id, helperMode: true)),
       ),
       child: SbCard(
       borderColor: AppColors.secondary.withValues(alpha: 0.4),
