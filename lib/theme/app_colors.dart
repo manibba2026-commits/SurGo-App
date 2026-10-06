@@ -35,6 +35,13 @@ class AppColors {
   static const danger = Color(0xFFEF4444);
   static const dangerSoft = Color(0x24EF4444);
   static const yellow = Color(0xFFF5C144);
+  static const yellowSoft = Color(0x24F5C144);
+
+  /// Available/confirmed states. The design bible has no green, so this is a
+  /// desaturated one that sits with the violet accents instead of fighting
+  /// them. Used only for small status pills and chips.
+  static const success = Color(0xFF4ADE80);
+  static const successSoft = Color(0x1F4ADE80);
 
   static const onAccent = Color(0xFF1E1033); // dark text on top of buttons
 }

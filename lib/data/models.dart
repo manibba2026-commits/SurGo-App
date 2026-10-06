@@ -8,7 +8,14 @@ import '../state/rental_status.dart';
 class RideOption {
   final String name;
   final IconData icon;
+
+  /// Display string for the wait, e.g. "2 min away".
   final String etaLabel;
+
+  /// The same wait as a number, for the request's `etaMinutes`. Kept beside
+  /// [etaLabel] rather than parsed out of it: a seeded display string is not a
+  /// reliable source for a field the request and the map both read.
+  final int etaMinutes;
   final String capacityLabel;
   final int fare;
 
@@ -16,6 +23,7 @@ class RideOption {
     required this.name,
     required this.icon,
     required this.etaLabel,
+    required this.etaMinutes,
     required this.capacityLabel,
     required this.fare,
   });
@@ -220,6 +228,7 @@ class MockData {
       name: 'Tricycle',
       icon: Icons.electric_rickshaw,
       etaLabel: '2 min away',
+      etaMinutes: 2,
       capacityLabel: 'Fits 2',
       fare: 4500,
     ),
@@ -227,6 +236,7 @@ class MockData {
       name: 'Motorcycle',
       icon: Icons.two_wheeler,
       etaLabel: '1 min away',
+      etaMinutes: 1,
       capacityLabel: 'Fits 1',
       fare: 3000,
     ),

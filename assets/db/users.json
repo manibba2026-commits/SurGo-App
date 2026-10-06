@@ -1,5 +1,5 @@
 {
-  "_note": "People and everything scoped to a person: payment methods, contacts, favourites, notifications and per-role settings. The signed-in user is passenger P001, rider R001, owner VOW-77213 — see test/seed_ids_test.dart, which guards those links.",
+  "_note": "People and everything scoped to a person: payment methods, contacts, favourites, notifications and per-role settings. The signed-in user is passenger P001, earner R001, owner VOW-77213 — see test/seed_ids_test.dart, which guards those links.",
   "passenger": {
     "id": "P001",
     "name": "Jr Derigay",
@@ -12,7 +12,7 @@
     "memberSince": 2024,
     "verified": true
   },
-  "rider": {
+  "earner": {
     "id": "R001",
     "name": "Jr Derigay",
     "initials": "JD",
@@ -25,7 +25,9 @@
     "vehicleType": "Tricycle",
     "vehicleModel": "Kawasaki HD 175",
     "vehiclePlate": "NGD 4821",
-    "documentsStatus": "Verified"
+    "documentsStatus": "Verified",
+    "_capabilitiesNote": "What this earner will take on. Drives rides on a tricycle and also does the errand and delivery work already in pasuyo.json. Seeded on all three so the toggles have something to turn off; the earner profile screen is where they are edited.",
+    "capabilities": ["rides", "errands", "deliveries"]
   },
   "vehicleOwner": {
     "id": "VOW-77213",

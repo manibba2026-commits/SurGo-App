@@ -34,7 +34,7 @@ class DbService {
   static const String mapPath = 'assets/data/surgo_map_v1_mock_data.json';
 
   late PassengerProfile passenger;
-  late RiderProfile rider;
+  late EarnerProfile earner;
   late VehicleOwnerProfile vehicleOwner;
 
   late List<Barangay> barangays;
@@ -92,7 +92,7 @@ class DbService {
 
     final users = _expect(files, 'users.json');
     passenger = PassengerProfile.fromJson(_map(users, 'passenger'));
-    rider = RiderProfile.fromJson(_map(users, 'rider'));
+    earner = EarnerProfile.fromJson(_map(users, 'earner'));
     vehicleOwner = VehicleOwnerProfile.fromJson(_map(users, 'vehicleOwner'));
     paymentMethods =
         _parseList(users, 'paymentMethods', PaymentMethodItem.fromJson);

@@ -6,6 +6,7 @@ import 'screens/passenger_shell.dart';
 import 'screens/booking_screen.dart';
 import 'screens/matching_screen.dart';
 import 'screens/live_trip_screen.dart';
+import 'screens/ride_chat_screen.dart';
 import 'screens/rental_list_screen.dart';
 import 'screens/rider_shell.dart';
 import 'screens/vehicle_owner_shell.dart';
@@ -47,19 +48,20 @@ class SurGoApp extends StatelessWidget {
         // Activity/Trips/Bookings, Wallet/Earnings, and Profile all live as
         // pages inside a PageView instead of being separate pushed routes.
         '/home': (context) => const PassengerShell(),
-        '/rider': (context) => const RiderShell(),
+        '/earner': (context) => const EarnerShell(),
         '/owner': (context) => const VehicleOwnerShell(),
         '/booking': (context) => const BookingScreen(),
         '/pasuyo': (context) => const PasuyoScreen(),
         '/pasuyo_post': (context) => const PasuyoPostScreen(),
         '/matching': (context) => const MatchingScreen(),
         '/livetrip': (context) => const LiveTripScreen(),
+        '/ride_chat': (context) => const RideChatScreen(),
         '/rental': (context) => const RentalListScreen(),
         '/profile': (context) => const ProfileScreen(embedded: false),
         '/rate': (context) => const RateTripScreen(),
         // Map V1 — one live-map view per role (passenger/rider/vehicle owner).
         '/map/passenger': (context) => const PassengerMapScreen(),
-        '/map/rider': (context) => const RiderMapScreen(),
+        '/map/earner': (context) => const EarnerMapScreen(),
         '/map/owner': (context) => const VehicleOwnerMapScreen(),
         '/active_rental': (context) => const ActiveRentalScreen(),
       },

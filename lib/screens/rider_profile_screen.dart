@@ -11,9 +11,9 @@ import 'rider_trips_screen.dart';
 import 'vehicle_documents_screen.dart';
 import 'wallet_screen.dart';
 
-class RiderProfileScreen extends StatelessWidget {
+class EarnerProfileScreen extends StatelessWidget {
   final bool embedded;
-  const RiderProfileScreen({super.key, this.embedded = true});
+  const EarnerProfileScreen({super.key, this.embedded = true});
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +21,7 @@ class RiderProfileScreen extends StatelessWidget {
     final body = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
-        final rider = state.db.rider;
+        final earner = state.db.earner;
         return SafeArea(
           bottom: false,
           child: ListView(
@@ -31,19 +31,19 @@ class RiderProfileScreen extends StatelessWidget {
               Center(
                 child: Column(
                   children: [
-                    SbAvatar(initials: rider.initials, size: 64),
+                    SbAvatar(initials: earner.initials, size: 64),
                     const SizedBox(height: 10),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(rider.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                        if (rider.verified) ...[
+                        Text(earner.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        if (earner.verified) ...[
                           const SizedBox(width: 6),
                           const Icon(Icons.verified, size: 16, color: AppColors.secondaryLight),
                         ],
                       ],
                     ),
-                    Text('⭐ ${rider.rating} · ${rider.totalTrips} trips · Since ${rider.memberSince}',
+                    Text('⭐ ${earner.rating} · ${earner.totalTrips} trips · Since ${earner.memberSince}',
                         style: const TextStyle(color: AppColors.muted, fontSize: 12)),
                   ],
                 ),
@@ -58,14 +58,14 @@ class RiderProfileScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${rider.vehicleType} · ${rider.vehicleModel}',
+                          Text('${earner.vehicleType} · ${earner.vehicleModel}',
                               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
-                          Text('Plate ${rider.vehiclePlate}',
+                          Text('Plate ${earner.vehiclePlate}',
                               style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                         ],
                       ),
                     ),
-                    SbTag(rider.documentsStatus, secondary: true),
+                    SbTag(earner.documentsStatus, secondary: true),
                   ],
                 ),
               ),

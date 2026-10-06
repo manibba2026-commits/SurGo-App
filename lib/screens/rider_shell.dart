@@ -6,13 +6,16 @@ import 'rider_home_screen.dart';
 import 'rider_profile_screen.dart';
 import 'rider_trips_screen.dart';
 
-/// Rider dashboard shell: Home / Trips / Earnings / Profile as sliding tabs,
-/// same "no back button, no in-dashboard mode switch" root behaviour as
-/// before — switching modes only happens from the Profile tab's mode
-/// dropdown now.
-class RiderShell extends StatelessWidget {
+/// Earner dashboard shell: Home / Trips / Earnings / Profile as sliding tabs,
+/// same "no back button, no in-dashboard mode switch" root behaviour as before
+/// — switching modes only happens from the Profile tab's mode dropdown.
+///
+/// Named for the role rather than the vehicle: an earner here may be doing
+/// rides, errands or deliveries depending on their enabled capabilities, which
+/// the Profile tab edits.
+class EarnerShell extends StatelessWidget {
   final int initialIndex;
-  const RiderShell({super.key, this.initialIndex = 0});
+  const EarnerShell({super.key, this.initialIndex = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +33,7 @@ class RiderShell extends StatelessWidget {
           RiderHomeScreen(embedded: true),
           RiderTripsScreen(embedded: true),
           RiderEarningsScreen(embedded: true),
-          RiderProfileScreen(embedded: true),
+          EarnerProfileScreen(embedded: true),
         ],
       ),
     );

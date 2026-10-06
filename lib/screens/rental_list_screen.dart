@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../services/money.dart';
+import '../state/app_state.dart';
+import '../state/rental_availability.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import 'rental_detail_screen.dart';
@@ -79,6 +81,11 @@ class _RentalListScreenState extends State<RentalListScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, i) {
                   final v = vehicles[i];
+                  // Read the listing's real state rather than the seed's
+                  // free-text note, so this card and the detail screen's date
+                  // check are answering the same question from the same data.
+                  final listing =
+                      AppState.instance.rentalListingState(v.id);
                   return SbCard(
                     padding: const EdgeInsets.all(12),
                     onTap: () => Navigator.push(
@@ -107,9 +114,34 @@ class _RentalListScreenState extends State<RentalListScreen> {
                               Text(v.name,
                                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                               const SizedBox(height: 2),
-                              Text('${v.location} · ${v.availability}',
+                              Text(v.location,
                                   style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 7),
+                              Row(
+                                children: [
+                                  SbTag(
+                                    listing.label,
+                                    accent: _tagAccent(listing),
+                                    tint: _tagTint(listing),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      listing.isBookable
+                                          ? v.type
+                                          : 'Dates unavailable',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: listing.isBookable
+                                            ? AppColors.muted
+                                            : AppColors.danger,
+                                        fontSize: 10.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
@@ -136,4 +168,23 @@ class _RentalListScreenState extends State<RentalListScreen> {
       ),
     );
   }
+
+  /// Text colour for the listing's status pill.
+  ///
+  /// Green for bookable, amber while it is out, red when no dates will work:
+  /// the pill should be readable at a glance without opening the vehicle.
+  static Color? _tagAccent(RentalListingState state) => switch (state) {
+        RentalListingState.available => AppColors.success,
+        RentalListingState.rented => AppColors.yellow,
+        RentalListingState.maintenance => AppColors.danger,
+        RentalListingState.unknown => AppColors.muted,
+      };
+
+  /// Translucent fill matching [_tagAccent].
+  static Color _tagTint(RentalListingState state) => switch (state) {
+        RentalListingState.available => AppColors.successSoft,
+        RentalListingState.rented => AppColors.yellowSoft,
+        RentalListingState.maintenance => AppColors.dangerSoft,
+        RentalListingState.unknown => AppColors.panel3,
+      };
 }

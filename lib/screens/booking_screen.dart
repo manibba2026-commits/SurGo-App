@@ -71,17 +71,30 @@ class BookingScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     ..._buildRideOptions(state),
                     const SizedBox(height: 18),
-                    const Row(
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Est. distance 3.2 km', style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                        Text('Est. time 9 min', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                        Text(
+                          'Est. distance '
+                          '${state.estimatedDistanceKm.toStringAsFixed(1)} km',
+                          style: const TextStyle(
+                              color: AppColors.muted, fontSize: 12)),
+                        Text(
+                            'Est. time ${state.selectedRide.etaMinutes} min',
+                            style: const TextStyle(
+                                color: AppColors.muted, fontSize: 12)),
                       ],
                     ),
                     const SizedBox(height: 14),
                     SbPrimaryButton(
                       label: 'Find Ride · ${Money.format(state.selectedRide.fare)}',
-                      onPressed: () => Navigator.pushNamed(context, '/matching'),
+                      // Creates the request first, then matches it. Navigating on
+                      // its own would leave the matching screen with nothing to
+                      // match against, and no trace of the trip afterwards.
+                      onPressed: () {
+                        state.createRideRequest();
+                        Navigator.pushNamed(context, '/matching');
+                      },
                     ),
                   ],
                 ),

@@ -272,12 +272,15 @@ class LiveTripScreen extends StatelessWidget {
                             const SizedBox(width: 8),
                             SbIconButton(
                               icon: Icons.message_outlined,
-                              onTap: () =>
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Chat is not wired up in this simulation')),
-                              ),
+                              // Gated by the ride's own status, not by whether
+                              // a trip happens to be on screen: the chat screen
+                              // explains itself when the thread is closed, so a
+                              // tap is never a dead end.
+                              onTap: () => Navigator.pushNamed(
+                                  context, '/ride_chat'),
+                              color: state.canChatOnRide
+                                  ? AppColors.primaryLight
+                                  : AppColors.muted2,
                             ),
                           ],
                         ),

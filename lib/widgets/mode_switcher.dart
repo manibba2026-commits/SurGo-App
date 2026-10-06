@@ -12,12 +12,12 @@ class _ModeInfo {
 
 const _modes = [
   _ModeInfo(UserMode.passenger, 'Passenger', Icons.person_outline, '/home'),
-  _ModeInfo(UserMode.rider, 'Rider', Icons.electric_rickshaw, '/rider'),
+  _ModeInfo(UserMode.earner, 'Earner', Icons.electric_rickshaw, '/earner'),
   _ModeInfo(UserMode.vehicleOwner, 'Vehicle Owner', Icons.directions_car_filled_outlined, '/owner'),
 ];
 
 /// A dropdown menu (not a simple on/off switch) that lets the user pick
-/// between all 3 account modes: Passenger, Rider, and Vehicle Owner.
+/// between all 3 account modes: Passenger, Earner, and Vehicle Owner.
 /// Used on every Profile tab so switching is always one tap away.
 class SbModeSwitcher extends StatelessWidget {
   const SbModeSwitcher({super.key});

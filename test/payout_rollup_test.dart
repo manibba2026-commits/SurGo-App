@@ -5,6 +5,7 @@ import 'package:surgo/data/db_service.dart';
 import 'package:surgo/services/fee_calculator.dart';
 import 'package:surgo/services/money.dart';
 import 'package:surgo/state/app_state.dart';
+import 'package:surgo/state/ride_status.dart';
 
 /// Locks the ride and rental payout paths.
 ///
@@ -114,8 +115,24 @@ void main() {
       );
 
   void acceptRide(RideRequestItem request) {
+    // Walk the trip through its states rather than jumping to the payout. A
+    // request starts `searching`, so it has to be matched first: nobody can
+    // accept a ride that was never assigned to them. Completing straight from
+    // `searching` is correctly refused, so skipping the steps would pay for a
+    // trip that never ran.
+    expect(request.status, RideStatus.searching);
     state.respondToRequest(request, accepted: true);
+    expect(request.status, RideStatus.accepted);
+
+    state.advanceRide(); // heading to pickup
+    expect(request.status, RideStatus.headingToPickup);
+    state.advanceRide(); // arrived
+    expect(request.status, RideStatus.arrived);
+    state.advanceRide(); // in progress
+    expect(request.status, RideStatus.inProgress);
+
     state.completeActiveRide();
+    expect(request.status, RideStatus.completed);
   }
 
   /// Books a rental at [totalFare] and completes it, as the owner would after

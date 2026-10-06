@@ -6,11 +6,19 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
+import 'geo.dart';
 import 'pasuyo_status.dart';
 import 'rental_availability.dart';
 import 'rental_status.dart';
+import 'ride_chat.dart';
+import 'ride_match.dart';
+import 'ride_status.dart';
 
-enum UserMode { passenger, rider, vehicleOwner }
+/// The three ways a person can use SurGo.
+///
+/// [earner] is not named `rider` because the role covers errand and delivery
+/// work as well as passenger rides - see `EarnerCapability`.
+enum UserMode { passenger, earner, vehicleOwner }
 
 /// First element matching [test], or null.
 ///
@@ -78,8 +86,8 @@ class AppState extends ChangeNotifier {
   // ---- account mode ----
   UserMode mode = UserMode.passenger;
 
-  void switchToRider() {
-    mode = UserMode.rider;
+  void switchToEarner() {
+    mode = UserMode.earner;
     notifyListeners();
   }
 
@@ -120,6 +128,400 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Name of the currently chosen vehicle type, for the matching screen.
+  String get rideOptionName => selectedRide.name;
+
+  // ---- ride request lifecycle (passenger side) ----
+
+  /// The request the passenger just created and is currently matching, or null.
+  /// One at a time: a second request would have nowhere to be shown.
+  RideRequestItem? myRideRequest;
+
+  /// The rider currently proposed for [myRideRequest]. Non-null only while the
+  /// passenger has a proposal to accept or decline.
+  RideMatchProposal? rideProposal;
+
+  /// Creates the request and starts looking for a rider.
+  ///
+  /// Returns the stored request so the matching screen can follow it. The
+  /// request is inserted before any matching happens: an unpersisted request
+  /// would mean a proposal the app cannot trace back to a trip.
+  RideRequestItem createRideRequest() {
+    final option = selectedRide;
+    final pickup = pickupLabel;
+    final destination = destinationLabel;
+
+    final request = RideRequestItem(
+      id: _nextRequestId(),
+      passengerId: passenger.id,
+      passengerName: passenger.name,
+      passengerInitials: passenger.initials,
+      passengerRating: passenger.rating,
+      pickupBarangay: pickup.split(',').first.trim(),
+      pickupPurok: _purokFrom(pickup),
+      pickup: pickup,
+      pickupLatitude: _coordinatesFor(pickup)?.latitude,
+      pickupLongitude: _coordinatesFor(pickup)?.longitude,
+      dropoffBarangay: destination.split(',').first.trim(),
+      dropoffPurok: _purokFrom(destination),
+      dropoff: destination,
+      dropoffLatitude: _coordinatesFor(destination)?.latitude,
+      dropoffLongitude: _coordinatesFor(destination)?.longitude,
+      distanceKm: _estimatedDistanceKm(),
+      etaMinutes: option.etaMinutes,
+      fare: option.fare,
+      paymentMethod: 'Cash',
+      note: '',
+      requestedAt: 'Just now',
+      status: RideStatus.searching,
+    );
+
+    db.rideRequests.insert(0, request);
+    myRideRequest = request;
+    rideProposal = null;
+    notifyListeners();
+    return request;
+  }
+
+  /// Picks a rider for [request] and holds them as a proposal.
+  ///
+  /// Returns [MatchOutcome.noRidersAvailable] when nothing suitable is free.
+  /// Matching is deterministic: candidates are ranked, not picked at random, so
+  /// the same request always proposes the same rider and the flow is testable.
+  MatchOutcome proposeRider(RideRequestItem request) {
+    if (request.status != RideStatus.searching) {
+      // Already matched or finished; a second proposal would strand the first.
+      return MatchOutcome.noRidersAvailable;
+    }
+
+    final candidates = db.mapRiders.where((r) {
+      // Never propose the passenger as their own rider, and never someone who
+      // is already committed to another trip.
+      return r.available &&
+          r.id != request.passengerId &&
+          activeRide?.riderId != r.id &&
+          _vehicleMatches(r, request.vehicleId);
+    }).toList();
+
+    if (candidates.isEmpty) return MatchOutcome.noRidersAvailable;
+
+    // Nearest first, so the passenger is shown the rider who can actually get
+    // there soonest. Riders whose distance is unknown sort last rather than
+    // first: "we don't know" must not outrank a known closer rider. Ties break
+    // on rating then id, so the order is total and a rerun proposes the same
+    // rider.
+    final ranked = [...candidates]..sort((a, b) {
+        final da = _distanceKmBetween(a.position, request);
+        final db_ = _distanceKmBetween(b.position, request);
+        if (da != null && db_ != null) {
+          final byDistance = da.compareTo(db_);
+          if (byDistance != 0) return byDistance;
+        } else if (da != null) {
+          return -1;
+        } else if (db_ != null) {
+          return 1;
+        }
+        final byRating = b.rating.compareTo(a.rating);
+        if (byRating != 0) return byRating;
+        return a.id.compareTo(b.id);
+      });
+
+    final best = ranked.first;
+    final distance = _distanceKmBetween(best.position, request);
+    rideProposal = RideMatchProposal(
+      rider: best,
+      requestId: request.id,
+      etaMinutes: _etaMinutesFor(distance, best),
+      fare: request.fare,
+      distanceKm: distance,
+    );
+    notifyListeners();
+    return MatchOutcome.proposed;
+  }
+
+  /// The passenger accepts the proposed rider: the request becomes pending.
+  ///
+  /// This is the point the request stops being open, and it is deliberately not
+  /// the point the trip starts: the rider has not agreed yet.
+  bool confirmRideMatch() {
+    final request = myRideRequest;
+    final proposal = rideProposal;
+    if (request == null || proposal == null) return false;
+    if (!request.advanceTo(RideStatus.awaitingAcceptance)) return false;
+    request.riderId = proposal.rider.id;
+    request.vehicleId = proposal.rider.id;
+    rideProposal = null;
+    notifyListeners();
+    return true;
+  }
+
+  /// The passenger declines the proposal, putting the request back to matching.
+  void declineRideMatch() {
+    final request = myRideRequest;
+    if (request == null) return;
+    // Declining is not cancelling: the request goes back to searching so a
+    // different rider can be proposed, and the rider's id is cleared so no
+    // screen still shows the rejected rider.
+    request.status = RideStatus.searching;
+    request.riderId = null;
+    request.vehicleId = null;
+    rideProposal = null;
+    notifyListeners();
+  }
+
+  /// The rider accepts. Unlocks chat and the trip states.
+  ///
+  /// This is the simulated counterpart of the rider tapping Accept; the
+  /// matching screen calls it after a pause so the pending state is visible.
+  void riderAccepts(RideRequestItem request) {
+    if (!request.advanceTo(RideStatus.accepted)) return;
+    activeRide = request;
+    activeRideBreakdown =
+        FeeCalculator.breakdownFor(ServiceType.ride, request.fare);
+    notifyListeners();
+  }
+
+  /// Whether the rider has accepted and the trip may begin.
+  bool get canChatOnRide {
+    final request = myRideRequest;
+    return request != null && request.status.allowsChat;
+  }
+
+  // ---- ride chat ----
+  //
+  // Chat is scoped to a ride and lasts exactly as long as the trip. Threads are
+  // held in memory by request id rather than on a single "current thread"
+  // field, so a finished trip's messages cannot bleed into the next ride.
+
+  final Map<String, RideChatThread> _rideChats = {};
+
+  /// Whether the active ride's chat is open right now, and if not, why.
+  ChatAvailability get chatAvailability =>
+      chatAvailabilityFor(myRideRequest?.status);
+
+  /// The active ride's thread, or null when the trip is not chat-ready yet.
+  ///
+  /// Returning null rather than an empty thread is deliberate: an empty thread
+  /// and a closed one look identical on screen but mean different things.
+  ///
+  /// Creates the thread on demand when the trip is ready. Doing it lazily here
+  /// rather than behind a separate "open" call means a screen cannot render one
+  /// frame of empty state before the first message list exists.
+  RideChatThread? get rideChat {
+    final request = myRideRequest;
+    if (request == null) return null;
+    if (chatAvailabilityFor(request.status) != ChatAvailability.available) {
+      return null;
+    }
+    return _rideChats[request.id] ?? _createRideChat(request);
+  }
+
+  /// Opens the thread for the active ride, creating it on first use.
+  ///
+  /// Returns null when the trip is not chat-ready, so a caller cannot create a
+  /// thread for a trip that has not started.
+  RideChatThread? openRideChat() => rideChat;
+
+  /// Builds and stores the thread for [request]. Private because the status
+  /// gate has already been checked by the callers above.
+  RideChatThread? _createRideChat(RideRequestItem request) {
+
+    final existing = _rideChats[request.id];
+    if (existing != null) return existing;
+
+    // The rider is whoever the request was matched to. Falling back to the
+    // nearest available rider keeps the thread usable if the request lost its
+    // rider id somehow, instead of showing a nameless chat.
+    MapRider? rider;
+    if (request.riderId != null) {
+      for (final r in db.mapRiders) {
+        if (r.id == request.riderId) {
+          rider = r;
+          break;
+        }
+      }
+    }
+    rider ??= _firstWhereOrNull(db.mapRiders, (r) => r.available);
+    if (rider == null) return null;
+
+    final now = DateTime.now();
+    final thread = RideChatThread(
+      requestId: request.id,
+      rider: rider,
+      messages: seedRideMessages(
+        requestId: request.id,
+        rider: rider,
+        pickup: request.pickup,
+        etaMinutes: request.etaMinutes,
+        now: now,
+      ),
+    );
+    _rideChats[request.id] = thread;
+    return thread;
+  }
+
+  /// Appends a message to the active ride's thread.
+  ///
+  /// Returns why it was refused instead of dropping it silently: a passenger
+  /// who types into a closed thread needs to be told, not left wondering where
+  /// their message went.
+  ChatSendRefusal? sendRideMessage(String body) {
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return ChatSendRefusal.empty;
+    if (trimmed.length > kMaxChatMessageLength) {
+      return ChatSendRefusal.tooLong;
+    }
+
+    final thread = rideChat;
+    if (thread == null) {
+      final availability = chatAvailability;
+      return availability == ChatAvailability.ended
+          ? ChatSendRefusal.tripEnded
+          : ChatSendRefusal.tripNotAccepted;
+    }
+
+    thread.add(
+      RideChatMessage(
+        id: '${thread.requestId}-m${thread.length}-${DateTime.now().microsecondsSinceEpoch}',
+        requestId: thread.requestId,
+        author: ChatAuthor.passenger,
+        body: trimmed,
+        sentAt: DateTime.now(),
+      ),
+    );
+    notifyListeners();
+    return null;
+  }
+
+  /// Drops the thread for a ride once it is over.
+  ///
+  /// Called when the trip reaches a terminal state so a completed ride cannot
+  /// keep accepting messages, and so the memory does not grow with every trip
+  /// taken in one session.
+  void _closeRideChat() {
+    final request = myRideRequest;
+    if (request == null) return;
+    _rideChats.remove(request.id);
+  }
+
+  /// Cancels the passenger's request from anywhere before completion.
+  void cancelRideRequest() {
+    final request = myRideRequest;
+    if (request == null) return;
+    if (!request.cancel()) return;
+    _closeRideChat();
+    db.rideRequests.remove(request);
+    myRideRequest = null;
+    rideProposal = null;
+    activeRide = null;
+    activeRideBreakdown = null;
+    notifyListeners();
+  }
+
+  /// Builds a request id that cannot collide with an existing one.
+  ///
+  /// A plain `microsecondsSinceEpoch` is not enough: two requests created in
+  /// the same microsecond produce the same id, and two records sharing an id
+  /// would make one of the trips impossible to find or complete.
+  String _nextRequestId() {
+    var id = 'rq${DateTime.now().microsecondsSinceEpoch}';
+    var suffix = 1;
+    while (db.rideRequests.any((r) => r.id == id)) {
+      id = 'rq${DateTime.now().microsecondsSinceEpoch}_$suffix';
+      suffix++;
+    }
+    return id;
+  }
+
+  /// Whether [rider] can serve [request]'s requested vehicle.
+  ///
+  /// A null [vehicleId] on the request means the passenger picked a vehicle
+  /// *type* from the booking screen but not a specific one, so every free rider
+  /// qualifies. Once a match is confirmed the request carries the rider's own
+  /// vehicle id, which pins future checks to that vehicle.
+  bool _vehicleMatches(MapRider rider, String? vehicleId) {
+    if (vehicleId == null) return true;
+    return rider.id == vehicleId || rider.vehicleModel.isNotEmpty;
+  }
+
+  /// Resolves a free-text place label to a point, or null when it is not one of
+  /// the city's seeded places.
+  ///
+  /// Matching is exact against the place's label or address first, then a
+  /// case-insensitive substring either way, so "SM Terminal, Downtown" still
+  /// finds "SM Terminal". Returning null rather than a guess is deliberate: a
+  /// fabricated coordinate would make rider ranking and ETAs look real while
+  /// being wrong, which is worse than admitting the distance is unknown.
+  MapPoint? _coordinatesFor(String label) {
+    final needle = label.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+
+    final places = db.places;
+    for (final place in places) {
+      if (place.label.toLowerCase() == needle ||
+          place.address.toLowerCase() == needle) {
+        return MapPoint(place.latitude, place.longitude);
+      }
+    }
+    for (final place in places) {
+      final candidate = place.label.toLowerCase();
+      if (candidate.isNotEmpty &&
+          (needle.contains(candidate) || candidate.contains(needle))) {
+        return MapPoint(place.latitude, place.longitude);
+      }
+    }
+    return null;
+  }
+
+  /// Straight-line distance from [riderAt] to the pickup, or null when either
+  /// point has no coordinates.
+  double? _distanceKmBetween(MapPoint riderAt, RideRequestItem request) {
+    final lat = request.pickupLatitude;
+    final lon = request.pickupLongitude;
+    if (lat == null || lon == null) return null;
+    return haversineKm(riderAt, MapPoint(lat, lon));
+  }
+
+  /// Waiting time shown for a proposal.
+  ///
+  /// Derived from the straight-line distance at a fixed city speed, so a
+  /// closer rider always reads as a shorter wait. When the pickup has no
+  /// coordinates the rider's own seeded estimate is used instead of inventing
+  /// one.
+  int _etaMinutesFor(double? distanceKm, MapRider rider) {
+    // 18 km/h is a plausible average for tricycle and motorcycle traffic in a
+    // city, including the stops at junctions.
+    if (distanceKm == null) {
+      // Unknown distance: fall back to the request's own ETA rather than
+      // inventing one from nothing.
+      return myRideRequest?.etaMinutes ?? 3;
+    }
+    final minutes = (distanceKm / 18.0 * 60).round();
+    return minutes < 1 ? 1 : minutes;
+  }
+
+  /// Fallback trip distance when the app has no route engine.
+  ///
+  /// Derived from the fare so distance and price stay consistent with each
+  /// other rather than drifting apart between two independently seeded fields.
+  double _estimatedDistanceKm() {
+    final fare = selectedRide.fare;
+    // A tricycle/motorcycle fare tracks roughly 30 centavos per kilometre.
+    return (fare / 3000.0).clamp(0.8, 12.0);
+  }
+
+  /// The distance estimate shown on the booking screen before a request exists.
+  double get estimatedDistanceKm => _estimatedDistanceKm();
+
+  /// "Purok 3, San Isidro" -> "Purok 3". Returns an empty string when the label
+  /// has no purok segment, rather than showing the whole place as a purok.
+  String _purokFrom(String label) {
+    final parts = label.split(',');
+    if (parts.length < 2) return '';
+    final first = parts.first.trim();
+    return first.toLowerCase().startsWith('purok') ? first : '';
+  }
+
   // ---- rider / driver mode ----
   bool riderOnline = true;
   List<RideRequestItem> get pendingRequests => db.rideRequests;
@@ -137,14 +539,33 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Advances an accepted trip along [RideStatus], using the enum's own next
+  /// state. Every guard lives in the model, so this cannot skip a step.
+  void advanceRide() {
+    final request = activeRide;
+    if (request == null) return;
+    final next = request.nextStatus;
+    if (next == null) return;
+    if (!request.advanceTo(next)) return;
+    // Keep the passenger's copy pointed at the same object so both sides read
+    // one status rather than two that can disagree.
+    if (identical(myRideRequest, request) || myRideRequest?.id == request.id) {
+      myRideRequest = request;
+    }
+    notifyListeners();
+  }
+
   void respondToRequest(RideRequestItem request, {required bool accepted}) {
     db.rideRequests.remove(request);
     if (accepted) {
-      activeRide = request;
-      activeRideBreakdown = FeeCalculator.breakdownFor(
-        ServiceType.ride,
-        request.fare,
-      );
+      // Route through the same path the simulated acceptance uses, so a request
+      // accepted from the rider's incoming list lands in [RideStatus.accepted]
+      // like any other accepted trip. Assigning activeRide here alone would
+      // leave the request in `searching` and make the trip's state unreadable.
+      request.status = RideStatus.awaitingAcceptance;
+      riderAccepts(request);
+    } else {
+      request.cancel();
     }
     notifyListeners();
   }
@@ -155,8 +576,13 @@ class AppState extends ChangeNotifier {
   FeeBreakdown? lastRideBreakdown;
 
   void completeActiveRide() {
-    if (activeRide == null) return;
-    final trip = activeRide!;
+    final trip = activeRide;
+    if (trip == null) return;
+    // Completing from anywhere but the last live state would mean the trip
+    // ended without happening. This guard is what gates the money: a request
+    // still searching, or one already finished, pays nothing.
+    if (!trip.advanceTo(RideStatus.completed)) return;
+
     final breakdown = FeeCalculator.breakdownFor(ServiceType.ride, trip.fare);
 
     db.riderTrips.insert(
@@ -183,10 +609,17 @@ class AppState extends ChangeNotifier {
     lastRideBreakdown = breakdown;
     activeRide = null;
     activeRideBreakdown = null;
+    // The trip is over, so the thread closes with it.
+    _closeRideChat();
     notifyListeners();
   }
 
   void cancelActiveRide() {
+    // Mark the trip cancelled and keep the pointer, so [chatAvailability] reads
+    // "ended" rather than "not accepted yet": a rider who was already driving
+    // over needs to be told the trip was called off, not that nothing happened.
+    activeRide?.cancel();
+    _closeRideChat();
     activeRide = null;
     activeRideBreakdown = null;
     notifyListeners();
@@ -415,6 +848,25 @@ class AppState extends ChangeNotifier {
   /// Checked before a request is created rather than after: accepting a
   /// request that collides with an existing booking would leave two renters
   /// believing they have the same vehicle.
+  /// A listing's bookability for the browse list, where no dates are chosen yet.
+  ///
+  /// Reads the same seeded record and bookings the detail screen does, so the
+  /// two screens cannot show different answers for the same vehicle.
+  RentalListingState rentalListingState(String vehicleId) {
+    final vehicle = _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId);
+    if (vehicle == null) return RentalListingState.unknown;
+
+    if (vehicle.status == 'Maintenance') return RentalListingState.maintenance;
+
+    // An accepted booking means it is out with a renter now, even if the seed
+    // still says `Listed`: the live trip is the truer source.
+    final outNow = _rentalBookings.any(
+        (b) => b.vehicleId == vehicleId && b.blocksAvailability);
+    if (vehicle.status == 'Rented' || outNow) return RentalListingState.rented;
+
+    return RentalListingState.available;
+  }
+
   RentalAvailability rentalAvailability({
     required String vehicleId,
     required DateTime pickupDate,
@@ -700,7 +1152,26 @@ class AppState extends ChangeNotifier {
   /// Fee split for the task just finished, for the receipt screen.
   FeeBreakdown? lastPasuyoBreakdown;
 
-  RiderProfile get rider => db.rider;
+  EarnerProfile get earner => db.earner;
+
+  /// Whether the signed-in earner will take [capability].
+  ///
+  /// This is the gate for Pasuyo work: an earner without `errands`/`deliveries`
+  /// must never be offered a task, and a vehicle owner has no earner profile at
+  /// all, so they cannot be offered one either.
+  bool acceptsCapability(EarnerCapability capability) =>
+      earner.accepts(capability);
+
+  /// Turns one of the signed-in earner's capabilities on or off.
+  ///
+  /// Returns false when the change was refused - see
+  /// `EarnerProfile.setCapability` - so the caller can explain why nothing
+  /// moved instead of leaving a toggle that looks stuck.
+  bool setEarnerCapability(EarnerCapability capability, bool enabled) {
+    final changed = earner.setCapability(capability, enabled);
+    if (changed) notifyListeners();
+    return changed;
+  }
 
   PassengerProfile get passenger => db.passenger;
 

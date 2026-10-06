@@ -73,16 +73,31 @@ class SbAvatar extends StatelessWidget {
 }
 
 /// Mirrors `.tag` pills used for status labels.
+///
+/// [accent] overrides the colour for states that need their own signal - a
+/// vehicle in maintenance should not read as a healthy purple "available".
+/// Passing null keeps the primary/secondary pairing.
 class SbTag extends StatelessWidget {
   final String label;
   final bool secondary;
-  const SbTag(this.label, {super.key, this.secondary = false});
+
+  /// Text colour, when this pill needs a specific one.
+  final Color? accent;
+
+  /// Fill colour, when this pill needs a specific one.
+  final Color? tint;
+
+  const SbTag(this.label,
+      {super.key, this.secondary = false, this.accent, this.tint});
 
   @override
   Widget build(BuildContext context) {
-    final fg = secondary ? AppColors.secondaryLight : AppColors.primaryLight;
-    final bg = secondary ? AppColors.secondarySoft : AppColors.primarySoft;
-    final border = secondary ? AppColors.secondary : AppColors.primary;
+    final fg = accent ??
+        (secondary ? AppColors.secondaryLight : AppColors.primaryLight);
+    final bg = tint ??
+        (secondary ? AppColors.secondarySoft : AppColors.primarySoft);
+    final border = accent ??
+        (secondary ? AppColors.secondary : AppColors.primary);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(

@@ -14,8 +14,8 @@ import '../widgets/surgo_map.dart';
 /// real request still happens on the Home tab's request list (Map V1 keeps
 /// the two mock datasets — visualization vs. the accept/decline flow —
 /// separate rather than faking a link between unrelated mock IDs).
-class RiderMapScreen extends StatelessWidget {
-  const RiderMapScreen({super.key});
+class EarnerMapScreen extends StatelessWidget {
+  const EarnerMapScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

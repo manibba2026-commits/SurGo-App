@@ -28,6 +28,44 @@ enum RentalUnavailabilityReason {
   datesBooked,
 }
 
+/// A listing's bookability as shown in the browse list, before any dates have
+/// been chosen.
+///
+/// Separate from [RentalAvailability] because that type answers a question
+/// about a specific period, and the list has no period yet. Showing the
+/// listing's real state here - rather than the seed's free-text `availability`
+/// note - means the list and the detail screen cannot disagree about whether a
+/// vehicle can be booked.
+enum RentalListingState {
+  /// Free to book for a future period.
+  available,
+
+  /// Out on rent now, but with free days ahead.
+  rented,
+
+  /// In the workshop: no dates work.
+  maintenance,
+
+  /// No seeded record backs this listing, so nothing can be claimed about it.
+  unknown,
+}
+
+/// What the list shows for a listing.
+extension RentalListingStateLabel on RentalListingState {
+  String get label => switch (this) {
+        RentalListingState.available => 'Available',
+        RentalListingState.rented => 'Rented now',
+        RentalListingState.maintenance => 'Maintenance',
+        RentalListingState.unknown => 'Ask the owner',
+      };
+
+  /// True when the listing can still be booked for a future period. Only
+  /// [RentalListingState.maintenance] is a hard no; a rented vehicle has free
+  /// days ahead, so tapping through to dates is still the right move.
+  bool get isBookable => this != RentalListingState.maintenance &&
+      this != RentalListingState.unknown;
+}
+
 /// The bookable windows of one listing, for a proposed period.
 class RentalAvailability {
   const RentalAvailability({

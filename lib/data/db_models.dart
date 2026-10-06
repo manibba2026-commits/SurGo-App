@@ -455,7 +455,77 @@ class PassengerProfile {
       );
 }
 
-class RiderProfile {
+/// What an Earner is willing to take on.
+///
+/// This is the thing that was missing between "Rider" and the rest of the app.
+/// A driver who only accepts ride requests, a courier who only takes errand
+/// and delivery work, and someone who will take either are all real, and the
+/// app could not tell them apart before: every Earner saw every job.
+enum EarnerCapability {
+  /// Passenger rides.
+  rides,
+
+  /// Errands: shopping, pharmacy, laundry, parcel drop-off.
+  errands,
+
+  /// Food and parcel delivery for a buyer who is already waiting.
+  deliveries;
+
+  /// Parses a seeded capability key. Unknown keys map to [rides], which is the
+  /// capability the role had before this list existed - so an older seed keeps
+  /// working instead of loading with nothing enabled.
+  static EarnerCapability fromJson(Object? raw) => switch ('$raw') {
+        'rides' => EarnerCapability.rides,
+        'errands' => EarnerCapability.errands,
+        'deliveries' => EarnerCapability.deliveries,
+        _ => EarnerCapability.rides,
+      };
+
+  String get jsonKey => switch (this) {
+        EarnerCapability.rides => 'rides',
+        EarnerCapability.errands => 'errands',
+        EarnerCapability.deliveries => 'deliveries',
+      };
+
+  /// Label for the capability toggles, e.g. "Passenger rides".
+  String get label => switch (this) {
+        EarnerCapability.rides => 'Passenger rides',
+        EarnerCapability.errands => 'Errands',
+        EarnerCapability.deliveries => 'Deliveries',
+      };
+
+  /// One line explaining what the capability covers, for the toggle's subtitle.
+  String get hint => switch (this) {
+        EarnerCapability.rides => 'Drive passengers around Tandag.',
+        EarnerCapability.errands =>
+          'Shop, pick up medicine, drop off parcels.',
+        EarnerCapability.deliveries => 'Bring food and parcels to a buyer.',
+      };
+}
+
+/// Whether one [EarnerCapability] is switched on for a given earner.
+class EarnerAvailability {
+  final EarnerCapability capability;
+  final bool enabled;
+
+  const EarnerAvailability({
+    required this.capability,
+    required this.enabled,
+  });
+
+  EarnerAvailability copyWith({bool? enabled}) => EarnerAvailability(
+        capability: capability,
+        enabled: enabled ?? this.enabled,
+      );
+}
+
+/// The signed-in Earner: their identity, their vehicle, and what they take.
+///
+/// Renamed from `Rider` because the role is no longer only about driving
+/// passengers. `capabilities` carries the change: it is the reason an Earner
+/// can be offered an errand at all, and the reason a Vehicle Owner - who has
+/// no such list - never is.
+class EarnerProfile {
   final String id;
   final String name;
   final String initials;
@@ -465,12 +535,18 @@ class RiderProfile {
   final int totalTrips;
   final int memberSince;
   final bool verified;
+
+  /// The vehicle used for [EarnerCapability.rides].
   final String vehicleType;
   final String vehicleModel;
   final String vehiclePlate;
   final String documentsStatus;
 
-  const RiderProfile({
+  /// One entry per capability, so a capability the seed never mentions has a
+  /// defined state instead of being absent from the map.
+  final Map<EarnerCapability, EarnerAvailability> capabilities;
+
+  EarnerProfile({
     required this.id,
     required this.name,
     required this.initials,
@@ -484,23 +560,60 @@ class RiderProfile {
     required this.vehicleModel,
     required this.vehiclePlate,
     required this.documentsStatus,
-  });
+    required Map<EarnerCapability, EarnerAvailability> capabilities,
+  }) : capabilities = {
+          for (final c in EarnerCapability.values)
+            c: capabilities[c] ??
+                EarnerAvailability(capability: c, enabled: false),
+        };
 
-  factory RiderProfile.fromJson(Map<String, dynamic> j) => RiderProfile(
-        id: j['id'],
-        name: j['name'],
-        initials: j['initials'],
-        phone: j['phone'],
-        email: j['email'],
-        rating: (j['rating'] as num).toDouble(),
-        totalTrips: j['totalTrips'],
-        memberSince: j['memberSince'],
-        verified: j['verified'] ?? false,
-        vehicleType: j['vehicleType'],
-        vehicleModel: j['vehicleModel'],
-        vehiclePlate: j['vehiclePlate'],
-        documentsStatus: j['documentsStatus'],
-      );
+  /// Whether this Earner takes [capability].
+  bool accepts(EarnerCapability capability) =>
+      capabilities[capability]?.enabled ?? false;
+
+  /// The capabilities this Earner has switched on, in enum order.
+  List<EarnerCapability> get activeCapabilities =>
+      EarnerCapability.values.where(accepts).toList();
+
+  /// Turns one capability on or off.
+  ///
+  /// Refuses to switch off the last active capability: an Earner with nothing
+  /// enabled is offline by another name, and the app has no way to show that
+  /// state honestly.
+  bool setCapability(EarnerCapability capability, bool enabled) {
+    if (!enabled && accepts(capability) && activeCapabilities.length <= 1) {
+      return false;
+    }
+    capabilities[capability] =
+        capabilities[capability]!.copyWith(enabled: enabled);
+    return true;
+  }
+
+  factory EarnerProfile.fromJson(Map<String, dynamic> j) {
+    final raw = (j['capabilities'] as List?) ?? const [];
+    return EarnerProfile(
+      id: j['id'],
+      name: j['name'],
+      initials: j['initials'],
+      phone: j['phone'],
+      email: j['email'],
+      rating: (j['rating'] as num).toDouble(),
+      totalTrips: j['totalTrips'],
+      memberSince: j['memberSince'],
+      verified: j['verified'] ?? false,
+      vehicleType: j['vehicleType'],
+      vehicleModel: j['vehicleModel'],
+      vehiclePlate: j['vehiclePlate'],
+      documentsStatus: j['documentsStatus'],
+      capabilities: {
+        for (final c in EarnerCapability.values)
+          c: EarnerAvailability(
+            capability: c,
+            enabled: raw.any((k) => EarnerCapability.fromJson(k) == c),
+          ),
+      },
+    );
+  }
 }
 
 class VehicleOwnerProfile {
@@ -629,8 +742,12 @@ class PlaceItem {
 class RideRequestItem {
   final String id;
   final String? passengerId;
-  final String? riderId;
-  final String? vehicleId;
+
+  /// The proposed or accepted rider. Mutable because assignment is a real step
+  /// in the flow: [RideStatus.searching] has nobody, confirming a match sets
+  /// this, and declining clears it again.
+  String? riderId;
+  String? vehicleId;
   final String passengerName;
   final String passengerInitials;
   final double passengerRating;
@@ -730,9 +847,14 @@ class RideRequestItem {
     status = RideStatus.cancelled;
     return true;
   }
+
+  /// The status this request moves to next, or null at a terminal state.
+  RideStatus? get nextStatus => status.next;
+
+  String get statusLabel => status.label;
 }
 
-/// A verified rider/vehicle compliance document (driver's license, OR/CRâ€¦).
+/// A verified rider/vehicle compliance document (driver's license, OR/CR).
 class VehicleDocumentItem {
   final String id;
   final String title;

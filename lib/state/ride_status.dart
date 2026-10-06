@@ -80,13 +80,16 @@ enum RideStatus {
   /// [searching] request is not yet this rider's problem.
   bool get isActive => !isTerminal && !isOpen;
 
-  /// Chat unlocks at [accepted] and stays open through the trip. It must be
-  /// false while searching or awaiting acceptance, or a passenger could talk to
-  /// a rider who has not agreed to the trip.
+/// Chat unlocks at [accepted] and stays open until the trip ends.
+  ///
+  /// False while searching or awaiting acceptance, because there is no agreed
+  /// trip to talk about yet. False at [completed] and [cancelled] too: the trip
+  /// is over, so the thread has nothing left to serve, and leaving it open would
+  /// let a passenger keep messaging a rider about a finished ride.
   bool get allowsChat =>
       this != RideStatus.searching &&
       this != RideStatus.awaitingAcceptance &&
-      this != RideStatus.cancelled;
+      !isTerminal;
 
   /// True once the passenger's money should be considered spent: the rider
   /// accepted, so cancelling is no longer a free option.
