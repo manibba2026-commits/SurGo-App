@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/rental_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
@@ -48,7 +49,7 @@ class VehicleOwnerBookingsScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              SbTag(b.status, secondary: b.status == 'Accepted'),
+                              SbTag(b.status.shortLabel, secondary: b.status == RentalStatus.accepted),
                             ],
                           ),
                           const SizedBox(height: 8),

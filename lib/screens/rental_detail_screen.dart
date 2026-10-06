@@ -2,18 +2,208 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/rental_availability.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import 'active_rental_screen.dart';
 
-class RentalDetailScreen extends StatelessWidget {
+class RentalDetailScreen extends StatefulWidget {
   final RentalVehicle vehicle;
   const RentalDetailScreen({super.key, required this.vehicle});
 
   @override
+  State<RentalDetailScreen> createState() => _RentalDetailScreenState();
+}
+
+/// A tappable pick-up / return date. Reads like [SbField] but opens a date
+/// picker instead of being a dead label.
+class _DateField extends StatelessWidget {
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
   Widget build(BuildContext context) {
-    final total = vehicle.pricePerDay * 2;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+        decoration: BoxDecoration(
+          color: AppColors.panel2,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.borderLight),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined,
+                    size: 13, color: AppColors.primaryLight),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    value,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 12.5),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Says whether the selected period can be booked, and why not when it cannot.
+///
+/// Reads the same [RentalAvailability] the submit button is gated on, so the
+/// explanation and the disabled button can never tell different stories.
+class _AvailabilityNotice extends StatelessWidget {
+  const _AvailabilityNotice({
+    required this.availability,
+    required this.blockedByExistingRequest,
+  });
+
+  final RentalAvailability availability;
+  final bool blockedByExistingRequest;
+
+  @override
+  Widget build(BuildContext context) {
+    // One rental at a time per account: a second live booking would overwrite
+    // the first and strand it, which is the same reason the helper can hold
+    // only one errand.
+    final reason = blockedByExistingRequest && availability.canBook
+        ? 'You already have a rental request in progress.'
+        : availability.reasonText;
+    final ok = availability.canBook && !blockedByExistingRequest;
+
+    final color = ok ? AppColors.primaryLight : AppColors.danger;
+    final icon = ok ? Icons.check_circle_outline : Icons.error_outline;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 15, color: color),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            ok
+                ? '${_verb(availability)} for these dates.'
+                : reason!,
+            style: TextStyle(
+              color: color,
+              fontSize: 11.5,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _verb(RentalAvailability a) => switch (a.reason) {
+        RentalUnavailabilityReason.currentlyRented => 'Free for later dates',
+        _ => 'Available',
+      };
+}
+
+class _RentalDetailScreenState extends State<RentalDetailScreen> {
+  /// The period being considered, as real dates. Null until the passenger
+  /// picks them, which is why the request button starts disabled: the screen
+  /// never invents a period on the passenger's behalf.
+  DateTime? _pickup;
+  DateTime? _return;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    _pickup = today;
+    _return = today.add(const Duration(days: 2));
+  }
+
+  Future<void> _pickRange({required bool isPickup}) async {
+    final now = DateTime.now();
+    final first = DateTime(now.year, now.month, now.day);
+    final initial = isPickup ? (_pickup ?? first) : (_return ?? first);
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(first) ? first : initial,
+      firstDate: first,
+      lastDate: first.add(const Duration(days: 365)),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.primary,
+            onPrimary: Colors.white,
+            surface: AppColors.panel,
+            onSurface: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (date == null) return;
+    setState(() {
+      if (isPickup) {
+        _pickup = date;
+        // Keep the period ordered: a pickup at or after the return date would
+        // be a negative-length rental, and the day count refuses to invent one.
+        if (_return == null || !_return!.isAfter(date)) {
+          _return = date.add(const Duration(days: 1));
+        }
+      } else {
+        _return = date.isAfter(_pickup ?? date) ? date : date.add(const Duration(days: 1));
+      }
+    });
+  }
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _fmt(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final vehicle = widget.vehicle;
     final state = AppState.instance;
+
+    // Recomputed every build so a booking made elsewhere in the app is
+    // reflected here without a stale cached "available".
+    final days = (_pickup != null && _return != null)
+        ? rentalDayCount(_pickup!, _return!)
+        : null;
+    final total = (days ?? 0) * vehicle.pricePerDay;
+    final availability = (_pickup != null && _return != null)
+        ? state.rentalAvailability(
+            vehicleId: vehicle.id,
+            pickupDate: _pickup!,
+            returnDate: _return!,
+          )
+        : const RentalAvailability(canBook: false);
+    // One live rental at a time per account: a second booking would overwrite the
+    // first and strand it, the same reason a helper can hold only one errand.
+    final blockedByExistingRequest = state.activeRentalBooking != null;
+    final canRequest = availability.canBook && !blockedByExistingRequest;
+
     return Scaffold(
       body: Stack(
         children: [
@@ -129,12 +319,29 @@ class RentalDetailScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Row(
+                    Row(
                       children: [
-                        Expanded(child: SbField(label: 'Pick-up', value: 'Sep 2')),
-                        SizedBox(width: 8),
-                        Expanded(child: SbField(label: 'Return', value: 'Sep 4')),
+                        Expanded(
+                          child: _DateField(
+                            label: 'Pick-up',
+                            value: _fmt(_pickup!),
+                            onTap: () => _pickRange(isPickup: true),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _DateField(
+                            label: 'Return',
+                            value: _fmt(_return!),
+                            onTap: () => _pickRange(isPickup: false),
+                          ),
+                        ),
                       ],
+                    ),
+                    const SizedBox(height: 10),
+                    _AvailabilityNotice(
+                      availability: availability,
+                      blockedByExistingRequest: blockedByExistingRequest,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -163,25 +370,36 @@ class RentalDetailScreen extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(Money.format(total), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                        const Text('2 days total', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                        Text(Money.format(total),
+                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text(
+                          days == null
+                              ? 'Pick your dates'
+                              : '$days ${days == 1 ? 'day' : 'days'} total',
+                          style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                        ),
                       ],
                     ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: state.activeRentalBooking != null
-                            ? null
-                            : () {
+                        // Disabled unless the chosen period is genuinely free:
+                        // the passenger can see why via the notice above, so the
+                        // button never refuses without explanation.
+                        onPressed: canRequest
+                            ? () {
                                 state.requestRental(
+                                  vehicleId: vehicle.id,
                                   vehicleName: vehicle.name,
                                   vehicleType: vehicle.type,
                                   icon: vehicle.icon,
                                   ownerName: vehicle.ownerName,
                                   ownerInitials: vehicle.ownerInitials,
-                                  pickupLabel: 'Sep 2',
-                                  returnLabel: 'Sep 4',
-                                  days: 2,
+                                  pickupLabel: _fmt(_pickup!),
+                                  returnLabel: _fmt(_return!),
+                                  pickupDate: _pickup!,
+                                  returnDate: _return!,
+                                  days: days!,
                                   totalFare: total,
                                 );
                                 showDialog(
@@ -190,15 +408,22 @@ class RentalDetailScreen extends StatelessWidget {
                                     backgroundColor: AppColors.panel,
                                     title: const Text('Rental requested'),
                                     content: Text(
-                                      'Your request for the ${vehicle.name} has been sent to ${vehicle.ownerName}. '
+                                      'Your request for the ${vehicle.name} from ${_fmt(_pickup!)} '
+                                      'to ${_fmt(_return!)} has been sent to ${vehicle.ownerName}. '
                                       'You\'ll see it as pending on your Home tab while they respond.',
                                     ),
                                     actions: [
                                       TextButton(
+                                        // Cleans the stack instead of popping a
+                                        // guessed number of times: the dialog,
+                                        // this screen and the list all close and
+                                        // Home is left as the only route.
                                         onPressed: () {
-                                          Navigator.pop(context); // close dialog
-                                          Navigator.pop(context); // close detail screen
-                                          Navigator.pop(context); // close rental list
+                                          Navigator.pop(context);
+                                          Navigator.of(context).pushNamedAndRemoveUntil(
+                                            '/home',
+                                            (route) => false,
+                                          );
                                         },
                                         child: const Text('Back to Home'),
                                       ),
@@ -215,9 +440,19 @@ class RentalDetailScreen extends StatelessWidget {
                                     ],
                                   ),
                                 );
-                              },
-                        child: Text(
-                          state.activeRentalBooking != null ? 'Rental Already Requested' : 'Request Rental',
+                              }
+                            // Disabled when the period is not free; see the
+                            // notice above for which reason applies.
+                            : null,
+                            // The label has to say which of the reasons it is
+                            // disabled: a button that just goes grey teaches
+                            // nothing.
+                            child: Text(
+                          blockedByExistingRequest
+                              ? 'Rental Already Requested'
+                              : availability.canBook
+                                  ? 'Request Rental'
+                                  : 'Unavailable',
                         ),
                       ),
                     ),

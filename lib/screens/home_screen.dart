@@ -233,7 +233,7 @@ class _HomeContent extends StatelessWidget {
             builder: (context, _) {
               final booking = state.activeRentalBooking;
               if (booking == null) return const SizedBox.shrink();
-              final isPending = booking.status == 'Pending';
+              final isPending = booking.status.isPending;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: SbCard(
@@ -278,7 +278,7 @@ class _HomeContent extends StatelessWidget {
                               ],
                             ),
                           ),
-                          SbTag(booking.status, secondary: !isPending),
+                          SbTag(booking.status.shortLabel, secondary: !isPending),
                         ],
                       ),
                       const SizedBox(height: 10),

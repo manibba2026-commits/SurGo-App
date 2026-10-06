@@ -38,13 +38,16 @@ class ActiveRentalScreen extends StatelessWidget {
           }
 
           final isOwnerMode = ownerArg != null;
-          final isPending = isOwnerMode
-              ? ownerArg.status == 'Pending'
-              : passengerBooking!.status == 'Pending';
+          // "Pending" covers both requested and awaiting-owner: from the renter's
+      // side those are the same thing, that the owner has not said yes yet.
+      final isPending = isOwnerMode
+          ? ownerArg.status.isPending
+          : passengerBooking!.status.isPending;
 
-          final statusString =
-              isOwnerMode ? ownerArg.status : passengerBooking!.status;
-          const iconData = Icons.electric_rickshaw;
+final status = isOwnerMode
+            ? ownerArg.status
+            : passengerBooking!.status;
+      const iconData = Icons.electric_rickshaw;
 
           final vehicleName = isOwnerMode
               ? ownerArg.vehicleName
@@ -168,7 +171,7 @@ class ActiveRentalScreen extends StatelessWidget {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  SbTag(statusString, secondary: !isPending),
+                                  SbTag(status.shortLabel, secondary: !isPending),
                                   Text(
                                       isOwnerMode
                                           ? 'Vehicle'

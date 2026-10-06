@@ -234,29 +234,19 @@ class _NearbyPasuyoCard extends StatelessWidget {
   final AppState state;
   const _NearbyPasuyoCard({required this.task, required this.state});
 
-  /// Claims the errand, or explains why it was refused.
-  ///
-  /// The guard lives in [AppState.acceptPasuyoTask] because there is one active
-  /// errand per helper; this only turns the refusal into something readable.
-  void _accept(BuildContext context) {
-    final refusal = state.acceptPasuyoTask(task);
-    if (refusal == null) return;
-    final message = switch (refusal) {
-      PasuyoAcceptRefusal.notOpen => 'That errand is no longer available.',
-      PasuyoAcceptRefusal.alreadyHasTask =>
-        'Finish your current errand before taking another one.',
-      PasuyoAcceptRefusal.ownCustomer =>
-        'You cannot run an errand you posted yourself.',
-    };
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
   @override
   Widget build(BuildContext context) {
     final b = FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
-    return SbCard(
+    // Tapping anywhere on the card opens the errand. The whole card is the
+    // affordance rather than a small button inside it, so the feed reads as a
+    // list and the details screen owns every action.
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+      ),
+      child: SbCard(
       borderColor: AppColors.yellow.withValues(alpha: 0.25),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,6 +273,9 @@ class _NearbyPasuyoCard extends StatelessWidget {
           Text('${task.pickup} → ${task.dropoff}',
               style: const TextStyle(color: AppColors.muted, fontSize: 11)),
           const SizedBox(height: 10),
+          // Read-only: claiming the errand lives on the details screen, so the
+          // feed is a browse list and every card has exactly one job, which is
+          // to open the errand.
           Row(
             children: [
               Expanded(
@@ -290,17 +283,13 @@ class _NearbyPasuyoCard extends StatelessWidget {
                     style: const TextStyle(
                         color: AppColors.muted2, fontSize: 10.5)),
               ),
-              SbOutlineButton(
-                label: 'Accept',
-                icon: Icons.check_rounded,
-                block: false,
-                onPressed: state.hasActivePasuyoTask
-                    ? null
-                    : () => _accept(context),
-              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: AppColors.muted2),
             ],
           ),
         ],
+      ),
       ),
     );
   }
@@ -313,17 +302,18 @@ class _ActivePasuyoCard extends StatelessWidget {
   final AppState state;
   const _ActivePasuyoCard({required this.task, required this.state});
 
-  static const _nextLabels = {
-    'posted': 'Confirm and start',
-    'accepted': 'Start shopping',
-    'purchasing': 'Handed over · delivering',
-    'delivering': 'Mark delivered',
-  };
-
   @override
   Widget build(BuildContext context) {
     final next = task.nextStatus;
-    return SbCard(
+    // Tappable like the feed cards: the banner reports progress and sends the
+    // helper to the details screen, which is where the action buttons live.
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+      ),
+      child: SbCard(
       borderColor: AppColors.secondary.withValues(alpha: 0.4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,7 +325,7 @@ class _ActivePasuyoCard extends StatelessWidget {
                     style: TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 12.5)),
               ),
-              SbTag(task.statusLabel, secondary: true),
+              SbTag(task.status.shortLabel, secondary: true),
             ],
           ),
           const SizedBox(height: 10),
@@ -343,26 +333,27 @@ class _ActivePasuyoCard extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
           const SizedBox(height: 12),
           PasuyoStepper(task: task),
-          const SizedBox(height: 14),
-          if (next != null)
-            SbPrimaryButton(
-              label: _nextLabels[task.status] ?? 'Continue',
-              icon: Icons.arrow_forward_rounded,
-              onPressed: () => state.advancePasuyoTask(task),
-            )
-          else
-            const Text('Waiting for the customer to rate this task.',
-                style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
-          const SizedBox(height: 8),
-          SbOutlineButton(
-            label: 'Open task details',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => PasuyoTaskScreen(taskId: task.id)),
-            ),
+          const SizedBox(height: 12),
+          // Progress only. The advance button is deliberately absent here: one
+          // screen per task owns its actions, so a stray tap on a banner in the
+          // feed cannot skip a step.
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  next == null
+                      ? 'Waiting for the customer to rate this task.'
+                      : 'Next: ${task.status.advanceActionLabel}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: AppColors.muted2),
+            ],
           ),
         ],
+      ),
       ),
     );
   }

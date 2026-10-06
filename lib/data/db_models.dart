@@ -1,15 +1,19 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+
+import '../state/pasuyo_status.dart';
+import '../state/rental_status.dart';
+import '../state/ride_status.dart';
 
 /// Typed wrappers around the raw JSON records in the `assets/db/` seed files.
 /// Every model below has a `fromJson` factory so DbService can parse the
 /// "temporary database" once at startup. Nothing here talks to a real
-/// backend — this is purely an offline UI simulation.
+/// backend â€” this is purely an offline UI simulation.
 ///
 /// Every amount in these files is an integer number of centavos.
 ///
-/// Records that used to carry only a display string (e.g. "Aug 28, 2026 ·
+/// Records that used to carry only a display string (e.g. "Aug 28, 2026 Â·
 /// 6:40 PM") also carry a real ISO 8601 field. Keep the string for rendering
-/// and use the parsed `DateTime` for sorting, filtering or grouping — never
+/// and use the parsed `DateTime` for sorting, filtering or grouping â€” never
 /// try to sort by the display string.
 DateTime? parseIsoTimestamp(Object? raw) {
   if (raw is! String || raw.isEmpty) return null;
@@ -319,7 +323,7 @@ class RentalHistoryItem {
         ownerName: j['ownerName'],
         startDate: j['startDate'],
         endDate: j['endDate'],
-        totalFare: j['totalFare'],
+totalFare: j['totalFare'],
         status: j['status'],
         startAt: parseIsoTimestamp(j['startAt']),
         endAt: parseIsoTimestamp(j['endAt']),
@@ -539,7 +543,7 @@ class VehicleOwnerProfile {
       );
 }
 
-/// One barangay in Tandag City, together with its puroks — used to power
+/// One barangay in Tandag City, together with its puroks â€” used to power
 /// the pickup/destination barangay + purok picker.
 class Barangay {
   final String name;
@@ -646,7 +650,11 @@ class RideRequestItem {
   final String paymentMethod;
   final String note;
   final String requestedAt;
-  String status;
+
+  /// Where the request sits in [RideStatus]. Never a free-text string: the
+  /// enum owns every legal transition, so a status cannot drift out of the
+  /// path it is supposed to be on.
+  RideStatus status;
 
   RideRequestItem({
     required this.id,
@@ -672,7 +680,7 @@ class RideRequestItem {
     required this.paymentMethod,
     required this.note,
     required this.requestedAt,
-    this.status = 'Pending',
+    this.status = RideStatus.searching,
   });
 
   factory RideRequestItem.fromJson(Map<String, dynamic> j) => RideRequestItem(
@@ -699,11 +707,32 @@ class RideRequestItem {
         paymentMethod: j['paymentMethod'],
         note: j['note'] ?? '',
         requestedAt: j['requestedAt'] ?? 'Just now',
-        status: j['status'] ?? 'Pending',
+        status: RideStatus.fromJson(j['status'] ?? 'Pending'),
       );
+
+  /// True when [target] is this request's one legal next status.
+  bool canAdvanceTo(RideStatus target) => status.next == target;
+
+  /// Moves to [target] if the path allows it, and reports whether it did.
+  ///
+  /// The check lives here rather than at each call site so no screen can offer
+  /// or apply an illegal jump. Cancellation is handled separately by [cancel],
+  /// because it is reachable from anywhere but a terminal state.
+  bool advanceTo(RideStatus target) {
+    if (!canAdvanceTo(target)) return false;
+    status = target;
+    return true;
+  }
+
+  /// Cancels from any non-terminal state.
+  bool cancel() {
+    if (status.isTerminal) return false;
+    status = RideStatus.cancelled;
+    return true;
+  }
 }
 
-/// A verified rider/vehicle compliance document (driver's license, OR/CR…).
+/// A verified rider/vehicle compliance document (driver's license, OR/CRâ€¦).
 class VehicleDocumentItem {
   final String id;
   final String title;
@@ -849,7 +878,10 @@ class OwnerBookingRequest {
   final double? pickupLongitude;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
-  String status; // Pending, Accepted, Declined
+/// Where this request sits in [RentalStatus]. Seeded requests only ever reach
+  /// [RentalStatus.requested] or [RentalStatus.declined]; the later states are
+  /// the renter's booking advancing, not this request.
+  RentalStatus status;
 
   /// Real pickup/return times; null if the seed omitted them.
   final DateTime? startAt;
@@ -903,7 +935,7 @@ class OwnerBookingRequest {
         pickupLongitude: (j['pickupLongitude'] as num?)?.toDouble(),
         vehicleLatitude: (j['vehicleLatitude'] as num?)?.toDouble(),
         vehicleLongitude: (j['vehicleLongitude'] as num?)?.toDouble(),
-        status: j['status'],
+status: RentalStatus.fromJson(j['status'] ?? 'Pending'),
         startAt: parseIsoTimestamp(j['startAt']),
         endAt: parseIsoTimestamp(j['endAt']),
       );
@@ -935,7 +967,7 @@ class AccountSettingsData {
 }
 
 // ============================================================================
-// Map V1 — typed wrappers around assets/data/surgo_map_v1_mock_data.json.
+// Map V1 â€” typed wrappers around assets/data/surgo_map_v1_mock_data.json.
 // Fixed mock coordinates for riders/rentals/passengers/ride-requests; the
 // live device GPS position is resolved separately at runtime by
 // LocationService and is never read from this file.
@@ -1275,7 +1307,10 @@ class PasuyoTask {
   /// age checks rather than trying to parse [requestedAt].
   final DateTime? requestedAtIso;
 
-  String status;
+  /// Where the errand sits in [PasuyoStatus]. Never a free-text string: the
+  /// enum owns the path, so the feed and the details screen cannot disagree
+  /// about which action is legal.
+  PasuyoStatus status;
   int rating;
   bool rated;
 
@@ -1296,7 +1331,7 @@ class PasuyoTask {
     this.note = '',
     this.requestedAt = 'Just now',
     this.requestedAtIso,
-    this.status = 'posted',
+    this.status = PasuyoStatus.available,
     this.rating = 0,
     this.rated = false,
   });
@@ -1318,56 +1353,57 @@ class PasuyoTask {
         note: j['note'] ?? '',
         requestedAt: j['requestedAt'] ?? 'Just now',
         requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
-        status: j['status'] ?? 'posted',
+        status: PasuyoStatus.fromJson(j['status'] ?? 'available'),
         rating: j['rating'] ?? 0,
         rated: j['rated'] ?? false,
       );
 
-  /// The order a task moves through. Drives the progress stepper and the
-  /// next-action button, so the two can never disagree about what comes next.
-  static const List<String> flow = [
-    'posted',
-    'accepted',
-    'purchasing',
-    'delivering',
-    'completed',
-  ];
+  /// Position in [PasuyoStatus.flow], or -1 for a cancelled errand.
+  int get stepIndex => status.stepIndex;
 
-  static const Map<String, String> statusLabels = {
-    'posted': 'Waiting for a helper',
-    'accepted': 'Helper assigned',
-    'purchasing': 'Helper is buying',
-    'delivering': 'On the way',
-    'completed': 'Delivered',
-  };
+  String get statusLabel => status.label;
 
-  /// Position in [flow]. A cancelled errand never entered the flow, so it has no
-  /// step: `-1` is the honest answer and lets callers render "Cancelled" rather
-  /// than clamping to step 1 and implying the errand had started.
-int get stepIndex => isCancelled ? -1 : flow.indexOf(status).clamp(0, flow.length - 1);
+  /// A delivered errand is complete. There is no separate `completed` state:
+  /// "Mark delivered" is the terminal action, and the customer rating that
+  /// follows is a flag rather than a step.
+  bool get isComplete => status == PasuyoStatus.delivered;
 
-  String get statusLabel => statusLabels[status] ?? status;
+  /// Unclaimed, so it belongs in the public feed.
+  bool get isOpen => status.isOpen;
 
-  bool get isComplete => status == 'completed';
+  bool get isCancelled => status == PasuyoStatus.cancelled;
 
-  bool get isOpen => status == 'posted';
-
-  bool get isCancelled => status == 'cancelled';
-
-  bool get isActive => !isComplete && !isCancelled;
+  /// Claimed and unfinished. An unclaimed errand is not active: treating it as
+  /// active would let one helper hold two open errands as "busy" while having
+  /// accepted neither.
+  bool get isActive => status.isActive;
 
   /// The status this task moves to next, or null when there is nowhere left
-  /// to go (completed or cancelled).
-  String? get nextStatus {
-    final i = flow.indexOf(status);
-    if (i < 0 || i >= flow.length - 1) return null;
-    return flow[i + 1];
+  /// to go (delivered or cancelled).
+  PasuyoStatus? get nextStatus => status.next;
+
+  /// Progress label for the stepper, e.g. "Step 2 of 8".
+  String get stepLabel => status.stepLabel;
+
+  /// True when [target] is this task's one legal next status.
+  bool canAdvanceTo(PasuyoStatus target) => status.next == target;
+
+  /// Moves to [target] if the path allows it, and reports whether it did.
+  ///
+  /// Rejecting illegal jumps at the model means a screen cannot mark a task
+  /// delivered straight from `available`, which would pay out for work never
+  /// done. Cancellation is handled by [cancel], reachable from anywhere but a
+  /// terminal state.
+  bool advanceTo(PasuyoStatus target) {
+    if (!canAdvanceTo(target)) return false;
+    status = target;
+    return true;
   }
 
-  /// Progress label for the stepper, e.g. "Step 2 of 5".
-  ///
-  /// A cancelled errand has no step, so it says so instead of reporting
-  /// "Step 0 of 5" from the `-1` in [stepIndex].
-  String get stepLabel =>
-      isCancelled ? 'Cancelled' : 'Step ${stepIndex + 1} of ${flow.length}';
+  /// Cancels from any non-terminal state.
+  bool cancelTask() {
+    if (status.isTerminal) return false;
+    status = PasuyoStatus.cancelled;
+    return true;
+  }
 }

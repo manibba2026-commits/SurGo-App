@@ -1,18 +1,30 @@
 import 'package:flutter/material.dart';
+
 import '../data/db_models.dart';
+import '../state/pasuyo_status.dart';
 import '../theme/app_colors.dart';
 
-/// Visual progress of a Pasuyo task across its five statuses:
-/// posted → accepted → purchasing → delivering → completed.
+/// Visual progress of a Pasuyo errand along [PasuyoStatus.flow].
 ///
-/// Reads the task's own status and [PasuyoTask.flow] so the stepper can never
-/// disagree with the state machine driving the buttons.
+/// Reads the task's own status and the enum's flow, so the stepper can never
+/// disagree with the state machine driving the buttons. It draws a dot per
+/// state but labels only four milestones, because eight labels will not fit
+/// across a phone width and truncating them would say less than the status line
+/// already does.
 class PasuyoStepper extends StatelessWidget {
   final PasuyoTask task;
   final bool compact;
   const PasuyoStepper({super.key, required this.task, this.compact = false});
 
-  static const _labels = ['Posted', 'Accepted', 'Buying', 'Delivering', 'Done'];
+  /// The states worth naming to a customer watching the errand. Each is a real
+  /// state in [PasuyoStatus.flow]; the stepper looks them up by identity so a
+  /// reordering of the flow cannot silently orphan a label.
+  static const List<PasuyoStatus> _milestones = [
+    PasuyoStatus.accepted,
+    PasuyoStatus.atPickup,
+    PasuyoStatus.delivering,
+    PasuyoStatus.delivered,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -29,14 +41,21 @@ class PasuyoStepper extends StatelessWidget {
     }
 
     final current = task.stepIndex;
+    final flow = PasuyoStatus.flow;
+    // zipped so each label keeps the identity of the state it names; the
+    // stepper compares `state.index` rather than the string.
+    final milestones = [
+      for (final m in _milestones) (state: m, label: m.shortLabel),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            for (var i = 0; i < PasuyoTask.flow.length; i++) ...[
+            for (var i = 0; i < flow.length; i++) ...[
               _dot(i, current),
-              if (i < PasuyoTask.flow.length - 1) _line(i, current),
+              if (i < flow.length - 1) _line(i, current),
             ],
           ],
         ),
@@ -45,15 +64,18 @@ class PasuyoStepper extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              for (final label in _labels)
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w700,
-                    color: _labels.indexOf(label) <= current
-                        ? AppColors.secondaryLight
-                        : AppColors.muted2,
+              for (final m in milestones)
+                Flexible(
+                  child: Text(
+                    m.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w700,
+                      color: m.state.index <= current
+                          ? AppColors.secondaryLight
+                          : AppColors.muted2,
+                    ),
                   ),
                 ),
             ],
@@ -65,18 +87,17 @@ class PasuyoStepper extends StatelessWidget {
 
   Widget _dot(int index, int current) {
     final done = index <= current;
-    final isCurrent = index == current;
     return Container(
-      width: isCurrent ? 13 : 10,
-      height: isCurrent ? 13 : 10,
+      width: 9,
+      height: 9,
       decoration: BoxDecoration(
-        color: done ? AppColors.secondary : AppColors.panel3,
         shape: BoxShape.circle,
-        border: isCurrent ? Border.all(color: AppColors.secondaryLight, width: 2) : null,
+        color: done ? AppColors.yellow : AppColors.muted2.withValues(alpha: 0.35),
+        border: Border.all(
+          color: index == current ? AppColors.yellow : Colors.transparent,
+          width: 2,
+        ),
       ),
-      child: done && !isCurrent
-          ? const Icon(Icons.check, size: 6, color: AppColors.onAccent)
-          : null,
     );
   }
 
@@ -84,8 +105,8 @@ class PasuyoStepper extends StatelessWidget {
     return Expanded(
       child: Container(
         height: 2,
-        margin: const EdgeInsets.symmetric(horizontal: 3),
-        color: index < current ? AppColors.secondary : AppColors.panel3,
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        color: index < current ? AppColors.yellow : AppColors.muted2.withValues(alpha: 0.35),
       ),
     );
   }

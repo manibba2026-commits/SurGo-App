@@ -121,7 +121,10 @@ void main() {
   /// Books a rental at [totalFare] and completes it, as the owner would after
   /// the vehicle is returned.
   void completeRental({required int totalFare}) {
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
     state.requestRental(
+      vehicleId: null,
       vehicleName: 'Test Ride',
       vehicleType: 'Tricycle',
       icon: Icons.electric_rickshaw,
@@ -129,9 +132,21 @@ void main() {
       ownerInitials: 'TO',
       pickupLabel: 'Today',
       returnLabel: 'Tomorrow',
+      pickupDate: start,
+      returnDate: start.add(const Duration(days: 2)),
       days: 2,
       totalFare: totalFare,
     );
+    // Walk the whole rental lifecycle rather than jumping to the end. Return of
+    // the vehicle is what releases the payout, so completing straight from
+    // `requested` is correctly refused and would pay nothing. The owner-decides
+    // steps use their real methods so this stays the same path the app takes.
+    state.sendRentalRequest();
+    // The app normally reaches this through the 10s owner-decides timer; the
+    // test calls the owner's decision directly so it does not have to wait.
+    state.acceptRentalRequest();
+    state.advanceRentalBooking(pickup: true);
+    state.advanceRentalBooking(pickup: false);
     state.completeActiveRental();
   }
 

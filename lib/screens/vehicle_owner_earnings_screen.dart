@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/rental_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
@@ -17,7 +18,7 @@ class VehicleOwnerEarningsScreen extends StatelessWidget {
     final content = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
-        final accepted = state.ownerBookingRequests.where((b) => b.status == 'Accepted').toList();
+        final accepted = state.ownerBookingRequests.where((b) => b.status == RentalStatus.accepted).toList();
         return ListView(
           padding: EdgeInsets.fromLTRB(18, embedded ? 0 : 12, 18, embedded ? 90 : 24),
           children: [

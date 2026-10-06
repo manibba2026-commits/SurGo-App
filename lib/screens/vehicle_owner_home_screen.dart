@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/rental_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import 'vehicle_owner_vehicles_screen.dart';
@@ -20,10 +21,10 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
       builder: (context, _) {
         final owner = state.db.vehicleOwner;
         final pending = state.ownerBookingRequests
-            .where((b) => b.status == 'Pending')
+            .where((b) => b.status.isPending)
             .toList();
         final activeRentals = state.ownerBookingRequests
-            .where((b) => b.status == 'Accepted')
+            .where((b) => b.status == RentalStatus.accepted)
             .toList();
         return ListView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 90),

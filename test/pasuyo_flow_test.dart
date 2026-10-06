@@ -4,6 +4,7 @@ import 'package:surgo/data/db_service.dart';
 import 'package:surgo/services/fee_calculator.dart';
 import 'package:surgo/services/money.dart';
 import 'package:surgo/state/app_state.dart';
+import 'package:surgo/state/pasuyo_status.dart';
 
 /// Exercises the errand lifecycle end to end: claim → advance → paid, plus the
 /// three ways a claim can be refused and the cancelled/rated terminal states.
@@ -90,7 +91,7 @@ void main() {
 
       expect(refusal, isNull);
       expect(task.helperId, db.rider.id);
-      expect(task.status, 'accepted');
+      expect(task.status, PasuyoStatus.accepted);
       expect(state.activePasuyoTask, same(task));
       expect(state.hasActivePasuyoTask, isTrue);
       expect(state.activePasuyoBreakdown!.customerPays, task.budget);
@@ -112,7 +113,7 @@ void main() {
 
     test('refuses an errand that is no longer open', () {
       final task = openTask();
-      task.status = 'completed';
+      task.status = PasuyoStatus.delivered;
 
       final refusal = state.acceptPasuyoTask(task);
 
@@ -149,24 +150,50 @@ void main() {
   });
 
   group('status ladder', () {
-    test('runs accepted → purchasing → delivering → completed, then stops', () {
+    test('walks every state to delivered, then stops', () {
       final task = openTask();
-      expect(task.nextStatus, 'accepted');
+      expect(task.status, PasuyoStatus.available);
+      expect(task.nextStatus, PasuyoStatus.accepted);
 
       state.acceptPasuyoTask(task);
-      expect(task.nextStatus, 'purchasing');
+      expect(task.status, PasuyoStatus.accepted);
 
-      state.advancePasuyoTask(task);
-      expect(task.status, 'purchasing');
-      state.advancePasuyoTask(task);
-      expect(task.status, 'delivering');
-      state.advancePasuyoTask(task);
-      expect(task.status, 'completed');
+      // Each advance is driven by the enum, so the ladder is asserted against
+      // the flow itself rather than a hand-written copy of it.
+      var expected = PasuyoStatus.accepted;
+      while (expected.next != null) {
+        expected = expected.next!;
+        state.advancePasuyoTask(task);
+        expect(task.status, expected);
+      }
 
-      // Terminal: a completed errand must not roll forward on a stray tap.
+      expect(task.status, PasuyoStatus.delivered);
+      expect(task.isComplete, isTrue);
+
+      // Terminal: a delivered errand must not roll forward on a stray tap.
       expect(task.nextStatus, isNull);
       state.advancePasuyoTask(task);
-      expect(task.status, 'completed');
+      expect(task.status, PasuyoStatus.delivered);
+    });
+
+    test('pays out exactly once, on the final state', () {
+      final task = openTask();
+      state.acceptPasuyoTask(task);
+      final walletBefore = db.riderWalletBalance;
+      final earningsBefore = db.earningsToday;
+
+      var guard = 0;
+      while (task.nextStatus != null && guard++ < 20) {
+        state.advancePasuyoTask(task);
+      }
+
+      final walletAfter = db.riderWalletBalance;
+      expect(walletAfter, greaterThan(walletBefore));
+      expect(db.earningsToday, greaterThan(earningsBefore));
+
+      // A stray tap after delivery must not pay a second time.
+      state.advancePasuyoTask(task);
+      expect(db.riderWalletBalance, walletAfter);
     });
 
     test('a cancelled errand has no next step and reports step -1', () {
@@ -174,7 +201,7 @@ void main() {
       state.acceptPasuyoTask(task);
       state.cancelPasuyoTask(task);
 
-      expect(task.status, 'cancelled');
+      expect(task.status, PasuyoStatus.cancelled);
       expect(task.isCancelled, isTrue);
       expect(task.nextStatus, isNull);
       expect(task.stepIndex, -1, reason: 'must not fall back to step 1');
@@ -273,7 +300,8 @@ void main() {
 
       expect(task.rating, 4);
       expect(task.rated, isTrue);
-      expect(task.status, 'completed', reason: 'rating must not reopen the task');
+      expect(task.status, PasuyoStatus.delivered,
+          reason: 'rating must not reopen the task');
     });
 
     test('can overwrite a rating', () {
@@ -329,7 +357,7 @@ class _TaskState {
         rated: t.rated,
       );
 
-  final String status;
+  final PasuyoStatus status;
   final String? helperId;
   final int rating;
   final bool rated;

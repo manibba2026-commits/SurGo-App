@@ -268,24 +268,51 @@ class SbPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
-  const SbPrimaryButton({super.key, required this.label, this.onPressed, this.icon});
+
+  /// Fill colour for the button. Null uses the theme's primary, which is what
+  /// most callers want. Set it where a section has its own accent — the Pasuyo
+  /// actions are yellow, for instance, because the surrounding card is.
+  final Color? background;
+
+  /// Text and icon colour. Defaults to white unless [background] is one of the
+  /// light accents, where white would be unreadable.
+  final Color? foreground;
+
+  /// Text colour for a yellow/light fill: dark ink, not white.
+  final bool onAccent;
+
+  const SbPrimaryButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+    this.background,
+    this.foreground,
+    this.onAccent = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[Icon(icon, size: 17), const SizedBox(width: 8)],
-            Text(label),
-          ],
-        ),
+    final fg = foreground ??
+        (onAccent ? AppColors.onAccent : null);
+    final btn = ElevatedButton(
+      onPressed: onPressed,
+      style: background == null && fg == null
+          ? null
+          : ElevatedButton.styleFrom(
+              backgroundColor: background,
+              foregroundColor: fg,
+            ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 17), const SizedBox(width: 8)],
+          Text(label),
+        ],
       ),
     );
+    return SizedBox(width: double.infinity, child: btn);
   }
 }
 

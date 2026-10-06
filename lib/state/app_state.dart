@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../data/models.dart';
@@ -6,8 +6,22 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
+import 'pasuyo_status.dart';
+import 'rental_availability.dart';
+import 'rental_status.dart';
 
 enum UserMode { passenger, rider, vehicleOwner }
+
+/// First element matching [test], or null.
+///
+/// Written out rather than pulled from `package:collection`, which is not a
+/// declared dependency of this package.
+T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T) test) {
+  for (final item in items) {
+    if (test(item)) return item;
+  }
+  return null;
+}
 
 /// Why [AppState.acceptPasuyoTask] turned an errand down, or null when it was
 /// claimed.
@@ -25,7 +39,7 @@ enum PasuyoAcceptRefusal {
 }
 
 /// Everything here lives only in memory for the lifetime of the app run.
-/// There is no backend, no local storage, no network — purely a UI
+/// There is no backend, no local storage, no network â€” purely a UI
 /// simulation of what SurGo would look and feel like. Seed data is loaded
 /// once from the manifest-driven files under `assets/db/` via [DbService], and
 /// every "write" (accepting a ride, adding a saved place, topping up a
@@ -53,7 +67,7 @@ class AppState extends ChangeNotifier {
       // SurGo takes commission on delivered errands too, so they belong in the
       // platform revenue figures alongside rides and rentals.
       completedPasuyoBudgets: db.pasuyoTasks
-          .where((t) => t.status == 'completed')
+          .where((t) => t.status == PasuyoStatus.delivered)
           .map((t) => t.budget)
           .toList(),
     );
@@ -150,7 +164,7 @@ class AppState extends ChangeNotifier {
       RiderTripItem(
         id: 'rt${DateTime.now().microsecondsSinceEpoch}',
         passengerName: trip.passengerName,
-        route: '${trip.pickup} → ${trip.dropoff}',
+        route: '${trip.pickup} â†’ ${trip.dropoff}',
         date: 'Just now',
         fare: trip.fare,
         distanceKm: trip.distanceKm,
@@ -381,12 +395,44 @@ class AppState extends ChangeNotifier {
   // ---- rental booking simulation (passenger) ----
   // A passenger can only have one open rental request/active rental at a
   // time in this simulation. It starts as "Pending" the moment they tap
-  // Request Rental, shows up as a card on the Home tab, and — after a
-  // simulated 10s owner-approval delay — flips to "Active" in place.
+  // Request Rental, shows up as a card on the Home tab, and â€” after a
+  // simulated 10s owner-approval delay â€” flips to "Active" in place.
   RentalBooking? activeRentalBooking;
   Timer? _rentalApprovalTimer;
 
+  /// Every booking created this session, so availability checks can see the
+  /// days this account already holds. Not seeded: these only exist because
+  /// somebody asked for them.
+  final List<RentalBooking> _rentalBookings = [];
+
+  /// Every live booking this account holds, oldest first.
+  List<RentalBooking> get myRentalBookings =>
+      _rentalBookings.where((b) => !b.status.isTerminal).toList();
+
+  /// Whether [vehicleId] is free for [pickupDate]..[returnDate], and if not,
+  /// why.
+  ///
+  /// Checked before a request is created rather than after: accepting a
+  /// request that collides with an existing booking would leave two renters
+  /// believing they have the same vehicle.
+  RentalAvailability rentalAvailability({
+    required String vehicleId,
+    required DateTime pickupDate,
+    required DateTime returnDate,
+  }) => checkRentalAvailability(
+        vehicle: _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId),
+        pickupDate: pickupDate,
+        returnDate: returnDate,
+        bookings: _rentalBookings
+            .where((b) => b.vehicleId == vehicleId)
+            .toList(),
+        ownerRequests: db.ownerBookingRequests
+            .where((r) => r.vehicleId == vehicleId)
+            .toList(),
+      );
+
   RentalBooking requestRental({
+    required String? vehicleId,
     required String vehicleName,
     required String vehicleType,
     required IconData icon,
@@ -394,12 +440,15 @@ class AppState extends ChangeNotifier {
     required String ownerInitials,
     required String pickupLabel,
     required String returnLabel,
+    required DateTime pickupDate,
+    required DateTime returnDate,
     required int days,
     required int totalFare,
   }) {
     _rentalApprovalTimer?.cancel();
     final booking = RentalBooking(
       id: 'rb${DateTime.now().microsecondsSinceEpoch}',
+      vehicleId: vehicleId,
       vehicleName: vehicleName,
       vehicleType: vehicleType,
       icon: icon,
@@ -409,9 +458,12 @@ class AppState extends ChangeNotifier {
       returnLabel: returnLabel,
       days: days,
       totalFare: totalFare,
-      status: 'Pending',
+      pickupDate: pickupDate,
+      returnDate: returnDate,
+      status: RentalStatus.requested,
       requestedAt: DateTime.now(),
     );
+    _rentalBookings.add(booking);
     activeRentalBooking = booking;
     db.rentalHistory.insert(
       0,
@@ -427,29 +479,97 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
 
+    /// The simulated owner decides after a pause, standing in for the owner's tap
+    /// on Accept. The 10s is the simulation, not the business rule: the booking
+    /// sits in an explicit [RentalStatus] the whole time, so no screen has to
+    /// guess, and the timer walks the same guarded path a real accept would.
     _rentalApprovalTimer = Timer(const Duration(seconds: 10), () {
       if (activeRentalBooking?.id != booking.id) return; // cancelled/replaced
-      booking.status = 'Active';
-      final match = db.rentalHistory.where((r) => r.id == booking.id);
-      if (match.isNotEmpty) {
-        final i = db.rentalHistory.indexOf(match.first);
-        db.rentalHistory[i] = RentalHistoryItem(
-          id: booking.id,
-          vehicleName: vehicleName,
-          ownerName: ownerName,
-          startDate: pickupLabel,
-          endDate: returnLabel,
-          totalFare: totalFare,
-          status: 'Active',
-        );
-      }
-      notifyListeners();
+      // Guarded, not assigned: if the booking was cancelled or already moved
+      // on, the advance is refused and the timer does nothing.
+      if (!booking.advanceTo(RentalStatus.awaitingOwner)) return;
+      acceptRentalRequest();
     });
     return booking;
   }
 
+  /// Mirrors a booking's state onto its history row so the two cannot drift.
+  void _syncRentalHistoryStatus(RentalBooking booking, String status) {
+    final i = db.rentalHistory.indexWhere((r) => r.id == booking.id);
+    if (i < 0) return;
+    final existing = db.rentalHistory[i];
+    db.rentalHistory[i] = RentalHistoryItem(
+      id: existing.id,
+      vehicleName: existing.vehicleName,
+      ownerName: existing.ownerName,
+      startDate: existing.startDate,
+      endDate: existing.endDate,
+      totalFare: existing.totalFare,
+      status: status,
+    );
+  }
+
+  /// Advances the live booking one step: requested â†’ awaiting owner â†’
+  /// accepted â†’ out with the customer â†’ returned.
+  ///
+  /// [active] is the caller's explicit "I am moving on" signal, so a screen
+  /// cannot advance a booking the user has not confirmed.
+  /// The renter sends the request on: requested → awaiting owner.
+  void sendRentalRequest() {
+    final booking = activeRentalBooking;
+    if (booking == null) return;
+    if (!booking.advanceTo(RentalStatus.awaitingOwner)) return;
+    notifyListeners();
+  }
+
+  /// The owner accepts: awaiting owner → accepted, and the listing comes off
+  /// the market so nobody else can book it.
+  void acceptRentalRequest() {
+    final booking = activeRentalBooking;
+    if (booking == null) return;
+    if (!booking.advanceTo(RentalStatus.accepted)) return;
+    final vehicle = _firstWhereOrNull(
+      db.ownerVehicles,
+      (v) => v.id == booking.vehicleId,
+    );
+    if (vehicle != null) vehicle.status = 'Rented';
+    notifyListeners();
+  }
+
+  /// Advances the live booking one step as the renter: accepted → out with the
+  /// customer, or out with the customer → returned.
+  ///
+  /// [pickup] is the caller's explicit "I am moving on" signal, so a screen
+  /// cannot advance a booking the user has not confirmed.
+  void advanceRentalBooking({required bool pickup}) {
+    final booking = activeRentalBooking;
+    if (booking == null) return;
+    final target = pickup ? RentalStatus.active : RentalStatus.returned;
+    if (!booking.advanceTo(target)) return;
+    // The vehicle is back on the market the moment it is returned, not when the
+    // booking is finally marked complete.
+    if (target == RentalStatus.returned) {
+      final vehicle = _firstWhereOrNull(
+        db.ownerVehicles,
+        (v) => v.id == booking.vehicleId,
+      );
+      if (vehicle != null && vehicle.status == 'Rented') {
+        vehicle.status = 'Listed';
+      }
+    }
+    _syncRentalHistoryStatus(
+      booking,
+      target == RentalStatus.active ? 'Active' : 'Returned',
+    );
+    notifyListeners();
+  }
+
   void cancelRentalBooking() {
     _rentalApprovalTimer?.cancel();
+    final booking = activeRentalBooking;
+    if (booking != null && booking.cancel()) {
+      _syncRentalHistoryStatus(booking, 'Cancelled');
+    }
     activeRentalBooking = null;
     notifyListeners();
   }
@@ -460,21 +580,17 @@ class AppState extends ChangeNotifier {
   void completeActiveRental() {
     final booking = activeRentalBooking;
     if (booking == null) return;
+    // Only a returned vehicle settles. The renter's own "Return the vehicle"
+    // step puts the booking in [RentalStatus.returned]; this settles it. Both
+    // guards matter: without the first, completing straight from `accepted`
+    // would pay the owner for a rental that never came back, and without the
+    // second the history row could be rewritten for a booking that had already
+    // been settled.
+    if (!booking.advanceTo(RentalStatus.completed)) return;
+
     final breakdown =
         FeeCalculator.breakdownFor(ServiceType.rental, booking.totalFare);
-    final match = db.rentalHistory.where((r) => r.id == booking.id);
-    if (match.isNotEmpty) {
-      final i = db.rentalHistory.indexOf(match.first);
-      db.rentalHistory[i] = RentalHistoryItem(
-        id: booking.id,
-        vehicleName: booking.vehicleName,
-        ownerName: booking.ownerName,
-        startDate: booking.pickupLabel,
-        endDate: booking.returnLabel,
-        totalFare: booking.totalFare,
-        status: 'Completed',
-      );
-    }
+    _syncRentalHistoryStatus(booking, 'Completed');
     db.ownerWalletBalance += breakdown.providerGets;
     _creditOwnerEarnings(breakdown.providerGets);
     PlatformLedger.instance.record(ServiceType.rental, booking.totalFare);
@@ -566,7 +682,7 @@ class AppState extends ChangeNotifier {
       db.pasuyoTasks.where((t) => t.helperId == rider.id && t.isActive).toList();
 
   List<PasuyoTask> get completedPasuyoTasks => db.pasuyoTasks
-      .where((t) => t.status == 'completed' && t.helperId == rider.id)
+      .where((t) => t.status == PasuyoStatus.delivered && t.helperId == rider.id)
       .toList();
 
   /// Every task the signed-in customer posted, for the task tracker.
@@ -638,8 +754,12 @@ class AppState extends ChangeNotifier {
     if (isOwnCustomerTask(task)) return PasuyoAcceptRefusal.ownCustomer;
     if (hasActivePasuyoTask) return PasuyoAcceptRefusal.alreadyHasTask;
 
+    // Guarded, not assigned: only an available task may move to accepted, so a
+    // stale card cannot claim an errand another helper already took. The
+    // transition is attempted before helperId is set, so a refused accept
+    // leaves no trace of this helper on the task.
+    if (!task.advanceTo(PasuyoStatus.accepted)) return PasuyoAcceptRefusal.notOpen;
     task.helperId = rider.id;
-    task.status = 'accepted';
     activePasuyoTask = task;
     activePasuyoBreakdown =
         FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
@@ -647,13 +767,18 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Advances the active task to its next status: posted → accepted →
-  /// purchasing → delivering → completed.
+  /// Advances the active task one step along [PasuyoStatus]: available â†’
+  /// accepted â†’ going to pickup â†’ at pickup â†’ collected â†’ delivering â†’ arrived
+  /// â†’ delivered.
+  ///
+  /// The legal next status comes from the enum, so this cannot skip a step.
+  /// Payment is released exactly once, on reaching [PasuyoStatus.delivered],
+  /// which is the terminal state.
   void advancePasuyoTask(PasuyoTask task) {
     final next = task.nextStatus;
     if (next == null) return;
-    task.status = next;
-    if (next == 'completed') {
+    if (!task.advanceTo(next)) return;
+    if (next == PasuyoStatus.delivered) {
       final breakdown =
           FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
 
@@ -665,7 +790,7 @@ class AppState extends ChangeNotifier {
         WalletTransaction(
           id: 'rwt${DateTime.now().microsecondsSinceEpoch}',
           type: 'credit',
-          title: 'Pasuyo · ${task.title}',
+          title: 'Pasuyo Â· ${task.title}',
           amount: breakdown.providerGets,
           date: 'Just now',
           status: 'Completed',
@@ -680,8 +805,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Cancels the errand from wherever it is. A delivered errand is terminal and
+  /// cannot be cancelled, so money already released cannot be clawed back by
+  /// reopening the task.
   void cancelPasuyoTask(PasuyoTask task) {
-    task.status = 'cancelled';
+    if (!task.cancelTask()) return;
     if (activePasuyoTask == task) {
       activePasuyoTask = null;
       activePasuyoBreakdown = null;
@@ -699,7 +827,7 @@ class AppState extends ChangeNotifier {
   /// Adds [amount] to the rider's seeded earnings roll-ups.
   ///
   /// The earnings screen derives its breakdown from trips and tasks, so those
-  /// totals move on their own — but the "Earnings" tile on the rider home screen
+  /// totals move on their own â€” but the "Earnings" tile on the rider home screen
   /// reads `earningsToday/Week/Month`, which are plain seed fields. Crediting a
   /// completed job has to update them too, or the tile stays frozen at the
   /// seeded figure after the rider has already been paid.
@@ -757,7 +885,7 @@ class AppState extends ChangeNotifier {
       );
 
   /// Incentives and tips, from wallet entries explicitly tagged `kind: "bonus"`.
-  /// Zero until a bonus is seeded — kept as its own line so the earnings
+  /// Zero until a bonus is seeded â€” kept as its own line so the earnings
   /// breakdown has somewhere for promos to land later.
   int get bonusEarnings {
     var sum = 0;
@@ -808,10 +936,16 @@ class AppState extends ChangeNotifier {
   int get ownerEarningsMonth => db.ownerEarningsMonth;
 
   void respondToOwnerBooking(OwnerBookingRequest request, {required bool accepted}) {
-    request.status = accepted ? 'Accepted' : 'Declined';
+    request.status =
+        accepted ? RentalStatus.accepted : RentalStatus.declined;
     if (accepted) {
-      final vehicle = db.ownerVehicles.where((v) => v.name == request.vehicleName);
-      if (vehicle.isNotEmpty) vehicle.first.status = 'Rented';
+      // Prefer the request's own vehicleId. Matching on name instead would mark
+      // whichever same-named vehicle sorted first, which is how the wrong
+      // listing gets taken off the market.
+      final match = db.ownerVehicles.where((v) =>
+          v.id == request.vehicleId ||
+          (request.vehicleId == null && v.name == request.vehicleName));
+      if (match.isNotEmpty) match.first.status = 'Rented';
     }
     notifyListeners();
   }
