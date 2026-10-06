@@ -1,0 +1,253 @@
+{
+  "rider": {
+    "today": 124000,
+    "week": 682000,
+    "month": 2480000,
+    "daily": [
+      {
+        "day": "Mon",
+        "amount": 90000,
+        "date": "2026-09-29T18:00:00.000Z"
+      },
+      {
+        "day": "Tue",
+        "amount": 110000,
+        "date": "2026-09-30T18:00:00.000Z"
+      },
+      {
+        "day": "Wed",
+        "amount": 78000,
+        "date": "2026-10-01T18:00:00.000Z"
+      },
+      {
+        "day": "Thu",
+        "amount": 124000,
+        "date": "2026-10-02T18:00:00.000Z"
+      },
+      {
+        "day": "Fri",
+        "amount": 150000,
+        "date": "2026-10-03T18:00:00.000Z"
+      },
+      {
+        "day": "Sat",
+        "amount": 95000,
+        "date": "2026-10-04T18:00:00.000Z"
+      },
+      {
+        "day": "Sun",
+        "amount": 35000,
+        "date": "2026-10-05T18:00:00.000Z"
+      }
+    ],
+    "payoutHistory": [
+      {
+        "id": "po1",
+        "date": "Aug 27, 2026",
+        "amount": 185000,
+        "method": "GCash",
+        "status": "Completed",
+        "createdAt": "2026-08-27T00:00:00.000Z"
+      },
+      {
+        "id": "po2",
+        "date": "Aug 20, 2026",
+        "amount": 220000,
+        "method": "GCash",
+        "status": "Completed",
+        "createdAt": "2026-08-20T00:00:00.000Z"
+      },
+      {
+        "id": "po3",
+        "date": "Aug 13, 2026",
+        "amount": 160000,
+        "method": "Maya",
+        "status": "Completed",
+        "createdAt": "2026-08-13T00:00:00.000Z"
+      }
+    ],
+    "trips": [
+      {
+        "id": "rt1",
+        "passengerName": "Grace Ann Villaflor",
+        "route": "Purok 3, Mabua → Public Market, Bagong Lungsod",
+        "date": "Aug 29, 2026 · 7:40 AM",
+        "fare": 5500,
+        "distanceKm": 3.1,
+        "status": "Completed",
+        "rating": 5,
+        "completedAt": "2026-08-29T07:40:00.000Z"
+      },
+      {
+        "id": "rt2",
+        "passengerName": "Alex Marasigan",
+        "route": "Purok 3, San Isidro → SM Terminal, Bagong Lungsod",
+        "date": "Aug 29, 2026 · 7:05 AM",
+        "fare": 18000,
+        "distanceKm": 10.4,
+        "status": "Completed",
+        "rating": 5,
+        "completedAt": "2026-08-29T07:05:00.000Z"
+      },
+      {
+        "id": "rt3",
+        "passengerName": "Nena Villareal",
+        "route": "Purok 5, Telaje → Barangay Hall, Dagocdoc",
+        "date": "Aug 26, 2026 · 4:20 PM",
+        "fare": 9000,
+        "distanceKm": 5.6,
+        "status": "Completed",
+        "rating": 4,
+        "completedAt": "2026-08-26T16:20:00.000Z"
+      },
+      {
+        "id": "rt4",
+        "passengerName": "Marisol Cruz",
+        "route": "Purok 3, Bagong Lungsod → SM Terminal",
+        "date": "Aug 24, 2026 · 8:12 AM",
+        "fare": 3000,
+        "distanceKm": 2,
+        "status": "Cancelled",
+        "rating": 0,
+        "completedAt": "2026-08-24T08:12:00.000Z"
+      },
+      {
+        "id": "rt5",
+        "passengerName": "Grace Ann Villaflor",
+        "route": "Purok 4, Buenavista → Caraga State University",
+        "date": "Oct 1, 2026 · 10:00 AM",
+        "completedAt": "2026-10-01T10:00:00.000Z",
+        "fare": 4000,
+        "distanceKm": 4.9,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt6",
+        "passengerName": "Kd Sotto",
+        "route": "Purok 3, Mabuhay → Mambajao",
+        "date": "Sep 30, 2026 · 11:00 AM",
+        "completedAt": "2026-09-30T11:00:00.000Z",
+        "fare": 10000,
+        "distanceKm": 8.3,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt7",
+        "passengerName": "Rhea Puno",
+        "route": "Purok 2, Pandanon → SurGo Terminal",
+        "date": "Sep 29, 2026 · 2:00 PM",
+        "completedAt": "2026-09-29T14:00:00.000Z",
+        "fare": 9000,
+        "distanceKm": 1.3,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt8",
+        "passengerName": "Rhea Puno",
+        "route": "Purok 3, Maticdum → SM Terminal",
+        "date": "Sep 28, 2026 · 5:00 PM",
+        "completedAt": "2026-09-28T17:00:00.000Z",
+        "fare": 16000,
+        "distanceKm": 4,
+        "status": "Completed",
+        "rating": 5
+      },
+      {
+        "id": "rt9",
+        "passengerName": "Jomar Lim",
+        "route": "Purok 4, Mabua → Mercy Hospital",
+        "date": "Sep 27, 2026 · 4:00 PM",
+        "completedAt": "2026-09-27T16:00:00.000Z",
+        "fare": 5000,
+        "distanceKm": 2.8,
+        "status": "Completed",
+        "rating": 5
+      },
+      {
+        "id": "rt10",
+        "passengerName": "Kd Sotto",
+        "route": "Purok 1, San Antonio → Chowking",
+        "date": "Sep 26, 2026 · 8:00 AM",
+        "completedAt": "2026-09-26T08:00:00.000Z",
+        "fare": 7000,
+        "distanceKm": 3.5,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt11",
+        "passengerName": "Grace Ann Villaflor",
+        "route": "Purok 2, San Isidro → Tandag Port",
+        "date": "Sep 25, 2026 · 4:00 PM",
+        "completedAt": "2026-09-25T16:00:00.000Z",
+        "fare": 13000,
+        "distanceKm": 3.3,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt12",
+        "passengerName": "Kd Sotto",
+        "route": "Purok 3, Pandanon → SurGo Terminal",
+        "date": "Sep 24, 2026 · 1:00 PM",
+        "completedAt": "2026-09-24T13:00:00.000Z",
+        "fare": 19000,
+        "distanceKm": 2.2,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt13",
+        "passengerName": "Marisol Cruz",
+        "route": "Purok 3, Maticdum → Public Market",
+        "date": "Sep 23, 2026 · 11:00 AM",
+        "completedAt": "2026-09-23T11:00:00.000Z",
+        "fare": 14000,
+        "distanceKm": 9.2,
+        "status": "Completed",
+        "rating": 4
+      },
+      {
+        "id": "rt14",
+        "passengerName": "Kd Sotto",
+        "route": "Purok 2, Quezon → SurGo Terminal",
+        "date": "Oct 5, 2026 · 4:00 PM",
+        "completedAt": "2026-10-05T16:00:00.000Z",
+        "fare": 8000,
+        "distanceKm": 11.4,
+        "status": "Completed",
+        "rating": 5
+      },
+      {
+        "id": "rt15",
+        "passengerName": "Grace Ann Villaflor",
+        "route": "Purok 1, Pandanon → Caraga State University",
+        "date": "Oct 4, 2026 · 12:00 PM",
+        "completedAt": "2026-10-04T12:00:00.000Z",
+        "fare": 13000,
+        "distanceKm": 11.5,
+        "status": "Completed",
+        "rating": 5
+      },
+      {
+        "id": "rt16",
+        "passengerName": "Kd Sotto",
+        "route": "Purok 4, Buenavista → Tandag Public Hall",
+        "date": "Oct 3, 2026 · 11:00 AM",
+        "completedAt": "2026-10-03T11:00:00.000Z",
+        "fare": 11000,
+        "distanceKm": 1.9,
+        "status": "Completed",
+        "rating": 4
+      }
+    ]
+  },
+  "owner": {
+    "today": 0,
+    "week": 245000,
+    "month": 1520000
+  }
+}

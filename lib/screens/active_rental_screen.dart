@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
 import '../data/db_models.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -224,7 +225,7 @@ class ActiveRentalScreen extends StatelessWidget {
                                       style: const TextStyle(
                                           color: AppColors.muted,
                                           fontSize: 12)),
-                                  Text('₱$totalFare',
+                                  Text(Money.format(totalFare),
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           color: AppColors.primaryLight,

@@ -185,6 +185,17 @@ class PasuyoTaskScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+              // Reporting stays available after delivery: a problem with the
+              // errand often only shows up once the goods have arrived, so
+              // hiding this behind the in-progress state left completed tasks
+              // with no way to raise an issue at all.
+              if (task.isComplete && task.rated)
+                SbOutlineButton(
+                  label: 'Report issue',
+                  icon: Icons.flag_outlined,
+                  block: true,
+                  onPressed: () => _report(context, task),
+                ),
               if (task.isCancelled)
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
@@ -251,10 +262,10 @@ class PasuyoTaskScreen extends StatelessWidget {
             const SizedBox(height: 10),
             SbPrimaryButton(
               label: 'Submit $stars-star rating',
-              onPressed: () {
-                state.ratePasuyoTask(task, stars);
-                Navigator.pop(ctx);
-              },
+              // No Navigator.pop here: this prompt is inline, not a sheet, so
+              // popping would close the whole task screen and throw away the
+              // receipt. Recording the rating rebuilds the card instead.
+              onPressed: () => state.ratePasuyoTask(task, stars),
             ),
           ],
         ),

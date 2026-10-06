@@ -1,18 +1,36 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/fee_calculator.dart';
+import '../services/money.dart';
 
 enum UserMode { passenger, rider, vehicleOwner }
+
+/// Why [AppState.acceptPasuyoTask] turned an errand down, or null when it was
+/// claimed.
+enum PasuyoAcceptRefusal {
+  /// Someone else already claimed it, or it was cancelled/completed.
+  notOpen,
+
+  /// This helper already has an errand in progress. Accepting a second one
+  /// would overwrite the active errand and strand the first one, which the
+  /// helper could then no longer reach or progress.
+  alreadyHasTask,
+
+  /// The errand belongs to the same account trying to accept it.
+  ownCustomer,
+}
 
 /// Everything here lives only in memory for the lifetime of the app run.
 /// There is no backend, no local storage, no network — purely a UI
 /// simulation of what SurGo would look and feel like. Seed data is loaded
-/// once from assets/db/mock_database.json via DbService, and every "write"
-/// (accepting a ride, adding a saved place, topping up a wallet, etc.) just
-/// mutates these in-memory lists and calls notifyListeners().
+/// once from the manifest-driven files under `assets/db/` via [DbService], and
+/// every "write" (accepting a ride, adding a saved place, topping up a
+/// wallet, etc.) just mutates these in-memory lists and calls
+/// notifyListeners().
 class AppState extends ChangeNotifier {
   AppState._internal();
   static final AppState instance = AppState._internal();
@@ -31,6 +49,12 @@ class AppState extends ChangeNotifier {
       completedRentalTotals: db.rentalHistory
           .where((r) => r.status == 'Completed' || r.status == 'Active')
           .map((r) => r.totalFare)
+          .toList(),
+      // SurGo takes commission on delivered errands too, so they belong in the
+      // platform revenue figures alongside rides and rentals.
+      completedPasuyoBudgets: db.pasuyoTasks
+          .where((t) => t.status == 'completed')
+          .map((t) => t.budget)
           .toList(),
     );
     ready = true;
@@ -138,6 +162,8 @@ class AppState extends ChangeNotifier {
     // The rider is credited their net share only; SurGo's commission is
     // recorded on the ledger, never credited to the rider's wallet.
     db.riderWalletBalance += breakdown.providerGets;
+    // ...and the home tile reads the roll-ups, so they have to move with it.
+    _creditRiderEarnings(breakdown.providerGets);
     PlatformLedger.instance.record(ServiceType.ride, trip.fare);
 
     lastRideBreakdown = breakdown;
@@ -450,6 +476,7 @@ class AppState extends ChangeNotifier {
       );
     }
     db.ownerWalletBalance += breakdown.providerGets;
+    _creditOwnerEarnings(breakdown.providerGets);
     PlatformLedger.instance.record(ServiceType.rental, booking.totalFare);
     lastRentalBreakdown = breakdown;
     activeRentalBooking = null;
@@ -595,15 +622,29 @@ class AppState extends ChangeNotifier {
     return task;
   }
 
-  /// A helper claims an open task.
-  void acceptPasuyoTask(PasuyoTask task) {
-    if (!task.isOpen) return;
+  /// True while this helper still owes a delivery. [activePasuyoTask] is a
+  /// single slot, so this also gates taking on more work.
+  bool get hasActivePasuyoTask =>
+      activePasuyoTask != null && activePasuyoTask!.isActive;
+
+  /// True when the errand was posted by the account trying to accept it. One
+  /// person being both customer and helper on the same errand is always a data
+  /// mistake, so it is refused rather than rendered.
+  bool isOwnCustomerTask(PasuyoTask task) => task.customerId == rider.id;
+
+  /// Why [acceptPasuyoTask] turned an errand down, or null when it was claimed.
+  PasuyoAcceptRefusal? acceptPasuyoTask(PasuyoTask task) {
+    if (!task.isOpen) return PasuyoAcceptRefusal.notOpen;
+    if (isOwnCustomerTask(task)) return PasuyoAcceptRefusal.ownCustomer;
+    if (hasActivePasuyoTask) return PasuyoAcceptRefusal.alreadyHasTask;
+
     task.helperId = rider.id;
     task.status = 'accepted';
     activePasuyoTask = task;
     activePasuyoBreakdown =
         FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
     notifyListeners();
+    return null;
   }
 
   /// Advances the active task to its next status: posted → accepted →
@@ -618,6 +659,7 @@ class AppState extends ChangeNotifier {
 
       // The helper is paid the budget less SurGo's commission.
       db.riderWalletBalance += breakdown.providerGets;
+      _creditRiderEarnings(breakdown.providerGets);
       db.riderTransactions.insert(
         0,
         WalletTransaction(
@@ -654,6 +696,43 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adds [amount] to the rider's seeded earnings roll-ups.
+  ///
+  /// The earnings screen derives its breakdown from trips and tasks, so those
+  /// totals move on their own — but the "Earnings" tile on the rider home screen
+  /// reads `earningsToday/Week/Month`, which are plain seed fields. Crediting a
+  /// completed job has to update them too, or the tile stays frozen at the
+  /// seeded figure after the rider has already been paid.
+  void _creditRiderEarnings(int amount) {
+    if (amount <= 0) return;
+    db.earningsToday += amount;
+    db.earningsWeek += amount;
+    db.earningsMonth += amount;
+
+    // Bump today's bucket in the 7-day chart, matched on the weekday label the
+    // seed uses. If no bucket matches (the seed is older than a week), the chart
+    // is simply left alone rather than inventing a day.
+    final now = DateTime.now();
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final today = weekdays[now.weekday - 1];
+    for (final bucket in db.dailyEarnings) {
+      if (bucket.day == today) {
+        bucket.amount += amount;
+        return;
+      }
+    }
+  }
+
+  /// Owner counterpart to [_creditRiderEarnings]. The revenue screen rebuilds
+  /// its rows from bookings, but the "Today" cards on the owner home and
+  /// earnings screens read the seeded `ownerEarnings*` fields directly.
+  void _creditOwnerEarnings(int amount) {
+    if (amount <= 0) return;
+    db.ownerEarningsToday += amount;
+    db.ownerEarningsWeek += amount;
+    db.ownerEarningsMonth += amount;
+  }
+
   // ---- derived rider earnings ----
   //
   // RiderTripItem.fare is always the GROSS amount the customer paid. Provider
@@ -677,12 +756,13 @@ class AppState extends ChangeNotifier {
             sum + FeeCalculator.providerShare(ServiceType.pasuyo, t.budget),
       );
 
-  /// Incentives and tips. Zero until seeded — kept as its own line so the
-  /// earnings breakdown has somewhere for promos to land later.
+  /// Incentives and tips, from wallet entries explicitly tagged `kind: "bonus"`.
+  /// Zero until a bonus is seeded — kept as its own line so the earnings
+  /// breakdown has somewhere for promos to land later.
   int get bonusEarnings {
     var sum = 0;
     for (final entry in db.riderTransactions) {
-      if (entry.type == 'credit' && entry.title.toLowerCase().contains('bonus')) {
+      if (entry.type == 'credit' && entry.kind == 'bonus') {
         sum += entry.amount;
       }
     }
@@ -691,14 +771,14 @@ class AppState extends ChangeNotifier {
 
   /// Money the rider can withdraw right now: everything credited to the
   /// wallet and not yet paid out.
-  String get availableEarningsLabel => '₱${db.riderWalletBalance}';
+  String get availableEarningsLabel => Money.format(db.riderWalletBalance);
 
   /// Earnings from the trip currently in progress, credited only on
   /// completion.
   int get pendingEarnings =>
       activeRide == null ? 0 : (activeRideBreakdown?.providerGets ?? 0);
 
-  String get pendingEarningsLabel => '₱$pendingEarnings';
+  String get pendingEarningsLabel => Money.format(pendingEarnings);
 
   // ---- account settings ----
   AccountSettingsData get passengerSettings => db.passengerSettings;

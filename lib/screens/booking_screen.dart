@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -79,7 +80,7 @@ class BookingScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                     SbPrimaryButton(
-                      label: 'Find Ride · ₱${state.selectedRide.fare}',
+                      label: 'Find Ride · ${Money.format(state.selectedRide.fare)}',
                       onPressed: () => Navigator.pushNamed(context, '/matching'),
                     ),
                   ],
@@ -116,7 +117,7 @@ class BookingScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              Text('₱${option.fare}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text(Money.format(option.fare), style: const TextStyle(fontWeight: FontWeight.w800)),
             ],
           ),
         ),

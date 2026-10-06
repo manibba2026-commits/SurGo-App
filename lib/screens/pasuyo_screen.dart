@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../services/fee_calculator.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -145,7 +146,7 @@ class _TaskRow extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('₱${task.budget}',
+                    Text(Money.format(task.budget),
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13)),
                     Text('fee ${b.surgoKeepsLabel}',

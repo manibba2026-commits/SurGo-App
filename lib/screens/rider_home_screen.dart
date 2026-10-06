@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../services/fee_calculator.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -119,7 +120,7 @@ class RiderHomeScreen extends StatelessWidget {
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: _statBox('₱${state.earningsToday}', 'Earnings')),
+                Expanded(child: _statBox(Money.format(state.earningsToday), 'Earnings')),
                 const SizedBox(width: 8),
                 Expanded(child: _statBox('${state.riderTrips.where((t) => t.status == 'Completed').length}', 'Trips')),
                 const SizedBox(width: 8),
@@ -233,6 +234,25 @@ class _NearbyPasuyoCard extends StatelessWidget {
   final AppState state;
   const _NearbyPasuyoCard({required this.task, required this.state});
 
+  /// Claims the errand, or explains why it was refused.
+  ///
+  /// The guard lives in [AppState.acceptPasuyoTask] because there is one active
+  /// errand per helper; this only turns the refusal into something readable.
+  void _accept(BuildContext context) {
+    final refusal = state.acceptPasuyoTask(task);
+    if (refusal == null) return;
+    final message = switch (refusal) {
+      PasuyoAcceptRefusal.notOpen => 'That errand is no longer available.',
+      PasuyoAcceptRefusal.alreadyHasTask =>
+        'Finish your current errand before taking another one.',
+      PasuyoAcceptRefusal.ownCustomer =>
+        'You cannot run an errand you posted yourself.',
+    };
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final b = FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
@@ -252,7 +272,7 @@ class _NearbyPasuyoCard extends StatelessWidget {
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 12.5)),
               ),
-              Text('₱${b.providerGets}',
+              Text(b.providerGetsLabel,
                   style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 14,
@@ -274,7 +294,9 @@ class _NearbyPasuyoCard extends StatelessWidget {
                 label: 'Accept',
                 icon: Icons.check_rounded,
                 block: false,
-                onPressed: () => state.acceptPasuyoTask(task),
+                onPressed: state.hasActivePasuyoTask
+                    ? null
+                    : () => _accept(context),
               ),
             ],
           ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/fee_calculator.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -55,11 +56,11 @@ class RevenueScreen extends StatelessWidget {
                                         fontSize: 12.5)),
                               ),
                               Text(
-                                  '${rate.toStringAsFixed(0)}% of ₱${volume[service] ?? 0}',
+                                  '${rate.toStringAsFixed(0)}% of ${Money.format(volume[service] ?? 0)}',
                                   style: const TextStyle(
                                       color: AppColors.muted, fontSize: 10.5)),
                               const SizedBox(width: 8),
-                              Text('₱$revenue',
+                              Text(Money.format(revenue),
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 13,
@@ -134,14 +135,14 @@ class RevenueScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     _row('Gross volume handled',
-                        '₱${ledger.totalVolume}', bold: true),
+                        Money.format(ledger.totalVolume), bold: true),
                     const SizedBox(height: 8),
                     _row('Paid to riders & helpers',
-                        '₱${ledger.totalPayouts}',
+                        Money.format(ledger.totalPayouts),
                         color: AppColors.secondaryLight),
                     const SizedBox(height: 8),
                     _row('SurGo net commission',
-                        '₱${ledger.totalRevenue}', color: AppColors.yellow),
+                        Money.format(ledger.totalRevenue), color: AppColors.yellow),
                     const SizedBox(height: 12),
                     const Divider(color: AppColors.border, height: 1),
                     const SizedBox(height: 12),
@@ -172,14 +173,14 @@ class RevenueScreen extends StatelessWidget {
           const Text('SurGo keeps',
               style: TextStyle(color: AppColors.muted, fontSize: 12)),
           const SizedBox(height: 6),
-          Text('₱$revenue',
+          Text(Money.format(revenue),
               style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 30,
                   color: AppColors.yellow)),
           const SizedBox(height: 4),
           Text(
-              '$count transactions · ₱$volume gross volume',
+              '$count transactions · ${Money.format(volume)} gross volume',
               style:
                   const TextStyle(color: AppColors.muted2, fontSize: 11)),
         ],

@@ -1,0 +1,23 @@
+{
+  "_note": "Commission rates and fare rules. FeeCalculator reads these at boot; they are the only place a rate is defined.",
+  "schemaVersion": 2,
+  "commissionBps": {
+    "ride": 1000,
+    "pasuyo": 1500,
+    "rental": 1000
+  },
+  "currency": {
+    "code": "PHP",
+    "symbol": "₱",
+    "minorUnits": 2
+  },
+  "fare": {
+    "baseFare": 5000,
+    "perKm": 125000,
+    "minimumFare": 5000
+  },
+  "payouts": {
+    "minWithdrawal": 30000,
+    "arrivalDays": 2
+  }
+}

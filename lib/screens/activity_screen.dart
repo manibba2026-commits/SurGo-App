@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -85,7 +86,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('₱${r.fare}',
+                  Text(Money.format(r.fare),
                       style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryLight)),
                   if (!cancelled)
                     Row(
@@ -133,7 +134,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               const SizedBox(height: 2),
               Text('${r.startDate} → ${r.endDate}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
               const SizedBox(height: 8),
-              Text('₱${r.totalFare} total',
+              Text('${Money.format(r.totalFare)} total',
                   style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryLight)),
             ],
           ),

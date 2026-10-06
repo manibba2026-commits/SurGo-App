@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 /// A vehicle option shown on the "choose a vehicle" step of booking.
+///
+/// [fare] is an integer number of centavos — `4500` is ₱45.00. See [Money].
 class RideOption {
   final String name;
   final IconData icon;
@@ -52,6 +54,8 @@ class RecentBooking {
 }
 
 /// A rentable vehicle listing.
+///
+/// [pricePerDay] and [depositFee] are integer centavos — `90000` is ₱900.00.
 class RentalVehicle {
   final String name;
   final String type;
@@ -116,6 +120,9 @@ class RentalBooking {
 }
 
 /// Static/mock seed data for the whole simulation.
+///
+/// Every amount here is integer centavos. These lists are `const`, so they
+/// carry literals rather than `Money.pesos(...)`, which cannot be const.
 class MockData {
   MockData._();
 
@@ -132,14 +139,14 @@ class MockData {
       icon: Icons.electric_rickshaw,
       etaLabel: '2 min away',
       capacityLabel: 'Fits 2',
-      fare: 45,
+      fare: 4500,
     ),
     RideOption(
       name: 'Motorcycle',
       icon: Icons.two_wheeler,
       etaLabel: '1 min away',
       capacityLabel: 'Fits 1',
-      fare: 30,
+      fare: 3000,
     ),
   ];
 
@@ -155,14 +162,14 @@ class MockData {
   static const List<RecentBooking> recentBookings = [
     RecentBooking(
       route: 'Poblacion → SM Terminal',
-      subtitle: 'Yesterday, 6:40 PM · ₱65',
-      fare: 65,
+      subtitle: 'Yesterday, 6:40 PM · ₱65.00',
+      fare: 6500,
       status: 'Done',
     ),
     RecentBooking(
       route: 'Purok 5 → Barangay Hall',
-      subtitle: 'Aug 24, 8:12 AM · ₱30',
-      fare: 30,
+      subtitle: 'Aug 24, 8:12 AM · ₱30.00',
+      fare: 3000,
       status: 'Done',
     ),
   ];
@@ -174,13 +181,13 @@ class MockData {
       icon: Icons.airport_shuttle,
       location: 'Poblacion',
       availability: 'Available today',
-      pricePerDay: 900,
+      pricePerDay: 90000,
       rating: 4.8,
       ownerName: 'Rico D.',
       ownerInitials: 'RD',
       description:
           '7-seater, manual, good for barangay fiesta hauling or a group day trip. Full tank required on return.',
-      depositFee: 500,
+      depositFee: 50000,
     ),
     RentalVehicle(
       name: 'Honda Click 125',
@@ -188,13 +195,13 @@ class MockData {
       icon: Icons.two_wheeler,
       location: 'Purok 5',
       availability: 'Available today',
-      pricePerDay: 350,
+      pricePerDay: 35000,
       rating: 4.9,
       ownerName: 'Alex Tan',
       ownerInitials: 'AT',
       description:
           'Fuel-efficient automatic scooter, easy to handle on barangay roads. Helmet included, full tank required on return.',
-      depositFee: 300,
+      depositFee: 30000,
     ),
     RentalVehicle(
       name: 'Toyota HiAce Van',
@@ -202,20 +209,20 @@ class MockData {
       icon: Icons.airport_shuttle,
       location: 'Downtown',
       availability: 'From tomorrow',
-      pricePerDay: 3200,
+      pricePerDay: 320000,
       rating: 4.7,
       ownerName: 'Nena V.',
       ownerInitials: 'NV',
       description:
           '15-seater van, air-conditioned, ideal for out-of-town trips or large group transport. Driver available on request.',
-      depositFee: 2000,
+      depositFee: 200000,
     ),
   ];
 
   static const riderName = 'Jr Derigay';
   static const riderInitials = 'JD';
   static const riderId = 'R001';
-  static const riderEarningsToday = 1240;
+  static const riderEarningsToday = 124000;
   static const riderTripsToday = 4;
   static const riderOnlineTime = '5h 20m';
 

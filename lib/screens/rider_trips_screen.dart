@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -58,7 +59,7 @@ class RiderTripsScreen extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('₱${t.fare}',
+                        Text(Money.format(t.fare),
                             style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.secondaryLight)),
                         if (!cancelled)
                           Row(

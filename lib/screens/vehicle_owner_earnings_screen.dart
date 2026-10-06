@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -23,11 +24,11 @@ class VehicleOwnerEarningsScreen extends StatelessWidget {
             if (embedded) const SbTabHeader(title: 'Earnings'),
             Row(
               children: [
-                Expanded(child: _statCard('₱${state.ownerEarningsToday}', 'Today')),
+                Expanded(child: _statCard(Money.format(state.ownerEarningsToday), 'Today')),
                 const SizedBox(width: 8),
-                Expanded(child: _statCard('₱${state.ownerEarningsWeek}', 'This Week')),
+                Expanded(child: _statCard(Money.format(state.ownerEarningsWeek), 'This Week')),
                 const SizedBox(width: 8),
-                Expanded(child: _statCard('₱${state.ownerEarningsMonth}', 'This Month')),
+                Expanded(child: _statCard(Money.format(state.ownerEarningsMonth), 'This Month')),
               ],
             ),
             const SizedBox(height: 20),
@@ -66,7 +67,7 @@ class VehicleOwnerEarningsScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Text('₱${b.totalFare}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                          Text(Money.format(b.totalFare), style: const TextStyle(fontWeight: FontWeight.w800)),
                         ],
                       ),
                     ),

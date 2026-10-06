@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
+import '../services/money.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
@@ -35,7 +36,7 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
               details: [
                 MapEntry('Vehicle', r.vehicleModel),
                 MapEntry('Rating', '⭐ ${r.rating.toStringAsFixed(1)}'),
-                MapEntry('Est. fare', '₱${r.estimatedFare}'),
+                MapEntry('Est. fare', Money.format(r.estimatedFare)),
                 MapEntry('Status', r.available ? 'Available' : 'Offline'),
               ],
               actionLabel: r.available ? 'Book a Ride' : null,
@@ -55,8 +56,8 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
                   '${_titleCase(v.vehicleType)} · ${v.purok}, ${v.barangay}',
               faded: !v.available,
               details: [
-                MapEntry('Per day', '₱${v.pricePerDay}'),
-                MapEntry('Per hour', '₱${v.pricePerHour}'),
+                MapEntry('Per day', Money.format(v.pricePerDay)),
+                MapEntry('Per hour', Money.format(v.pricePerHour)),
                 MapEntry('Rating', '⭐ ${v.rating.toStringAsFixed(1)}'),
                 MapEntry('Status', v.available ? 'Available' : 'Rented out'),
               ],

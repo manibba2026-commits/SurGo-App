@@ -24,5 +24,16 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/db/mock_database.json
+    # Seed data is split by domain; assets/db/manifest.json declares the load
+    # order and is the place to add a new domain file.
+    - assets/db/manifest.json
+    - assets/db/config.json
+    - assets/db/users.json
+    - assets/db/locations.json
+    - assets/db/vehicles.json
+    - assets/db/rides.json
+    - assets/db/rentals.json
+    - assets/db/pasuyo.json
+    - assets/db/wallets.json
+    - assets/db/earnings.json
     - assets/data/surgo_map_v1_mock_data.json

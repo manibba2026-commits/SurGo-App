@@ -1,0 +1,224 @@
+{
+  "_note": "People and everything scoped to a person: payment methods, contacts, favourites, notifications and per-role settings. The signed-in user is passenger P001, rider R001, owner VOW-77213 — see test/seed_ids_test.dart, which guards those links.",
+  "passenger": {
+    "id": "P001",
+    "name": "Jr Derigay",
+    "firstName": "Jr",
+    "initials": "JD",
+    "phone": "+63 917 512 4809",
+    "email": "jr.derigay@email.com",
+    "rating": 4.9,
+    "totalRides": 128,
+    "memberSince": 2024,
+    "verified": true
+  },
+  "rider": {
+    "id": "R001",
+    "name": "Jr Derigay",
+    "initials": "JD",
+    "phone": "+63 917 512 4809",
+    "email": "jr.derigay@email.com",
+    "rating": 4.95,
+    "totalTrips": 1240,
+    "memberSince": 2023,
+    "verified": true,
+    "vehicleType": "Tricycle",
+    "vehicleModel": "Kawasaki HD 175",
+    "vehiclePlate": "NGD 4821",
+    "documentsStatus": "Verified"
+  },
+  "vehicleOwner": {
+    "id": "VOW-77213",
+    "name": "Jr Derigay",
+    "initials": "JD",
+    "phone": "+63 917 512 4809",
+    "email": "jr.derigay@email.com",
+    "rating": 4.85,
+    "totalVehicles": 3,
+    "totalRentals": 46,
+    "memberSince": 2023,
+    "verified": true
+  },
+  "credentials": {
+    "_note": "Mock sign-in only, so the login and OTP screens verify against a seed instead of accepting anything. Not real authentication.",
+    "method": "fixed_otp",
+    "otp": "123456",
+    "accounts": [
+      {
+        "role": "passenger",
+        "userId": "P001",
+        "phone": "+63 917 512 4809"
+      },
+      {
+        "role": "rider",
+        "userId": "R001",
+        "phone": "+63 917 512 4809"
+      },
+      {
+        "role": "vehicleOwner",
+        "userId": "VOW-77213",
+        "phone": "+63 917 512 4809"
+      }
+    ]
+  },
+  "paymentMethods": [
+    {
+      "id": "pm1",
+      "type": "cash",
+      "label": "Cash",
+      "detail": "Pay the rider directly",
+      "isDefault": false
+    },
+    {
+      "id": "pm2",
+      "type": "gcash",
+      "label": "GCash",
+      "detail": "•••• 4809 · Marisol C.",
+      "isDefault": true
+    },
+    {
+      "id": "pm3",
+      "type": "maya",
+      "label": "Maya",
+      "detail": "•••• 2217 · Marisol C.",
+      "isDefault": false
+    }
+  ],
+  "emergencyContacts": [
+    {
+      "id": "ec1",
+      "name": "Rosalinda Cruz",
+      "relation": "Mother",
+      "phone": "+63 917 220 1183"
+    },
+    {
+      "id": "ec2",
+      "name": "Danilo Cruz",
+      "relation": "Father",
+      "phone": "+63 918 440 7762"
+    }
+  ],
+  "favorites": {
+    "riders": [
+      {
+        "id": "fr1",
+        "name": "Junel Ramos",
+        "initials": "JR",
+        "rating": 4.9,
+        "trips": 1240,
+        "vehicleType": "Tricycle",
+        "plate": "NGD 4821"
+      },
+      {
+        "id": "fr2",
+        "name": "Bebot Lim",
+        "initials": "BL",
+        "rating": 4.8,
+        "trips": 860,
+        "vehicleType": "Motorcycle",
+        "plate": "JKC 9021"
+      }
+    ],
+    "vehicles": [
+      {
+        "id": "fv1",
+        "name": "Honda Click 125",
+        "type": "Motorcycle",
+        "pricePerDay": 350,
+        "ownerName": "Alex Tan"
+      }
+    ]
+  },
+  "notifications": {
+    "passenger": [
+      {
+        "id": "n1",
+        "type": "promo",
+        "title": "₱30 off your next 3 rides",
+        "body": "Use code SURGO30 before it expires.",
+        "time": "2 min ago",
+        "read": false
+      },
+      {
+        "id": "n2",
+        "type": "ride",
+        "title": "Trip completed",
+        "body": "Your trip with Junel Ramos has ended. Rate your experience.",
+        "time": "1 hr ago",
+        "read": false
+      },
+      {
+        "id": "n3",
+        "type": "payment",
+        "title": "Payment received",
+        "body": "₱65 was deducted for your Poblacion → SM Terminal ride.",
+        "time": "Yesterday",
+        "read": true
+      },
+      {
+        "id": "n4",
+        "type": "system",
+        "title": "Welcome to SurGo",
+        "body": "Thanks for joining! Complete your profile to get started.",
+        "time": "3 days ago",
+        "read": true
+      },
+      {
+        "id": "n5",
+        "type": "safety",
+        "title": "Safety tip",
+        "body": "Always confirm the plate number before boarding.",
+        "time": "5 days ago",
+        "read": true
+      }
+    ],
+    "rider": [
+      {
+        "id": "rn1",
+        "type": "ride",
+        "title": "New ride request nearby",
+        "body": "A passenger 3.1 km away is looking for a tricycle.",
+        "time": "5 min ago",
+        "read": false
+      },
+      {
+        "id": "rn2",
+        "type": "payment",
+        "title": "Payout sent",
+        "body": "₱1,850 was sent to your GCash account.",
+        "time": "3 hr ago",
+        "read": false
+      },
+      {
+        "id": "rn3",
+        "type": "system",
+        "title": "Document reminder",
+        "body": "Your OR/CR will expire in 30 days. Please renew and re-upload.",
+        "time": "1 day ago",
+        "read": true
+      },
+      {
+        "id": "rn4",
+        "type": "rating",
+        "title": "New 5-star rating",
+        "body": "Grace rated your trip 5 stars: \"Sobrang bait, ligtas magmaneho!\"",
+        "time": "2 days ago",
+        "read": true
+      }
+    ]
+  },
+  "accountSettings": {
+    "passenger": {
+      "pushNotifications": true,
+      "smsAlerts": true,
+      "lowDataMode": false,
+      "language": "English"
+    },
+    "rider": {
+      "pushNotifications": true,
+      "autoAcceptNearby": false,
+      "lowDataMode": false,
+      "language": "English"
+    }
+  }
+}

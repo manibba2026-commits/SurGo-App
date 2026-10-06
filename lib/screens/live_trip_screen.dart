@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -136,7 +137,7 @@ class LiveTripScreen extends StatelessWidget {
             : '${passenger.barangay} · ${passenger.purok}',
         details: [
           MapEntry('Pick-up', activeRide?.pickup ?? passenger.barangay),
-          MapEntry('Fare', '₱${activeRide?.fare ?? 0}'),
+          MapEntry('Fare', Money.format(activeRide?.fare ?? 0)),
         ],
       ),
       SurgoMapMarker(

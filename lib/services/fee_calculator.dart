@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'money.dart';
 
 /// The service lines SurGo takes a commission on. Every transaction in the
 /// app must be priced through [FeeCalculator] so the "Customer pays / Provider
@@ -26,6 +27,8 @@ enum ServiceType {
 /// and [platformKeeps] is SurGo's commission. They always sum to
 /// [customerPays] — [surgoShare] is asserted in the constructor so a bad rate
 /// or a rounding path can never silently create or destroy money.
+///
+/// All three amounts are integer centavos; see [Money].
 @immutable
 class FeeBreakdown {
   final ServiceType service;
@@ -62,7 +65,11 @@ class FeeBreakdown {
   }
 
   /// Formats the split for a receipt row, e.g. "₱162.00".
-  String money(int amount) => '₱${amount.toStringAsFixed(2)}';
+  ///
+  /// Delegates to [Money.format] so every amount in the app renders the same
+  /// way. Screens should prefer [Money.format] directly rather than building a
+  /// peso sign by hand.
+  String money(int amount) => Money.format(amount);
 
   String get customerPaysLabel => money(customerPays);
   String get providerGetsLabel => money(providerGets);
@@ -77,27 +84,59 @@ class FeeBreakdown {
 ///
 /// Rates are in basis points so the arithmetic stays in integers and no
 /// floating-point rounding creeps into a peso amount. 1000 bps = 10%.
+///
+/// Basis-point math is independent of the currency unit, so every [gross]
+/// below is an integer number of centavos (see [Money]) and the split is
+/// correct at either scale: 10% of `18000` and 10% of `180` both round the
+/// same way once the unit is applied.
+/// Commission rates, loaded from `assets/db/config.json` at startup.
+///
+/// These are mutable statics rather than constants so the seed file can be the
+/// single place a rate is defined, while the defaults below keep
+/// [FeeCalculator] usable in tests and before `DbService` has loaded.
+class FeeRates {
+  FeeRates._();
+
+  static int rideBps = 1000; // 10%
+  static int pasuyoBps = 1500; // 15%
+  static int rentalBps = 1000; // 10%
+
+  static int bpsFor(ServiceType service) {
+    switch (service) {
+      case ServiceType.ride:
+        return rideBps;
+      case ServiceType.pasuyo:
+        return pasuyoBps;
+      case ServiceType.rental:
+        return rentalBps;
+    }
+  }
+
+  /// Applies the rates from the seed, ignoring non-positive values so a
+  /// missing or malformed field falls back to the default above.
+  static void configure({
+    required int ride,
+    required int pasuyo,
+    required int rental,
+  }) {
+    if (ride > 0) rideBps = ride;
+    if (pasuyo > 0) pasuyoBps = pasuyo;
+    if (rental > 0) rentalBps = rental;
+  }
+}
+
 class FeeCalculator {
   FeeCalculator._();
 
-  static const int rideCommissionBps = 1000; // 10%
-  static const int pasuyoCommissionBps = 1500; // 15%
-  static const int rentalCommissionBps = 1000; // 10%
+  static int get rideCommissionBps => FeeRates.rideBps;
+  static int get pasuyoCommissionBps => FeeRates.pasuyoBps;
+  static int get rentalCommissionBps => FeeRates.rentalBps;
 
-  static const double rideCommissionPercent = 10;
-  static const double pasuyoCommissionPercent = 15;
-  static const double rentalCommissionPercent = 10;
+  static double get rideCommissionPercent => FeeRates.rideBps / 100;
+  static double get pasuyoCommissionPercent => FeeRates.pasuyoBps / 100;
+  static double get rentalCommissionPercent => FeeRates.rentalBps / 100;
 
-  static int commissionBpsFor(ServiceType service) {
-    switch (service) {
-      case ServiceType.ride:
-        return rideCommissionBps;
-      case ServiceType.pasuyo:
-        return pasuyoCommissionBps;
-      case ServiceType.rental:
-        return rentalCommissionBps;
-    }
-  }
+  static int commissionBpsFor(ServiceType service) => FeeRates.bpsFor(service);
 
   static double commissionPercentFor(ServiceType service) =>
       commissionBpsFor(service) / 100;
@@ -269,9 +308,14 @@ class PlatformLedger extends ChangeNotifier {
 
   /// Seeds the ledger from already-completed history so the revenue screen has
   /// something to show before the demo's first transaction. Idempotent.
+  ///
+  /// Every service that earns SurGo a cut has to be passed in here, otherwise
+  /// the revenue screen silently under-reports: a seeded Pasuyo history with no
+  /// matching argument shows P0 Pasuyo revenue while the rider was paid.
   void seedFromHistory({
     required List<int> completedRideFares,
     required List<int> completedRentalTotals,
+    List<int> completedPasuyoBudgets = const [],
   }) {
     if (_seeded) return;
     _seeded = true;
@@ -290,6 +334,9 @@ class PlatformLedger extends ChangeNotifier {
     }
     for (var i = 0; i < completedRentalTotals.length; i++) {
       addDays((i + 2) % 7, ServiceType.rental, completedRentalTotals[i]);
+    }
+    for (var i = 0; i < completedPasuyoBudgets.length; i++) {
+      addDays((i + 4) % 7, ServiceType.pasuyo, completedPasuyoBudgets[i]);
     }
   }
 

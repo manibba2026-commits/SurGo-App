@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import '../data/db_models.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -43,7 +45,7 @@ class WalletScreen extends StatelessWidget {
                     Text(isPayout ? 'Available for payout' : 'Wallet balance',
                         style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
-                    Text('₱$balance',
+                    Text(Money.format(balance),
                         style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 16),
                     Row(
@@ -118,7 +120,7 @@ class WalletScreen extends StatelessWidget {
             ),
           ),
           Text(
-            '${positive ? '+' : '-'}₱${t.amount}',
+            '${positive ? '+' : '-'}${Money.format(t.amount)}',
             style: TextStyle(
               fontWeight: FontWeight.w800,
               color: positive ? AppColors.secondaryLight : AppColors.text,
@@ -149,11 +151,11 @@ class WalletScreen extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: amounts
-                  .map((a) => SbChip('₱$a', onTap: () {
+                  .map((a) => SbChip(Money.format(a), onTap: () {
                         Navigator.pop(context);
                         state.topUpPassengerWallet(a, 'GCash');
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('₱$a added to your wallet (simulated)')),
+                          SnackBar(content: Text('${Money.format(a)} added to your wallet (simulated)')),
                         );
                       }))
                   .toList(),
@@ -180,14 +182,14 @@ class WalletScreen extends StatelessWidget {
           children: [
             const Text('Cash out to GCash', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             const SizedBox(height: 4),
-            Text('Available: ₱$balance', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+            Text('Available: ${Money.format(balance)}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: amounts
                   .where((a) => a > 0 && a <= balance)
-                  .map((a) => SbChip('₱$a', onTap: () {
+                  .map((a) => SbChip(Money.format(a), onTap: () {
                         Navigator.pop(context);
                         if (isOwner) {
                           state.requestOwnerPayout(a, 'GCash');
@@ -195,7 +197,7 @@ class WalletScreen extends StatelessWidget {
                           state.requestRiderPayout(a, 'GCash');
                         }
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Payout of ₱$a requested (simulated)')),
+                          SnackBar(content: Text('Payout of ${Money.format(a)} requested (simulated)')),
                         );
                       }))
                   .toList(),

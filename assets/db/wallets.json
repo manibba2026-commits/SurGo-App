@@ -1,0 +1,404 @@
+{
+  "_note": "Balances are centavos and must stay consistent with their transaction log.",
+  "roles": [
+    {
+      "role": "passenger",
+      "balance": 85000,
+      "transactions": [
+        {
+          "id": "wt1",
+          "type": "debit",
+          "title": "Ride · Poblacion → SM Terminal",
+          "amount": 6500,
+          "date": "Aug 28, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-28T00:00:00.000Z"
+        },
+        {
+          "id": "wt2",
+          "type": "topup",
+          "title": "Wallet Top-up via GCash",
+          "amount": 50000,
+          "date": "Aug 26, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-26T00:00:00.000Z"
+        },
+        {
+          "id": "wt3",
+          "type": "debit",
+          "title": "Ride · Purok 5 → Barangay Hall",
+          "amount": 3000,
+          "date": "Aug 24, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-24T00:00:00.000Z"
+        },
+        {
+          "id": "wt4",
+          "type": "debit",
+          "title": "Rental deposit · Honda Click 125",
+          "amount": 30000,
+          "date": "Aug 20, 2026",
+          "status": "Refunded",
+          "createdAt": "2026-08-20T00:00:00.000Z"
+        },
+        {
+          "id": "wt5",
+          "type": "topup",
+          "title": "Wallet Top-up via Maya",
+          "amount": 30000,
+          "date": "Aug 15, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-15T00:00:00.000Z"
+        },
+        {
+          "id": "pwt6",
+          "type": "debit",
+          "title": "Pasuyo budget",
+          "amount": 9000,
+          "date": "Sep 30, 2026 · 8:00 AM",
+          "createdAt": "2026-09-30T08:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt7",
+          "type": "debit",
+          "title": "Ride fare",
+          "amount": 28000,
+          "date": "Sep 29, 2026 · 11:00 AM",
+          "createdAt": "2026-09-29T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt8",
+          "type": "debit",
+          "title": "Pasuyo budget",
+          "amount": 13000,
+          "date": "Sep 28, 2026 · 10:00 AM",
+          "createdAt": "2026-09-28T10:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt9",
+          "type": "debit",
+          "title": "Ride fare",
+          "amount": 40000,
+          "date": "Sep 27, 2026 · 9:00 AM",
+          "createdAt": "2026-09-27T09:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt10",
+          "type": "debit",
+          "title": "Pasuyo budget",
+          "amount": 32000,
+          "date": "Sep 26, 2026 · 8:00 AM",
+          "createdAt": "2026-09-26T08:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt11",
+          "type": "debit",
+          "title": "Rental top-up",
+          "amount": 2000,
+          "date": "Sep 25, 2026 · 8:00 AM",
+          "createdAt": "2026-09-25T08:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt12",
+          "type": "debit",
+          "title": "Ride fare",
+          "amount": 31000,
+          "date": "Oct 5, 2026 · 12:00 PM",
+          "createdAt": "2026-10-05T12:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt13",
+          "type": "debit",
+          "title": "Ride fare",
+          "amount": 6000,
+          "date": "Oct 4, 2026 · 6:00 PM",
+          "createdAt": "2026-10-04T18:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "pwt14",
+          "type": "debit",
+          "title": "Rental top-up",
+          "amount": 29000,
+          "date": "Oct 3, 2026 · 7:00 PM",
+          "createdAt": "2026-10-03T19:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "role": "rider",
+      "balance": 312000,
+      "transactions": [
+        {
+          "id": "rwt1",
+          "type": "credit",
+          "title": "Trip earnings · Grace",
+          "amount": 5500,
+          "date": "Aug 29, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-29T00:00:00.000Z"
+        },
+        {
+          "id": "rwt2",
+          "type": "credit",
+          "title": "Trip earnings · Alex",
+          "amount": 18000,
+          "date": "Aug 29, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-29T00:00:00.000Z"
+        },
+        {
+          "id": "rwt3",
+          "type": "payout",
+          "title": "Payout to GCash",
+          "amount": 185000,
+          "date": "Aug 27, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-27T00:00:00.000Z"
+        },
+        {
+          "id": "rwt4",
+          "type": "credit",
+          "title": "Trip earnings · Nena V.",
+          "amount": 9000,
+          "date": "Aug 26, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-26T00:00:00.000Z"
+        },
+        {
+          "id": "rwt5",
+          "type": "credit",
+          "title": "Bonus incentive",
+          "amount": 17000,
+          "date": "Oct 1, 2026 · 8:00 PM",
+          "createdAt": "2026-10-01T20:00:00.000Z",
+          "status": "Completed",
+          "kind": "bonus"
+        },
+        {
+          "id": "rwt6",
+          "type": "credit",
+          "title": "Pasuyo earnings",
+          "amount": 32000,
+          "date": "Sep 30, 2026 · 8:00 AM",
+          "createdAt": "2026-09-30T08:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt7",
+          "type": "credit",
+          "title": "Pasuyo earnings",
+          "amount": 32000,
+          "date": "Sep 29, 2026 · 6:00 PM",
+          "createdAt": "2026-09-29T18:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt8",
+          "type": "debit",
+          "title": "Withdrawal to GCash",
+          "amount": 26000,
+          "date": "Sep 28, 2026 · 2:00 PM",
+          "createdAt": "2026-09-28T14:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt9",
+          "type": "credit",
+          "title": "Trip earnings",
+          "amount": 31000,
+          "date": "Sep 27, 2026 · 5:00 PM",
+          "createdAt": "2026-09-27T17:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt10",
+          "type": "credit",
+          "title": "Trip earnings",
+          "amount": 19000,
+          "date": "Sep 26, 2026 · 11:00 AM",
+          "createdAt": "2026-09-26T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt11",
+          "type": "credit",
+          "title": "Bonus incentive",
+          "amount": 8000,
+          "date": "Sep 25, 2026 · 1:00 PM",
+          "createdAt": "2026-09-25T13:00:00.000Z",
+          "status": "Completed",
+          "kind": "bonus"
+        },
+        {
+          "id": "rwt12",
+          "type": "debit",
+          "title": "Withdrawal to GCash",
+          "amount": 3000,
+          "date": "Oct 5, 2026 · 10:00 AM",
+          "createdAt": "2026-10-05T10:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt13",
+          "type": "credit",
+          "title": "Pasuyo earnings",
+          "amount": 16000,
+          "date": "Oct 4, 2026 · 12:00 PM",
+          "createdAt": "2026-10-04T12:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt14",
+          "type": "credit",
+          "title": "Bonus incentive",
+          "amount": 27000,
+          "date": "Oct 3, 2026 · 3:00 PM",
+          "createdAt": "2026-10-03T15:00:00.000Z",
+          "status": "Completed",
+          "kind": "bonus"
+        }
+      ]
+    },
+    {
+      "role": "owner",
+      "balance": 420000,
+      "transactions": [
+        {
+          "id": "owt1",
+          "type": "credit",
+          "title": "Rental payout · Suzuki Multicab",
+          "amount": 180000,
+          "date": "Aug 27, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-27T00:00:00.000Z"
+        },
+        {
+          "id": "owt2",
+          "type": "credit",
+          "title": "Rental payout · Honda Click 125",
+          "amount": 70000,
+          "date": "Aug 24, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-24T00:00:00.000Z"
+        },
+        {
+          "id": "owt3",
+          "type": "payout",
+          "title": "Payout to GCash",
+          "amount": 100000,
+          "date": "Aug 20, 2026",
+          "status": "Completed",
+          "createdAt": "2026-08-20T00:00:00.000Z"
+        },
+        {
+          "id": "owt4",
+          "type": "debit",
+          "title": "Vehicle maintenance",
+          "amount": 29000,
+          "date": "Oct 2, 2026 · 9:00 AM",
+          "createdAt": "2026-10-02T09:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt5",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 30000,
+          "date": "Oct 1, 2026 · 11:00 AM",
+          "createdAt": "2026-10-01T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt6",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 13000,
+          "date": "Sep 30, 2026 · 11:00 AM",
+          "createdAt": "2026-09-30T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt7",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 20000,
+          "date": "Sep 29, 2026 · 11:00 AM",
+          "createdAt": "2026-09-29T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt8",
+          "type": "debit",
+          "title": "Vehicle maintenance",
+          "amount": 35000,
+          "date": "Sep 28, 2026 · 2:00 PM",
+          "createdAt": "2026-09-28T14:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt9",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 15000,
+          "date": "Sep 27, 2026 · 9:00 AM",
+          "createdAt": "2026-09-27T09:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt10",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 22000,
+          "date": "Sep 26, 2026 · 6:00 PM",
+          "createdAt": "2026-09-26T18:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt11",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 5000,
+          "date": "Sep 25, 2026 · 5:00 PM",
+          "createdAt": "2026-09-25T17:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt12",
+          "type": "debit",
+          "title": "Vehicle maintenance",
+          "amount": 31000,
+          "date": "Oct 5, 2026 · 6:00 PM",
+          "createdAt": "2026-10-05T18:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt13",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 33000,
+          "date": "Oct 4, 2026 · 2:00 PM",
+          "createdAt": "2026-10-04T14:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "owt14",
+          "type": "credit",
+          "title": "Rental payout",
+          "amount": 25000,
+          "date": "Oct 3, 2026 · 9:00 AM",
+          "createdAt": "2026-10-03T09:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    }
+  ]
+}

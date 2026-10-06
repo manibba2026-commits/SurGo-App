@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../data/models.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -385,7 +386,7 @@ class _HomeContent extends StatelessWidget {
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700, fontSize: 12.5)),
                           const SizedBox(height: 2),
-                          Text('${b.date} · ₱${b.fare}',
+                          Text('${b.date} · ${Money.format(b.fare)}',
                               style: const TextStyle(
                                   color: AppColors.muted, fontSize: 11)),
                         ],

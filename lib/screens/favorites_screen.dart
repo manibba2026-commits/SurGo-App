@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -80,7 +81,7 @@ class FavoritesScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(v.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                                  Text('₱${v.pricePerDay}/day · Owned by ${v.ownerName}',
+                                  Text('${Money.format(v.pricePerDay)}/day · Owned by ${v.ownerName}',
                                       style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                                 ],
                               ),

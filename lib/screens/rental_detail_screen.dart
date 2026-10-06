@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/models.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -103,7 +104,7 @@ class RentalDetailScreen extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('₱${vehicle.pricePerDay}',
+                            Text(Money.format(vehicle.pricePerDay),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w800, color: AppColors.primaryLight, fontSize: 16)),
                             const Text('/ day', style: TextStyle(color: AppColors.muted, fontSize: 11)),
@@ -137,7 +138,7 @@ class RentalDetailScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '${vehicle.description} ₱${vehicle.depositFee} refundable deposit.',
+                      '${vehicle.description} ${Money.format(vehicle.depositFee)} refundable deposit.',
                       style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.7),
                     ),
                   ],
@@ -162,7 +163,7 @@ class RentalDetailScreen extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('₱$total', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text(Money.format(total), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                         const Text('2 days total', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
                       ],
                     ),

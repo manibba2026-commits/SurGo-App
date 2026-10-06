@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../services/money.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
@@ -34,7 +35,7 @@ class RiderMapScreen extends StatelessWidget {
           if (req != null) ...[
             MapEntry('Wants', _titleCase(req.preferredVehicleType)),
             MapEntry('Distance', '${req.estimatedDistanceKm.toStringAsFixed(1)} km'),
-            MapEntry('Est. fare', '₱${req.estimatedFare}'),
+            MapEntry('Est. fare', Money.format(req.estimatedFare)),
             MapEntry('Drop-off', '${req.destinationPurok}, ${req.destinationBarangay}'),
             MapEntry('Payment', _titleCase(req.paymentMethod)),
           ] else

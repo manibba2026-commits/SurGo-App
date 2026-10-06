@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../services/fee_calculator.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -30,7 +31,11 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
   String _dropoff = '';
   String _dropoffBarangay = '';
   String _dropoffPurok = '';
-  int _budget = 150;
+  int _budget = 15000;
+
+  /// Slider bounds in centavos: ₱50 to ₱800.
+  static const int minBudget = 5000;
+  static const int maxBudget = 80000;
   final List<String> _items = [];
 
   @override
@@ -241,19 +246,21 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
             const SizedBox(height: 18),
             Row(
               children: [
-                const Text('Helper budget',
+                const Text('Errand budget',
                     style:
                         TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
                 const Spacer(),
-                Text('₱$_budget',
+                Text(Money.format(_budget),
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 14)),
               ],
             ),
             Slider(
-              value: _budget.toDouble().clamp(50, 800),
-              min: 50,
-              max: 800,
+              // The slider works in centavos directly, so no pesos-to-centavos
+              // conversion happens on every drag frame.
+              value: _budget.toDouble().clamp(minBudget, maxBudget).toDouble(),
+              min: minBudget.toDouble(),
+              max: maxBudget.toDouble(),
               divisions: 30,
               activeColor: AppColors.secondary,
               inactiveColor: AppColors.panel3,

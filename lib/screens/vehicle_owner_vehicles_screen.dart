@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -123,7 +124,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
                 Text('${v.category} · ${v.type} · Plate ${v.plate}',
                     style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                 const SizedBox(height: 4),
-                Text('₱${v.pricePerDay}/day · ⭐ ${v.rating} · ${v.totalRentals} rentals',
+                Text('${Money.format(v.pricePerDay)}/day · ⭐ ${v.rating} · ${v.totalRentals} rentals',
                     style: const TextStyle(color: AppColors.muted, fontSize: 11)),
               ],
             ),
@@ -146,7 +147,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(v.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-            Text('Plate ${v.plate} · ₱${v.pricePerDay}/day', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+            Text('Plate ${v.plate} · ${Money.format(v.pricePerDay)}/day', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
             const SizedBox(height: 16),
             const Text('Set status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.muted2)),
             const SizedBox(height: 8),
@@ -271,7 +272,9 @@ class _AddVehicleFormState extends State<_AddVehicleForm> {
               icon: Icons.check,
               onPressed: () {
                 if (nameCtrl.text.trim().isEmpty || plateCtrl.text.trim().isEmpty) return;
-                final price = int.tryParse(priceCtrl.text.trim()) ?? 0;
+                // The field is labelled in pesos, so convert on the way in rather
+                // than storing the typed number as if it were centavos.
+                final price = Money.tryParsePesos(priceCtrl.text) ?? 0;
                 widget.state.addOwnedVehicle(OwnedVehicle(
                   id: 'ov${DateTime.now().microsecondsSinceEpoch}',
                   name: nameCtrl.text.trim(),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import 'common.dart';
@@ -76,7 +78,7 @@ class _SbRideRequestCardState extends State<SbRideRequestCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('₱${r.fare}',
+              Text(Money.format(r.fare),
                   style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: AppColors.primaryLight)),
@@ -292,7 +294,7 @@ class SbActiveRideBanner extends StatelessWidget {
                         fontSize: 11,
                         letterSpacing: 0.6)),
                 const Spacer(),
-                Text('₱${ride.fare}',
+                Text(Money.format(ride.fare),
                     style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w800,

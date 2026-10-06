@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/fee_calculator.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -30,7 +31,7 @@ class RiderEarningsScreen extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(child: _statCard(state.pendingEarningsLabel, 'Pending')),
                   const SizedBox(width: 8),
-                  Expanded(child: _statCard('₱${state.earningsWeek}', 'This Week')),
+                  Expanded(child: _statCard(Money.format(state.earningsWeek), 'This Week')),
                 ],
               ),
               const SizedBox(height: 18),
@@ -118,7 +119,7 @@ class RiderEarningsScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          Text('₱${p.amount}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                          Text(Money.format(p.amount), style: const TextStyle(fontWeight: FontWeight.w800)),
                         ],
                       ),
                     ),
@@ -165,7 +166,7 @@ class RiderEarningsScreen extends StatelessWidget {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700, fontSize: 12.5)),
                           ),
-                          Text('₱${row.$3}',
+                          Text(Money.format(row.$3),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w800, fontSize: 12.5)),
                         ],
@@ -197,7 +198,7 @@ class RiderEarningsScreen extends StatelessWidget {
                         style: TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 12.5)),
                   ),
-                  Text('₱$total',
+                  Text(Money.format(total),
                       style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 13,
@@ -231,14 +232,17 @@ class RiderEarningsScreen extends StatelessWidget {
               const Text('Withdraw earnings',
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
               const SizedBox(height: 4),
-              Text('Available ₱$available',
+              Text('Available ${Money.format(available)}',
                   style: const TextStyle(color: AppColors.muted, fontSize: 12)),
               const SizedBox(height: 16),
               TextField(
                 controller: controller,
-                keyboardType: TextInputType.number,
+                // The field shows pesos while [amount] is centavos, so decimals
+                // have to be typeable and the shortcuts below fill in peso text.
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (v) =>
-                    setSheet(() => amount = int.tryParse(v.trim()) ?? 0),
+                    setSheet(() => amount = Money.tryParsePesos(v) ?? 0),
                 style: const TextStyle(fontWeight: FontWeight.w700),
                 decoration: const InputDecoration(
                   prefixText: '₱',
@@ -252,7 +256,8 @@ class RiderEarningsScreen extends StatelessWidget {
                     child: SbOutlineButton(
                       label: 'All',
                       onPressed: () {
-                        controller.text = '$available';
+                        // Fill the peso text, keep the amount in centavos.
+                        controller.text = Money.format(available, symbol: false);
                         setSheet(() => amount = available);
                       },
                     ),
@@ -263,7 +268,7 @@ class RiderEarningsScreen extends StatelessWidget {
                       label: 'Half',
                       onPressed: () {
                         final half = available ~/ 2;
-                        controller.text = '$half';
+                        controller.text = Money.format(half, symbol: false);
                         setSheet(() => amount = half);
                       },
                     ),
@@ -272,7 +277,7 @@ class RiderEarningsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               SbPrimaryButton(
-                label: 'Withdraw ₱$amount',
+                label: 'Withdraw ${Money.format(amount)}',
                 icon: Icons.arrow_downward_rounded,
                 onPressed: amount <= 0 || amount > available
                     ? null

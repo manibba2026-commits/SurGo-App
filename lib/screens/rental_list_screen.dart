@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/models.dart';
+import '../services/money.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import 'rental_detail_screen.dart';
@@ -112,7 +113,7 @@ class _RentalListScreenState extends State<RentalListScreen> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('₱${v.pricePerDay}/day',
+                                  Text('${Money.format(v.pricePerDay)}/day',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           color: AppColors.primaryLight,

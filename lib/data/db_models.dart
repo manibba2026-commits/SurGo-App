@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
 
-/// Typed wrappers around the raw JSON records in assets/db/mock_database.json.
+/// Typed wrappers around the raw JSON records in the `assets/db/` seed files.
 /// Every model below has a `fromJson` factory so DbService can parse the
-/// "temporary database" file once at startup. Nothing here talks to a real
+/// "temporary database" once at startup. Nothing here talks to a real
 /// backend — this is purely an offline UI simulation.
+///
+/// Every amount in these files is an integer number of centavos.
+///
+/// Records that used to carry only a display string (e.g. "Aug 28, 2026 ·
+/// 6:40 PM") also carry a real ISO 8601 field. Keep the string for rendering
+/// and use the parsed `DateTime` for sorting, filtering or grouping — never
+/// try to sort by the display string.
+DateTime? parseIsoTimestamp(Object? raw) {
+  if (raw is! String || raw.isEmpty) return null;
+  return DateTime.tryParse(raw);
+}
 
 class NotificationItem {
   final String id;
@@ -57,6 +68,15 @@ class WalletTransaction {
   final String date;
   final String status;
 
+  /// Real posting time; null if the seed omitted it.
+  final DateTime? createdAt;
+
+  /// Explicit classification for entries that need totalling, e.g. `bonus`.
+  ///
+  /// Preferred over sniffing [title]: a title is copy the UI may reword, and
+  /// matching on it silently changes totals when the wording changes.
+  final String? kind;
+
   const WalletTransaction({
     required this.id,
     required this.type,
@@ -64,6 +84,8 @@ class WalletTransaction {
     required this.amount,
     required this.date,
     required this.status,
+    this.createdAt,
+    this.kind,
   });
 
   factory WalletTransaction.fromJson(Map<String, dynamic> j) =>
@@ -74,6 +96,8 @@ class WalletTransaction {
         amount: j['amount'],
         date: j['date'],
         status: j['status'],
+        createdAt: parseIsoTimestamp(j['createdAt']),
+        kind: j['kind'],
       );
 
   bool get isPositive => type == 'topup' || type == 'credit';
@@ -235,6 +259,9 @@ class RideHistoryItem {
   final String driverName;
   final int rating;
 
+  /// Real completion time; null if the seed omitted it. See [parseIsoTimestamp].
+  final DateTime? completedAt;
+
   const RideHistoryItem({
     required this.id,
     required this.route,
@@ -244,6 +271,7 @@ class RideHistoryItem {
     required this.vehicleType,
     required this.driverName,
     required this.rating,
+    this.completedAt,
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> j) => RideHistoryItem(
@@ -255,6 +283,7 @@ class RideHistoryItem {
         vehicleType: j['vehicleType'],
         driverName: j['driverName'],
         rating: j['rating'],
+        completedAt: parseIsoTimestamp(j['completedAt']),
       );
 }
 
@@ -267,6 +296,10 @@ class RentalHistoryItem {
   final int totalFare;
   final String status;
 
+  /// Real pickup/return times; null if the seed omitted them.
+  final DateTime? startAt;
+  final DateTime? endAt;
+
   const RentalHistoryItem({
     required this.id,
     required this.vehicleName,
@@ -275,6 +308,8 @@ class RentalHistoryItem {
     required this.endDate,
     required this.totalFare,
     required this.status,
+    this.startAt,
+    this.endAt,
   });
 
   factory RentalHistoryItem.fromJson(Map<String, dynamic> j) =>
@@ -286,6 +321,8 @@ class RentalHistoryItem {
         endDate: j['endDate'],
         totalFare: j['totalFare'],
         status: j['status'],
+        startAt: parseIsoTimestamp(j['startAt']),
+        endAt: parseIsoTimestamp(j['endAt']),
       );
 }
 
@@ -299,6 +336,9 @@ class RiderTripItem {
   final String status;
   final int rating;
 
+  /// Real completion time; null if the seed omitted it.
+  final DateTime? completedAt;
+
   const RiderTripItem({
     required this.id,
     required this.passengerName,
@@ -308,6 +348,7 @@ class RiderTripItem {
     required this.distanceKm,
     required this.status,
     required this.rating,
+    this.completedAt,
   });
 
   factory RiderTripItem.fromJson(Map<String, dynamic> j) => RiderTripItem(
@@ -319,16 +360,27 @@ class RiderTripItem {
         distanceKm: (j['distanceKm'] as num).toDouble(),
         status: j['status'],
         rating: j['rating'],
+        completedAt: parseIsoTimestamp(j['completedAt']),
       );
 }
 
 class DailyEarning {
   final String day;
-  final int amount;
-  const DailyEarning({required this.day, required this.amount});
 
-  factory DailyEarning.fromJson(Map<String, dynamic> j) =>
-      DailyEarning(day: j['day'], amount: j['amount']);
+  /// Mutable because completing a job credits today's bucket.
+  int amount;
+
+  /// Real date behind the [day] weekday label, so the 7-day chart can key on a
+  /// date instead of assuming a fixed weekday order. Null if the seed omitted it.
+  final DateTime? date;
+
+  DailyEarning({required this.day, required this.amount, this.date});
+
+  factory DailyEarning.fromJson(Map<String, dynamic> j) => DailyEarning(
+        day: j['day'],
+        amount: j['amount'],
+        date: parseIsoTimestamp(j['date']),
+      );
 }
 
 class PayoutItem {
@@ -338,12 +390,16 @@ class PayoutItem {
   final String method;
   final String status;
 
+  /// Real payout time; null if the seed omitted it.
+  final DateTime? createdAt;
+
   const PayoutItem({
     required this.id,
     required this.date,
     required this.amount,
     required this.method,
     required this.status,
+    this.createdAt,
   });
 
   factory PayoutItem.fromJson(Map<String, dynamic> j) => PayoutItem(
@@ -352,6 +408,7 @@ class PayoutItem {
         amount: j['amount'],
         method: j['method'],
         status: j['status'],
+        createdAt: parseIsoTimestamp(j['createdAt']),
       );
 }
 
@@ -490,10 +547,77 @@ class Barangay {
 
   const Barangay({required this.name, required this.puroks});
 
-  factory Barangay.fromJson(Map<String, dynamic> j) => Barangay(
+factory Barangay.fromJson(Map<String, dynamic> j) => Barangay(
         name: j['barangay'],
         puroks: (j['puroks'] as List).map((e) => e.toString()).toList(),
       );
+}
+
+/// A named landmark with coordinates, from `locations.json`.
+///
+/// This is the map's own list of places: it is what a pickup/dropoff picker can
+/// search, so [label] is what gets shown and [latitude]/[longitude] are what
+/// gets passed to the map. Distinct from [SavedPlace], which is a per-person
+/// favourite rather than part of the city's geography.
+class PlaceItem {
+  final String id;
+  final String label;
+  final String address;
+  final String barangay;
+  final String purok;
+  final double latitude;
+  final double longitude;
+
+  /// One of: mall, market, terminal, restaurant, hospital, civic, school,
+  /// port, bank. Drives the marker icon on the map.
+  final String category;
+
+  const PlaceItem({
+    required this.id,
+    required this.label,
+    required this.address,
+    required this.barangay,
+    required this.purok,
+    required this.latitude,
+    required this.longitude,
+    required this.category,
+  });
+
+  factory PlaceItem.fromJson(Map<String, dynamic> j) => PlaceItem(
+        id: j['id'],
+        label: j['label'],
+        address: j['address'] ?? '',
+        barangay: j['barangay'] ?? '',
+        purok: j['purok'] ?? '',
+        latitude: (j['latitude'] as num).toDouble(),
+        longitude: (j['longitude'] as num).toDouble(),
+        category: j['category'] ?? 'other',
+      );
+
+  IconData get icon {
+    switch (category) {
+      case 'mall':
+        return Icons.shopping_bag_outlined;
+      case 'market':
+        return Icons.storefront_outlined;
+      case 'terminal':
+        return Icons.directions_bus_outlined;
+      case 'restaurant':
+        return Icons.restaurant_outlined;
+      case 'hospital':
+        return Icons.local_hospital_outlined;
+      case 'civic':
+        return Icons.account_balance_outlined;
+      case 'school':
+        return Icons.school_outlined;
+      case 'port':
+        return Icons.sailing_outlined;
+      case 'bank':
+        return Icons.payments_outlined;
+      default:
+        return Icons.place_outlined;
+    }
+  }
 }
 
 /// A rich incoming ride request shown to a rider, with enough detail to
@@ -727,6 +851,10 @@ class OwnerBookingRequest {
   final double? vehicleLongitude;
   String status; // Pending, Accepted, Declined
 
+  /// Real pickup/return times; null if the seed omitted them.
+  final DateTime? startAt;
+  final DateTime? endAt;
+
   OwnerBookingRequest({
     required this.id,
     this.renterId,
@@ -749,6 +877,8 @@ class OwnerBookingRequest {
     this.vehicleLatitude,
     this.vehicleLongitude,
     required this.status,
+    this.startAt,
+    this.endAt,
   });
 
   factory OwnerBookingRequest.fromJson(Map<String, dynamic> j) =>
@@ -774,6 +904,8 @@ class OwnerBookingRequest {
         vehicleLatitude: (j['vehicleLatitude'] as num?)?.toDouble(),
         vehicleLongitude: (j['vehicleLongitude'] as num?)?.toDouble(),
         status: j['status'],
+        startAt: parseIsoTimestamp(j['startAt']),
+        endAt: parseIsoTimestamp(j['endAt']),
       );
 }
 
@@ -1135,7 +1267,14 @@ class PasuyoTask {
   final String dropoff;
   final int budget;
   final String note;
+
+  /// Display label for when the errand was posted, e.g. "Just now".
   final String requestedAt;
+
+  /// Real post time; null if the seed omitted it. Use this for ordering and
+  /// age checks rather than trying to parse [requestedAt].
+  final DateTime? requestedAtIso;
+
   String status;
   int rating;
   bool rated;
@@ -1156,6 +1295,7 @@ class PasuyoTask {
     required this.budget,
     this.note = '',
     this.requestedAt = 'Just now',
+    this.requestedAtIso,
     this.status = 'posted',
     this.rating = 0,
     this.rated = false,
@@ -1177,6 +1317,7 @@ class PasuyoTask {
         budget: j['budget'] ?? 0,
         note: j['note'] ?? '',
         requestedAt: j['requestedAt'] ?? 'Just now',
+        requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
         status: j['status'] ?? 'posted',
         rating: j['rating'] ?? 0,
         rated: j['rated'] ?? false,
@@ -1200,7 +1341,10 @@ class PasuyoTask {
     'completed': 'Delivered',
   };
 
-  int get stepIndex => flow.indexOf(status).clamp(0, flow.length - 1);
+  /// Position in [flow]. A cancelled errand never entered the flow, so it has no
+  /// step: `-1` is the honest answer and lets callers render "Cancelled" rather
+  /// than clamping to step 1 and implying the errand had started.
+int get stepIndex => isCancelled ? -1 : flow.indexOf(status).clamp(0, flow.length - 1);
 
   String get statusLabel => statusLabels[status] ?? status;
 
@@ -1220,6 +1364,10 @@ class PasuyoTask {
     return flow[i + 1];
   }
 
-  /// Progress label for the stepper, e.g. "Step 2 of 4".
-  String get stepLabel => 'Step ${stepIndex + 1} of ${flow.length}';
+  /// Progress label for the stepper, e.g. "Step 2 of 5".
+  ///
+  /// A cancelled errand has no step, so it says so instead of reporting
+  /// "Step 0 of 5" from the `-1` in [stepIndex].
+  String get stepLabel =>
+      isCancelled ? 'Cancelled' : 'Step ${stepIndex + 1} of ${flow.length}';
 }

@@ -1,0 +1,16 @@
+{
+  "_note": "Loaded in order by DbService. Adding a domain file means adding it here.",
+  "schemaVersion": 2,
+  "city": "Tandag City",
+  "files": [
+    "config.json",
+    "users.json",
+    "locations.json",
+    "vehicles.json",
+    "rides.json",
+    "rentals.json",
+    "pasuyo.json",
+    "wallets.json",
+    "earnings.json"
+  ]
+}

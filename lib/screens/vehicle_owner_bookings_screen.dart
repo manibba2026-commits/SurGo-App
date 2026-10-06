@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -54,7 +55,7 @@ class VehicleOwnerBookingsScreen extends StatelessWidget {
                           Text('${b.startDate} → ${b.endDate}',
                               style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
                           const SizedBox(height: 6),
-                          Text('₱${b.totalFare} total',
+                          Text('${Money.format(b.totalFare)} total',
                               style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryLight)),
                         ],
                       ),
