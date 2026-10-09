@@ -28,7 +28,7 @@ class NotificationsScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: state,
         builder: (context, _) {
-          final items = isRider ? state.riderNotifications : state.passengerNotifications;
+          final items = isRider ? state.earnerNotifications : state.passengerNotifications;
           if (items.isEmpty) {
             return const Center(
               child: Text('No notifications yet', style: TextStyle(color: AppColors.muted)),

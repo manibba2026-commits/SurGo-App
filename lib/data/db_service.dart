@@ -48,12 +48,12 @@ class DbService {
   late int ownerEarningsMonth;
 
   late List<NotificationItem> passengerNotifications;
-  late List<NotificationItem> riderNotifications;
+  late List<NotificationItem> earnerNotifications;
 
   late int passengerWalletBalance;
   late List<WalletTransaction> passengerTransactions;
-  late int riderWalletBalance;
-  late List<WalletTransaction> riderTransactions;
+  late int earnerWalletBalance;
+  late List<WalletTransaction> earnerTransactions;
   late int ownerWalletBalance;
   late List<WalletTransaction> ownerTransactions;
 
@@ -75,7 +75,7 @@ class DbService {
   late List<PasuyoTask> pasuyoTasks;
 
   late AccountSettingsData passengerSettings;
-  late AccountSettingsData riderSettings;
+  late AccountSettingsData earnerSettings;
 
   // ---- Map V1 (assets/data/surgo_map_v1_mock_data.json) ----
   late MapConfigData mapConfig;
@@ -104,10 +104,10 @@ class DbService {
     final notif = _map(users, 'notifications');
     passengerNotifications =
         _parseList(notif, 'passenger', NotificationItem.fromJson);
-    riderNotifications = _parseList(notif, 'rider', NotificationItem.fromJson);
+    earnerNotifications = _parseList(notif, 'earner', NotificationItem.fromJson);
     final settings = _map(users, 'accountSettings');
     passengerSettings = AccountSettingsData.fromJson(_map(settings, 'passenger'));
-    riderSettings = AccountSettingsData.fromJson(_map(settings, 'rider'));
+    earnerSettings = AccountSettingsData.fromJson(_map(settings, 'earner'));
 
     final locations = _expect(files, 'locations.json');
     barangays = _parseList(locations, 'barangays', Barangay.fromJson);
@@ -185,9 +185,10 @@ class DbService {
     passengerTransactions =
         _parseList(pw, 'transactions', WalletTransaction.fromJson);
 
-    final rw = roles['rider'] ?? const {};
-    riderWalletBalance = (rw['balance'] as num?)?.toInt() ?? 0;
-    riderTransactions = _parseList(rw, 'transactions', WalletTransaction.fromJson);
+    final ew = roles['earner'] ?? const {};
+    earnerWalletBalance = (ew['balance'] as num?)?.toInt() ?? 0;
+    earnerTransactions =
+        _parseList(ew, 'transactions', WalletTransaction.fromJson);
 
     final ow = roles['owner'] ?? const {};
     ownerWalletBalance = (ow['balance'] as num?)?.toInt() ?? 0;
@@ -195,13 +196,14 @@ class DbService {
   }
 
   void _readEarnings(Map<String, dynamic> file) {
-    final rider = _map(file, 'rider');
-    earningsToday = (rider['today'] as num?)?.toInt() ?? 0;
-    earningsWeek = (rider['week'] as num?)?.toInt() ?? 0;
-    earningsMonth = (rider['month'] as num?)?.toInt() ?? 0;
-    dailyEarnings = _parseList(rider, 'daily', DailyEarning.fromJson);
-    payoutHistory = _parseList(rider, 'payoutHistory', PayoutItem.fromJson);
-    riderTrips = _parseList(rider, 'trips', RiderTripItem.fromJson);
+    final earnerData = _map(file, 'earner');
+    earningsToday = (earnerData['today'] as num?)?.toInt() ?? 0;
+    earningsWeek = (earnerData['week'] as num?)?.toInt() ?? 0;
+    earningsMonth = (earnerData['month'] as num?)?.toInt() ?? 0;
+    dailyEarnings = _parseList(earnerData, 'daily', DailyEarning.fromJson);
+    payoutHistory =
+        _parseList(earnerData, 'payoutHistory', PayoutItem.fromJson);
+    riderTrips = _parseList(earnerData, 'trips', RiderTripItem.fromJson);
 
     final owner = _map(file, 'owner');
     ownerEarningsToday = (owner['today'] as num?)?.toInt() ?? 0;

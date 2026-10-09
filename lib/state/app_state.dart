@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../data/models.dart';
@@ -617,7 +617,7 @@ class AppState extends ChangeNotifier {
 
     // The rider is credited their net share only; SurGo's commission is
     // recorded on the ledger, never credited to the rider's wallet.
-    db.riderWalletBalance += breakdown.providerGets;
+    db.earnerWalletBalance += breakdown.providerGets;
     // ...and the home tile reads the roll-ups, so they have to move with it.
     _creditRiderEarnings(breakdown.providerGets);
     PlatformLedger.instance.record(ServiceType.ride, trip.fare);
@@ -661,12 +661,12 @@ class AppState extends ChangeNotifier {
 
   // ---- notifications ----
   List<NotificationItem> get passengerNotifications => db.passengerNotifications;
-  List<NotificationItem> get riderNotifications => db.riderNotifications;
+  List<NotificationItem> get earnerNotifications => db.earnerNotifications;
 
   int get unreadNotifications =>
       db.passengerNotifications.where((n) => !n.read).length;
   int get unreadRiderNotifications =>
-      db.riderNotifications.where((n) => !n.read).length;
+      db.earnerNotifications.where((n) => !n.read).length;
 
   void markNotificationRead(NotificationItem n) {
     n.read = true;
@@ -681,7 +681,7 @@ class AppState extends ChangeNotifier {
   }
 
   void clearRiderNotifications() {
-    for (final n in db.riderNotifications) {
+    for (final n in db.earnerNotifications) {
       n.read = true;
     }
     notifyListeners();
@@ -690,8 +690,8 @@ class AppState extends ChangeNotifier {
   // ---- wallet ----
   int get passengerWalletBalance => db.passengerWalletBalance;
   List<WalletTransaction> get passengerTransactions => db.passengerTransactions;
-  int get riderWalletBalance => db.riderWalletBalance;
-  List<WalletTransaction> get riderTransactions => db.riderTransactions;
+  int get earnerWalletBalance => db.earnerWalletBalance;
+  List<WalletTransaction> get earnerTransactions => db.earnerTransactions;
 
   void topUpPassengerWallet(int amount, String method) {
     db.passengerWalletBalance += amount;
@@ -713,8 +713,8 @@ class AppState extends ChangeNotifier {
   /// other way round depending on which side is short. Kept as a distinct step
   /// so the earnings screen's Withdraw button has real behavior behind it.
   void withdrawEarnings(int amount, String method) {
-    if (amount <= 0 || amount > db.riderWalletBalance) return;
-    db.riderWalletBalance -= amount;
+    if (amount <= 0 || amount > db.earnerWalletBalance) return;
+    db.earnerWalletBalance -= amount;
     db.payoutHistory.insert(
       0,
       PayoutItem(
@@ -725,7 +725,7 @@ class AppState extends ChangeNotifier {
         status: 'Processing',
       ),
     );
-    db.riderTransactions.insert(
+    db.earnerTransactions.insert(
       0,
       WalletTransaction(
         id: 'rwt${DateTime.now().microsecondsSinceEpoch}',
@@ -740,8 +740,8 @@ class AppState extends ChangeNotifier {
   }
 
   void requestRiderPayout(int amount, String method) {
-    if (amount > db.riderWalletBalance) return;
-    db.riderWalletBalance -= amount;
+    if (amount > db.earnerWalletBalance) return;
+    db.earnerWalletBalance -= amount;
     db.payoutHistory.insert(
       0,
       PayoutItem(
@@ -752,7 +752,7 @@ class AppState extends ChangeNotifier {
         status: 'Processing',
       ),
     );
-    db.riderTransactions.insert(
+    db.earnerTransactions.insert(
       0,
       WalletTransaction(
         id: 'rwt${DateTime.now().microsecondsSinceEpoch}',
@@ -1275,9 +1275,9 @@ class AppState extends ChangeNotifier {
           FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
 
       // The helper is paid the budget less SurGo's commission.
-      db.riderWalletBalance += breakdown.providerGets;
+      db.earnerWalletBalance += breakdown.providerGets;
       _creditRiderEarnings(breakdown.providerGets);
-      db.riderTransactions.insert(
+      db.earnerTransactions.insert(
         0,
         WalletTransaction(
           id: 'rwt${DateTime.now().microsecondsSinceEpoch}',
@@ -1381,7 +1381,7 @@ class AppState extends ChangeNotifier {
   /// breakdown has somewhere for promos to land later.
   int get bonusEarnings {
     var sum = 0;
-    for (final entry in db.riderTransactions) {
+    for (final entry in db.earnerTransactions) {
       if (entry.type == 'credit' && entry.kind == 'bonus') {
         sum += entry.amount;
       }
@@ -1391,7 +1391,7 @@ class AppState extends ChangeNotifier {
 
   /// Money the rider can withdraw right now: everything credited to the
   /// wallet and not yet paid out.
-  String get availableEarningsLabel => Money.format(db.riderWalletBalance);
+  String get availableEarningsLabel => Money.format(db.earnerWalletBalance);
 
   /// Earnings from the trip currently in progress, credited only on
   /// completion.
@@ -1402,7 +1402,7 @@ class AppState extends ChangeNotifier {
 
   // ---- account settings ----
   AccountSettingsData get passengerSettings => db.passengerSettings;
-  AccountSettingsData get riderSettings => db.riderSettings;
+  AccountSettingsData get earnerSettings => db.earnerSettings;
 
   void updatePassengerSettings(void Function(AccountSettingsData s) update) {
     update(db.passengerSettings);
@@ -1410,7 +1410,7 @@ class AppState extends ChangeNotifier {
   }
 
   void updateRiderSettings(void Function(AccountSettingsData s) update) {
-    update(db.riderSettings);
+    update(db.earnerSettings);
     notifyListeners();
   }
 

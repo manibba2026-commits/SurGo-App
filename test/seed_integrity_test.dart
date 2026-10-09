@@ -71,7 +71,7 @@ void main() {
         'rentals.json': {'history'},
         'pasuyo.json': {'tasks', '_note'},
         'wallets.json': {'roles', '_note'},
-        'earnings.json': {'rider', 'owner'},
+        'earnings.json': {'earner', 'owner'},
         'manifest.json': {'schemaVersion', 'city', 'files', '_note'},
       };
       files.forEach((name, body) {
@@ -109,13 +109,13 @@ void main() {
 
     test('wallet balances are non-negative integers', () {
       expect(db.passengerWalletBalance, greaterThanOrEqualTo(0));
-      expect(db.riderWalletBalance, greaterThanOrEqualTo(0));
+      expect(db.earnerWalletBalance, greaterThanOrEqualTo(0));
       expect(db.ownerWalletBalance, greaterThanOrEqualTo(0));
-      for (final role in ['passenger', 'rider', 'owner']) {
+      for (final role in ['passenger', 'earner', 'owner']) {
         final list = role == 'passenger'
             ? db.passengerTransactions
-            : role == 'rider'
-                ? db.riderTransactions
+            : role == 'earner'
+                ? db.earnerTransactions
                 : db.ownerTransactions;
         expect(list, isNotEmpty, reason: '$role has no transactions');
         for (final tx in list) {
@@ -226,7 +226,7 @@ void main() {
       for (final trip in db.riderTrips) {
         expect(trip.completedAt, isNotNull, reason: trip.id);
       }
-      for (final tx in db.riderTransactions) {
+      for (final tx in db.earnerTransactions) {
         expect(tx.createdAt, isNotNull, reason: tx.id);
       }
       for (final rental in db.rentalHistory) {

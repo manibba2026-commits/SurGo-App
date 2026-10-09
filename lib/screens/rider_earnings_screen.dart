@@ -72,7 +72,7 @@ class RiderEarningsScreen extends StatelessWidget {
               SbPrimaryButton(
                 label: 'Withdraw to Wallet',
                 icon: Icons.account_balance_wallet,
-                onPressed: state.db.riderWalletBalance <= 0
+                onPressed: state.db.earnerWalletBalance <= 0
                     ? null
                     : () => _showWithdrawSheet(context, state),
               ),
@@ -80,7 +80,7 @@ class RiderEarningsScreen extends StatelessWidget {
               SbOutlineButton(
                 label: 'Cash Out to GCash',
                 icon: Icons.payments_outlined,
-                onPressed: state.db.riderWalletBalance <= 0
+                onPressed: state.db.earnerWalletBalance <= 0
                     ? null
                     : () => Navigator.push(
                           context,
@@ -215,7 +215,7 @@ class RiderEarningsScreen extends StatelessWidget {
   /// Lets the rider pull some of their available earnings into their wallet.
   /// Amount defaults to everything available so the demo is one tap.
   void _showWithdrawSheet(BuildContext context, AppState state) {
-    final available = state.db.riderWalletBalance;
+    final available = state.db.earnerWalletBalance;
     var amount = available;
     final controller = TextEditingController(text: '$amount');
 

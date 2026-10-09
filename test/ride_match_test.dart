@@ -40,12 +40,12 @@ void main() {
     saved = db.rideRequests.map(_RequestState.of).toList();
     originalCount = db.rideRequests.length;
     tripCount = db.riderTrips.length;
-    wallet = db.riderWalletBalance;
+    wallet = db.earnerWalletBalance;
     today = db.earningsToday;
     week = db.earningsWeek;
     month = db.earningsMonth;
     daily = db.dailyEarnings.map((d) => d.amount).toList();
-    txCount = db.riderTransactions.length;
+    txCount = db.earnerTransactions.length;
     savedRequest = state.myRideRequest;
     savedProposal = state.rideProposal;
     savedActive = state.activeRide;
@@ -60,14 +60,14 @@ void main() {
       saved[i].applyTo(db.rideRequests[i]);
     }
     db.riderTrips.removeRange(tripCount, db.riderTrips.length);
-    db.riderWalletBalance = wallet;
+    db.earnerWalletBalance = wallet;
     db.earningsToday = today;
     db.earningsWeek = week;
     db.earningsMonth = month;
     for (var i = 0; i < db.dailyEarnings.length; i++) {
       db.dailyEarnings[i].amount = daily[i];
     }
-    db.riderTransactions.removeRange(txCount, db.riderTransactions.length);
+    db.earnerTransactions.removeRange(txCount, db.earnerTransactions.length);
     state.myRideRequest = savedRequest;
     state.rideProposal = savedProposal;
     state.activeRide = savedActive;
@@ -380,13 +380,13 @@ void main() {
       state.advanceRide();
       state.advanceRide();
       state.advanceRide();
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
 
       state.completeActiveRide();
 
       expect(request.status, RideStatus.completed);
       expect(state.activeRide, isNull);
-      expect(db.riderWalletBalance, greaterThan(walletBefore));
+      expect(db.earnerWalletBalance, greaterThan(walletBefore));
       expect(db.riderTrips.length, tripCount + 1);
       expect(request.status.allowsChat, isFalse);
     });
@@ -396,14 +396,14 @@ void main() {
       state.proposeRider(request);
       state.confirmRideMatch();
       state.riderAccepts(request);
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
 
       // Still accepted: no ride, no pay. This guard is the whole reason
       // completeActiveRide checks the status before crediting anything.
       state.completeActiveRide();
 
       expect(request.status, RideStatus.accepted);
-      expect(db.riderWalletBalance, walletBefore);
+      expect(db.earnerWalletBalance, walletBefore);
       expect(db.riderTrips.length, tripCount);
       expect(state.activeRide, same(request));
     });
@@ -414,25 +414,25 @@ void main() {
       state.advanceRide();
       state.advanceRide();
       state.completeActiveRide();
-      final walletAfter = db.riderWalletBalance;
+      final walletAfter = db.earnerWalletBalance;
 
       state.completeActiveRide();
 
-      expect(db.riderWalletBalance, walletAfter);
+      expect(db.earnerWalletBalance, walletAfter);
       expect(db.riderTrips.length, tripCount + 1);
     });
 
     test('cancelling mid-trip stops the payout', () {
       final request = acceptedTrip();
       state.advanceRide();
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
 
       state.cancelActiveRide();
 
       expect(request.status, RideStatus.cancelled);
       expect(state.activeRide, isNull);
       expect(state.canChatOnRide, isFalse);
-      expect(db.riderWalletBalance, walletBefore);
+      expect(db.earnerWalletBalance, walletBefore);
     });
   });
 

@@ -52,7 +52,7 @@
         "phone": "+63 917 512 4809"
       },
       {
-        "role": "rider",
+        "role": "earner",
         "userId": "R001",
         "phone": "+63 917 512 4809"
       },
@@ -174,7 +174,7 @@
         "read": true
       }
     ],
-    "rider": [
+    "earner": [
       {
         "id": "rn1",
         "type": "ride",
@@ -216,7 +216,7 @@
       "lowDataMode": false,
       "language": "English"
     },
-    "rider": {
+    "earner": {
       "pushNotifications": true,
       "autoAcceptNearby": false,
       "lowDataMode": false,

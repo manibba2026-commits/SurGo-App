@@ -21,9 +21,9 @@ class WalletScreen extends StatelessWidget {
       listenable: state,
       builder: (context, _) {
         final balance =
-            isOwner ? state.ownerWalletBalance : (isRider ? state.riderWalletBalance : state.passengerWalletBalance);
+            isOwner ? state.ownerWalletBalance : (isRider ? state.earnerWalletBalance : state.passengerWalletBalance);
         final txns =
-            isOwner ? state.ownerTransactions : (isRider ? state.riderTransactions : state.passengerTransactions);
+            isOwner ? state.ownerTransactions : (isRider ? state.earnerTransactions : state.passengerTransactions);
         final title = isOwner ? 'Owner Wallet' : (isRider ? 'Earnings Wallet' : 'Wallet');
         return ListView(
           padding: EdgeInsets.fromLTRB(18, embedded ? 0 : 14, 18, embedded ? 90 : 24),

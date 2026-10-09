@@ -51,7 +51,7 @@ void main() {
     savedRequests = List.of(db.rideRequests);
     savedTrips = List.of(db.riderTrips);
     savedRentalHistory = List.of(db.rentalHistory);
-    riderWallet = db.riderWalletBalance;
+    riderWallet = db.earnerWalletBalance;
     ownerWallet = db.ownerWalletBalance;
     today = db.earningsToday;
     week = db.earningsWeek;
@@ -78,7 +78,7 @@ void main() {
     db.rentalHistory
       ..clear()
       ..addAll(savedRentalHistory);
-    db.riderWalletBalance = riderWallet;
+    db.earnerWalletBalance = riderWallet;
     db.ownerWalletBalance = ownerWallet;
     db.earningsToday = today;
     db.earningsWeek = week;
@@ -175,7 +175,7 @@ void main() {
       acceptRide(request);
 
       expect(payout.providerGets, Money.pesos(162));
-      expect(db.riderWalletBalance, riderWallet + payout.providerGets);
+      expect(db.earnerWalletBalance, riderWallet + payout.providerGets);
       expect(db.earningsToday, today + payout.providerGets,
           reason: 'the rider home tile reads this roll-up');
       expect(db.earningsWeek, week + payout.providerGets);
@@ -189,9 +189,9 @@ void main() {
       acceptRide(request);
 
       expect(split.surgoKeeps, greaterThan(0), reason: 'sanity: 10% of ₱180');
-      expect(db.riderWalletBalance - riderWallet, isNot(request.fare),
+      expect(db.earnerWalletBalance - riderWallet, isNot(request.fare),
           reason: 'the gross belongs to nobody on the rider side');
-      expect(db.riderWalletBalance - riderWallet, lessThan(request.fare));
+      expect(db.earnerWalletBalance - riderWallet, lessThan(request.fare));
     });
 
     test('records the commission on the platform ledger', () {
@@ -242,7 +242,7 @@ void main() {
 
       state.completeActiveRide();
 
-      expect(db.riderWalletBalance, riderWallet);
+      expect(db.earnerWalletBalance, riderWallet);
       expect(db.earningsToday, today);
       expect(ledger.entries, isEmpty);
     });
@@ -267,7 +267,7 @@ void main() {
 
       completeRental(totalFare: gross);
 
-      expect(db.riderWalletBalance, riderWallet);
+      expect(db.earnerWalletBalance, riderWallet);
       expect(db.earningsToday, today);
     });
 
@@ -307,7 +307,7 @@ void main() {
       completeRental(totalFare: rentalFare);
 
       // Each provider was credited their own line, and nothing else.
-      expect(db.riderWalletBalance - riderWallet, ride.providerGets);
+      expect(db.earnerWalletBalance - riderWallet, ride.providerGets);
       expect(db.ownerWalletBalance - ownerWallet, rental.providerGets);
 
       // The ledger accounts for every centavo of the two transactions.

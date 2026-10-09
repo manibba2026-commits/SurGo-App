@@ -15,7 +15,7 @@ class AccountSettingsScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: state,
         builder: (context, _) {
-          final settings = isRider ? state.riderSettings : state.passengerSettings;
+          final settings = isRider ? state.earnerSettings : state.passengerSettings;
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
             children: [

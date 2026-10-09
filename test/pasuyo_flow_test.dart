@@ -36,12 +36,12 @@ void main() {
   setUp(() {
     saved = db.pasuyoTasks.map(_TaskState.of).toList();
     originalCount = db.pasuyoTasks.length;
-    wallet = db.riderWalletBalance;
+    wallet = db.earnerWalletBalance;
     today = db.earningsToday;
     week = db.earningsWeek;
     month = db.earningsMonth;
     daily = db.dailyEarnings.map((d) => d.amount).toList();
-    txCount = db.riderTransactions.length;
+    txCount = db.earnerTransactions.length;
     active = state.activePasuyoTask;
   });
 
@@ -53,14 +53,14 @@ void main() {
     for (var i = 0; i < saved.length; i++) {
       saved[i].applyTo(db.pasuyoTasks[i]);
     }
-    db.riderWalletBalance = wallet;
+    db.earnerWalletBalance = wallet;
     db.earningsToday = today;
     db.earningsWeek = week;
     db.earningsMonth = month;
     for (var i = 0; i < db.dailyEarnings.length; i++) {
       db.dailyEarnings[i].amount = daily[i];
     }
-    db.riderTransactions.removeRange(txCount, db.riderTransactions.length);
+    db.earnerTransactions.removeRange(txCount, db.earnerTransactions.length);
     state.activePasuyoTask = active;
     state.activePasuyoBreakdown = null;
   });
@@ -179,7 +179,7 @@ void main() {
     test('pays out exactly once, on the final state', () {
       final task = openTask();
       state.acceptPasuyoTask(task);
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
       final earningsBefore = db.earningsToday;
 
       var guard = 0;
@@ -187,13 +187,13 @@ void main() {
         state.advancePasuyoTask(task);
       }
 
-      final walletAfter = db.riderWalletBalance;
+      final walletAfter = db.earnerWalletBalance;
       expect(walletAfter, greaterThan(walletBefore));
       expect(db.earningsToday, greaterThan(earningsBefore));
 
       // A stray tap after delivery must not pay a second time.
       state.advancePasuyoTask(task);
-      expect(db.riderWalletBalance, walletAfter);
+      expect(db.earnerWalletBalance, walletAfter);
     });
 
     test('a cancelled errand has no next step and reports step -1', () {
@@ -212,11 +212,11 @@ void main() {
 
     test('cancelling pays nothing and leaves the errand unclaimable', () {
       final task = openTask();
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
       state.acceptPasuyoTask(task);
       state.cancelPasuyoTask(task);
 
-      expect(db.riderWalletBalance, walletBefore);
+      expect(db.earnerWalletBalance, walletBefore);
       expect(db.earningsToday, today);
       expect(state.acceptPasuyoTask(task), PasuyoAcceptRefusal.notOpen);
     });
@@ -236,12 +236,12 @@ void main() {
     test('credits the wallet and the earning roll-ups in centavos', () {
       final task = openTask();
       final payout = payoutFor(task);
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
 
       runToCompletion(task);
 
       expect(payout, greaterThan(0));
-      expect(db.riderWalletBalance, walletBefore + payout);
+      expect(db.earnerWalletBalance, walletBefore + payout);
       expect(db.earningsToday, today + payout,
           reason: 'the home tile reads this roll-up');
       expect(db.earningsWeek, week + payout);
@@ -253,8 +253,8 @@ void main() {
       final task = openTask();
       runToCompletion(task);
 
-      expect(db.riderTransactions.length, txCount + 1);
-      final row = db.riderTransactions.first;
+      expect(db.earnerTransactions.length, txCount + 1);
+      final row = db.earnerTransactions.first;
       expect(row.type, 'credit');
       expect(row.title, contains(task.title));
       expect(row.amount, payoutFor(task));
@@ -262,14 +262,14 @@ void main() {
 
     test('credits exactly once even if advance is spammed', () {
       final task = openTask();
-      final walletBefore = db.riderWalletBalance;
+      final walletBefore = db.earnerWalletBalance;
 
       runToCompletion(task);
       for (var i = 0; i < 5; i++) {
         state.advancePasuyoTask(task);
       }
 
-      expect(db.riderWalletBalance, walletBefore + payoutFor(task));
+      expect(db.earnerWalletBalance, walletBefore + payoutFor(task));
       expect(db.earningsToday, today + payoutFor(task));
     });
 
