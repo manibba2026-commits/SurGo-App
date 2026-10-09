@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/db_models.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -70,6 +71,8 @@ class EarnerProfileScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 18),
+              _capabilitySection(context, state),
+              const SizedBox(height: 18),
               Row(
                 children: [
                   Expanded(
@@ -122,6 +125,79 @@ class EarnerProfileScreen extends StatelessWidget {
     );
     if (embedded) return body;
     return Scaffold(body: body);
+  }
+
+  /// The toggle that makes the Earner role mean something: an earner who only
+  /// drives sees no errands. Refusals come from the model, not from this screen
+  /// - [AppState.setEarnerCapability] returns false when the change would leave
+  /// the earner with nothing on, and the snackbar explains that instead of
+  /// leaving a switch that looks stuck.
+  Widget _capabilitySection(BuildContext context, AppState state) {
+    final earner = state.earner;
+    return SbCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.work_outline, color: AppColors.primaryLight, size: 18),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('What I offer',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              ),
+              SbTag('${earner.activeCapabilities.length} on', secondary: true),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text('Errands and deliveries only appear here when switched on.',
+              style: TextStyle(color: AppColors.muted, fontSize: 11)),
+          const SizedBox(height: 6),
+          for (final capability in EarnerCapability.values) ...[
+            _capabilityRow(context, state, capability),
+            if (capability != EarnerCapability.values.last)
+              const Divider(height: 16, color: AppColors.border),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _capabilityRow(
+      BuildContext context, AppState state, EarnerCapability capability) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(capability.label,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+              const SizedBox(height: 2),
+              Text(capability.hint,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+            ],
+          ),
+        ),
+        Switch(
+          value: state.acceptsCapability(capability),
+          activeColor: Colors.white,
+          activeTrackColor: AppColors.secondary,
+          inactiveTrackColor: AppColors.panel2,
+          onChanged: (value) {
+            final changed = state.setEarnerCapability(capability, value);
+            if (!changed) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                      'Keep at least one on - switch on another before turning off ${capability.label.toLowerCase()}.'),
+                ),
+              );
+            }
+          },
+        ),
+      ],
+    );
   }
 
   Widget _quickAction(BuildContext context,

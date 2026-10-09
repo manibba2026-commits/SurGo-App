@@ -180,6 +180,11 @@ class RiderHomeScreen extends StatelessWidget {
   Widget _pasuyoSection(BuildContext context, AppState state) {
     final active = state.activePasuyoTask;
     final nearby = state.nearbyPasuyoTasks;
+    // The feed is gated on capabilities, so an empty list is ambiguous: it can
+    // mean "nothing posted" or "you don't take errands". Those need different
+    // copy, and only the earner knows which is true.
+    final canTakeErrands = state.acceptsCapability(EarnerCapability.errands) ||
+        state.acceptsCapability(EarnerCapability.deliveries);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,7 +203,15 @@ class RiderHomeScreen extends StatelessWidget {
           _ActivePasuyoCard(task: active, state: state),
           const SizedBox(height: 10),
         ],
-        if (nearby.isEmpty && active == null)
+        if (!canTakeErrands && active == null)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Errands are off. Turn on Errands or Deliveries in Profile to see work here.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
+          )
+        else if (nearby.isEmpty && active == null)
           const Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text('No open errands nearby right now.',

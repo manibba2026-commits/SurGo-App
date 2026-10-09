@@ -1131,7 +1131,16 @@ class AppState extends ChangeNotifier {
   List<PasuyoTask> get pasuyoTasks => db.pasuyoTasks;
 
   /// Open tasks a helper can pick up, newest first.
+  ///
+  /// Gated on the errands/deliveries capabilities, because the whole point of
+  /// `EarnerCapability` is that a rides-only driver is never offered errand
+  /// work. Returning an empty feed here is the honest answer - the alternative
+  /// is a task the earner would have to reject.
   List<PasuyoTask> get nearbyPasuyoTasks {
+    if (!acceptsCapability(EarnerCapability.errands) &&
+        !acceptsCapability(EarnerCapability.deliveries)) {
+      return const [];
+    }
     final list = db.pasuyoTasks.where((t) => t.isOpen).toList();
     list.sort((a, b) => b.id.compareTo(a.id));
     return list;
