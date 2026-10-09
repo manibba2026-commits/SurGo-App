@@ -214,6 +214,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The dashboard route for the current [mode], so sign-in and registration
+  /// land a passenger, rider or owner on their own shell.
+  String get homeRoute => switch (mode) {
+        UserMode.passenger => '/home',
+        UserMode.earner => '/earner',
+        UserMode.vehicleOwner => '/owner',
+      };
+
   // ---- booking draft ----
   String pickupLabel = 'Purok 3, Barangay Poblacion';
   String destinationLabel = 'SM Terminal, Downtown';

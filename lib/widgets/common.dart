@@ -362,58 +362,6 @@ class SbOutlineButton extends StatelessWidget {
   }
 }
 
-/// A full-width button with a soft purple glow around it — used for the
-/// "Continue with Google" action so it reads as clickable and distinct from
-/// the plain outline button.
-class SbGlowButton extends StatelessWidget {
-  final String label;
-  final Widget icon;
-  final VoidCallback? onPressed;
-  const SbGlowButton({super.key, required this.label, required this.icon, this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.45),
-            blurRadius: 22,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: Material(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onPressed,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 15),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.6), width: 1.4),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                icon,
-                const SizedBox(width: 10),
-                Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.text),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Small circular "G" mark used on the Google button — a lightweight stand-in
 /// for the Google logo that keeps the four brand colors without importing an
 /// external icon asset.
@@ -444,21 +392,34 @@ class SbGoogleMark extends StatelessWidget {
   }
 }
 
-/// An editable phone-number field styled like [SbField] but with a real
-/// [TextField] inside it, used on the login screen.
+/// An editable text field styled like [SbField] but with a real [TextField]
+/// inside it. Used across the auth screens for phone, email and password.
+///
+/// [obscureText] lets the same chrome carry a password, and [suffix] holds the
+/// caller's visibility toggle so the screen keeps owning that state.
 class SbEditableField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final Widget? leading;
+  final Widget? suffix;
   final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
   final String? hintText;
+  final bool obscureText;
+  final bool enabled;
+  final ValueChanged<String>? onSubmitted;
   const SbEditableField({
     super.key,
     required this.label,
     required this.controller,
     this.leading,
+    this.suffix,
     this.keyboardType,
+    this.textInputAction,
     this.hintText,
+    this.obscureText = false,
+    this.enabled = true,
+    this.onSubmitted,
   });
 
   @override
@@ -466,7 +427,7 @@ class SbEditableField extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.panel,
+        color: enabled ? AppColors.panel : AppColors.panel2,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
@@ -489,6 +450,10 @@ class SbEditableField extends StatelessWidget {
                 TextField(
                   controller: controller,
                   keyboardType: keyboardType,
+                  textInputAction: textInputAction,
+                  obscureText: obscureText,
+                  enabled: enabled,
+                  onSubmitted: onSubmitted,
                   style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                   decoration: InputDecoration(
                     isDense: true,
@@ -501,6 +466,7 @@ class SbEditableField extends StatelessWidget {
               ],
             ),
           ),
+          if (suffix != null) ...[const SizedBox(width: 8), suffix!],
         ],
       ),
     );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/forgot_password_screen.dart';
 import 'screens/otp_screen.dart';
 import 'screens/passenger_shell.dart';
 import 'screens/booking_screen.dart';
@@ -43,6 +45,8 @@ class SurGoApp extends StatelessWidget {
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/otp': (context) => const OtpScreen(),
         // The three dashboards are each a sliding-tab "shell" — Home,
         // Activity/Trips/Bookings, Wallet/Earnings, and Profile all live as
