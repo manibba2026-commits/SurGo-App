@@ -166,6 +166,7 @@ class AppState extends ChangeNotifier {
     final request = RideRequestItem(
       id: _nextRequestId(),
       passengerId: passenger.id,
+      vehicleId: option.name,
       passengerName: passenger.name,
       passengerInitials: passenger.initials,
       passengerRating: passenger.rating,
@@ -261,7 +262,6 @@ class AppState extends ChangeNotifier {
     if (request == null || proposal == null) return false;
     if (!request.advanceTo(RideStatus.awaitingAcceptance)) return false;
     request.riderId = proposal.rider.id;
-    request.vehicleId = proposal.rider.id;
     rideProposal = null;
     notifyListeners();
     return true;
@@ -276,7 +276,6 @@ class AppState extends ChangeNotifier {
     // screen still shows the rejected rider.
     request.status = RideStatus.searching;
     request.riderId = null;
-    request.vehicleId = null;
     rideProposal = null;
     notifyListeners();
   }
@@ -445,15 +444,20 @@ class AppState extends ChangeNotifier {
     return id;
   }
 
-  /// Whether [rider] can serve [request]'s requested vehicle.
+  /// Whether [rider] drives the vehicle type the passenger asked for.
   ///
-  /// A null [vehicleId] on the request means the passenger picked a vehicle
-  /// *type* from the booking screen but not a specific one, so every free rider
-  /// qualifies. Once a match is confirmed the request carries the rider's own
-  /// vehicle id, which pins future checks to that vehicle.
-  bool _vehicleMatches(MapRider rider, String? vehicleId) {
-    if (vehicleId == null) return true;
-    return rider.id == vehicleId || rider.vehicleModel.isNotEmpty;
+  /// [requestedType] is the booking screen's option name (e.g. "Tricycle"),
+  /// stored on the request as `RideRequestItem.vehicleId`. It is compared to
+  /// the rider's `MapRider.vehicleType` case-insensitively, because the seed
+  /// lowercases the type while the option capitalises it.
+  ///
+  /// A null or blank type means the caller did not pick one, so every free
+  /// rider qualifies. That keeps hand-built requests matching on availability
+  /// alone rather than refusing for a choice nobody made.
+  bool _vehicleMatches(MapRider rider, String? requestedType) {
+    final wanted = requestedType?.trim().toLowerCase();
+    if (wanted == null || wanted.isEmpty) return true;
+    return rider.vehicleType.trim().toLowerCase() == wanted;
   }
 
   /// Resolves a free-text place label to a point, or null when it is not one of
@@ -602,7 +606,7 @@ class AppState extends ChangeNotifier {
       RiderTripItem(
         id: 'rt${DateTime.now().microsecondsSinceEpoch}',
         passengerName: trip.passengerName,
-        route: '${trip.pickup} â†’ ${trip.dropoff}',
+        route: '${trip.pickup} → ${trip.dropoff}',
         date: 'Just now',
         fare: trip.fare,
         distanceKm: trip.distanceKm,
@@ -850,16 +854,6 @@ class AppState extends ChangeNotifier {
   /// somebody asked for them.
   final List<RentalBooking> _rentalBookings = [];
 
-  /// Every live booking this account holds, oldest first.
-  List<RentalBooking> get myRentalBookings =>
-      _rentalBookings.where((b) => !b.status.isTerminal).toList();
-
-  /// Whether [vehicleId] is free for [pickupDate]..[returnDate], and if not,
-  /// why.
-  ///
-  /// Checked before a request is created rather than after: accepting a
-  /// request that collides with an existing booking would leave two renters
-  /// believing they have the same vehicle.
   /// A listing's bookability for the browse list, where no dates are chosen yet.
   ///
   /// Reads the same seeded record and bookings the detail screen does, so the
@@ -879,6 +873,12 @@ class AppState extends ChangeNotifier {
     return RentalListingState.available;
   }
 
+  /// Whether [vehicleId] is free for [pickupDate]..[returnDate], and if not,
+  /// why.
+  ///
+  /// Checked before a request is created rather than after: accepting a
+  /// request that collides with an existing booking would leave two renters
+  /// believing they have the same vehicle.
   RentalAvailability rentalAvailability({
     required String vehicleId,
     required DateTime pickupDate,
@@ -1282,7 +1282,7 @@ class AppState extends ChangeNotifier {
         WalletTransaction(
           id: 'rwt${DateTime.now().microsecondsSinceEpoch}',
           type: 'credit',
-          title: 'Pasuyo Â· ${task.title}',
+          title: 'Pasuyo · ${task.title}',
           amount: breakdown.providerGets,
           date: 'Just now',
           status: 'Completed',

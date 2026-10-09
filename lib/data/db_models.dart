@@ -747,6 +747,11 @@ class RideRequestItem {
   /// in the flow: [RideStatus.searching] has nobody, confirming a match sets
   /// this, and declining clears it again.
   String? riderId;
+
+  /// The vehicle *type* the passenger chose on the booking screen, stored as
+  /// the option's name (e.g. "Tricycle"). Set once when the request is created
+  /// and left alone afterwards: matching compares it to a rider's
+  /// `MapRider.vehicleType`, while the assigned rider lives in [riderId].
   String? vehicleId;
   final String passengerName;
   final String passengerInitials;

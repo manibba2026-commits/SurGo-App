@@ -173,11 +173,28 @@ void main() {
         // the contract is then rating-then-id, which determinism already covers.
         return;
       }
-      for (final r in db.mapRiders.where((r) => r.available)) {
+      for (final r in db.mapRiders.where((r) =>
+          r.available &&
+          r.vehicleType.toLowerCase() == request.vehicleId!.toLowerCase())) {
         final other = _distanceTo(request, r);
         if (other == null) continue;
         expect(distance, lessThanOrEqualTo(other));
       }
+    });
+
+    test('matches the rider to the requested type, not just availability', () {
+      final request = newRequest(); // the booking default is Tricycle
+      request.vehicleId = 'Motorcycle';
+
+      expect(state.proposeRider(request), MatchOutcome.proposed);
+      expect(state.rideProposal!.rider.vehicleType, 'motorcycle');
+    });
+
+    test('refuses when no rider drives the requested type', () {
+      final request = newRequest();
+      request.vehicleId = 'Boat';
+
+      expect(state.proposeRider(request), MatchOutcome.noRidersAvailable);
     });
 
     test('refuses to propose a second rider for the same request', () {
@@ -270,7 +287,9 @@ void main() {
 
       expect(request.status, RideStatus.searching);
       expect(request.riderId, isNull);
-      expect(request.vehicleId, isNull);
+      // The requested vehicle type survives: only the rejected rider is
+      // forgotten, so re-matching still respects the passenger's choice.
+      expect(request.vehicleId, state.selectedRide.name);
       expect(state.rideProposal, isNull);
     });
 

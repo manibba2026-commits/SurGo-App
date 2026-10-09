@@ -80,7 +80,7 @@ enum RideStatus {
   /// [searching] request is not yet this rider's problem.
   bool get isActive => !isTerminal && !isOpen;
 
-/// Chat unlocks at [accepted] and stays open until the trip ends.
+  /// Chat unlocks at [accepted] and stays open until the trip ends.
   ///
   /// False while searching or awaiting acceptance, because there is no agreed
   /// trip to talk about yet. False at [completed] and [cancelled] too: the trip
