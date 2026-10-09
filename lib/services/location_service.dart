@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geolocator/geolocator.dart';
 import '../data/db_models.dart';
 
@@ -21,20 +22,27 @@ class LocationService {
   ///
   /// Returns `null` (never throws) if location services are disabled or
   /// permission isn't granted — callers should fall back to Tandag City in
-  /// that case. This walks through the full geolocator permission flow:
+  /// that case. On mobile this walks the full geolocator permission flow:
   /// checks if the location service is on, checks current permission
   /// status, and requests permission if it's the first time asking.
+  ///
+  /// Web skips that pre-flight entirely. The browser's Permissions API
+  /// isn't available everywhere, so `Geolocator.checkPermission()` can
+  /// report `denied` even after the user has already granted access — the
+  /// browser prompt surfaces on `getCurrentPosition()` itself instead.
   Future<MapPoint?> getCurrentLocation() async {
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return null;
+      if (!kIsWeb) {
+        final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) return null;
 
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return null;
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.denied) return null;
+        }
+        if (permission == LocationPermission.deniedForever) return null;
       }
-      if (permission == LocationPermission.deniedForever) return null;
 
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -51,12 +59,5 @@ class LocationService {
       // the same as "no permission" and let the caller fall back.
       return null;
     }
-  }
-
-  /// Whether it's worth showing a "turn on location" hint at all — i.e.
-  /// permission isn't permanently denied.
-  Future<bool> get canRequestPermission async {
-    final permission = await Geolocator.checkPermission();
-    return permission != LocationPermission.deniedForever;
   }
 }

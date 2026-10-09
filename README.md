@@ -131,6 +131,7 @@ refresh resets the app to seed data — there is no persistence layer yet.
 ## Known gaps
 
 - No persistence: state resets on reload.
-- No real authentication; login and OTP screens are UI only.
-- `geolocator` / `permission_handler` have incomplete web support — location degrades
-  on Chrome, and the maps fall back to Tandag City centering.
+- No real (server-side) authentication; sign-in validates against the local mock
+  seed accounts in `assets/db/accounts.json`.
+- `geolocator` has limited web support — live location is best-effort on Chrome,
+  and the maps fall back to Tandag City centering when a fix isn't available.
