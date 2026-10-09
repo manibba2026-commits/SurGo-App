@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../data/verification_policy.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import 'geo.dart';
@@ -28,13 +29,18 @@ enum AuthResult {
   unknownAccount,
 
   /// The account exists but the password did not match.
-  wrongPassword;
+  wrongPassword,
+
+  /// The account exists but has been suspended and cannot sign in.
+  suspended;
 
   String get message => switch (this) {
         AuthResult.ok => '',
         AuthResult.unknownAccount =>
           'We could not find an account with that phone or email.',
         AuthResult.wrongPassword => 'That password is not correct.',
+        AuthResult.suspended =>
+          'This account is suspended. Contact SurGo support.',
       };
 }
 
@@ -50,6 +56,37 @@ enum RegisterResult {
         RegisterResult.ok => '',
         RegisterResult.identifierTaken =>
           'That phone number or email is already registered.',
+      };
+}
+
+/// Why [AppState.submitVerification] refused, or null-equivalent confirmation
+/// that the application moved into review.
+enum VerificationSubmitResult {
+  ok,
+
+  /// No application with that id belongs to the signed-in account.
+  notFound,
+
+  /// Not every required document has been uploaded yet.
+  incomplete,
+
+  /// The account cannot apply for this capability.
+  notEligible,
+
+  /// The application is already submitted or under review.
+  alreadyInReview;
+
+  String get message => switch (this) {
+        VerificationSubmitResult.ok =>
+          'Submitted — the demo auto-approves after a few seconds.',
+        VerificationSubmitResult.notFound =>
+          'That application no longer exists.',
+        VerificationSubmitResult.incomplete =>
+          'Upload every required document before submitting.',
+        VerificationSubmitResult.notEligible =>
+          'You are not eligible to apply for this yet.',
+        VerificationSubmitResult.alreadyInReview =>
+          'This application is already under review.',
       };
 }
 
@@ -82,8 +119,7 @@ enum PasuyoAcceptRefusal {
   /// refusal needs different advice, and a rejected tap with no explanation
   /// reads as a broken button rather than a rule.
   String get label => switch (this) {
-        PasuyoAcceptRefusal.notOpen =>
-          'Someone already claimed this errand.',
+        PasuyoAcceptRefusal.notOpen => 'Someone already claimed this errand.',
         PasuyoAcceptRefusal.alreadyHasTask =>
           'Finish your current errand before taking another.',
         PasuyoAcceptRefusal.ownCustomer =>
@@ -138,17 +174,32 @@ class AppState extends ChangeNotifier {
 
   UserMode mode = UserMode.passenger;
 
-  /// The roles the signed-in account can act as, in a stable order. Signed out
-  /// or unknown accounts keep all three so the demo can still be explored.
+  /// The modes the signed-in account can act as, in a stable order. A mode is
+  /// unlocked only by an *approved* capability, not an eligible one: approving
+  /// `rider` or `earner` opens the Earner shell, approving `passenger` opens
+  /// the Passenger shell, approving `vehicleOwner` opens the Owner shell.
+  /// Signed out or unknown accounts keep all three so the demo can still be
+  /// explored. A suspended account has none.
   List<UserMode> get availableModes {
     final account = currentAccount;
     if (account == null) return UserMode.values;
+    final caps = account.usableCapabilities;
     return [
-      if (account.hasPassengerRole) UserMode.passenger,
-      if (account.hasRiderRole) UserMode.earner,
-      if (account.hasOwnerRole) UserMode.vehicleOwner,
+      if (caps.contains(CapabilityType.passenger)) UserMode.passenger,
+      if (caps.contains(CapabilityType.rider) ||
+          caps.contains(CapabilityType.earner))
+        UserMode.earner,
+      if (caps.contains(CapabilityType.vehicleOwner)) UserMode.vehicleOwner,
     ];
   }
+
+  /// Whether the signed-in account, if any, is approved for [capability].
+  bool authorizedFor(CapabilityType capability) =>
+      currentAccount?.authorizedFor(capability) ?? false;
+
+  /// Whether the signed-in account, if any, may apply for [capability].
+  bool canApplyFor(CapabilityType capability) =>
+      currentAccount?.canApplyFor(capability) ?? false;
 
   /// Signs in against the local seed. Plaintext comparison on purpose — see
   /// [Account]. Returns [AuthResult.ok] and activates the account on success.
@@ -162,12 +213,13 @@ class AppState extends ChangeNotifier {
     }
     if (match == null) return AuthResult.unknownAccount;
     if (match.password != password) return AuthResult.wrongPassword;
+    if (!match.isActive) return AuthResult.suspended;
     _applyAccount(match);
     return AuthResult.ok;
   }
 
   /// Creates and signs into a new account. Registration always starts as a
-  /// passenger; rider/owner roles are added later from the profile.
+  /// passenger; earner/owner capabilities are added later by verification.
   RegisterResult register({
     required String name,
     required String phone,
@@ -222,6 +274,231 @@ class AppState extends ChangeNotifier {
         UserMode.vehicleOwner => '/owner',
       };
 
+  // ---- verification & document requirements ----
+
+  /// Every verification application in this run, seed and new alike.
+  List<VerificationApplication> get verificationApplications =>
+      db.verificationApplications;
+
+  /// The applications belonging to the signed-in account, if any.
+  List<VerificationApplication> get myVerifications {
+    final account = currentAccount;
+    if (account == null) return const [];
+    return db.verificationApplications
+        .where((a) => a.accountId == account.id)
+        .toList();
+  }
+
+  /// The signed-in account's application for [capability], or null.
+  ///
+  /// Also advances any due simulated review steps, so reading a status can
+  /// observe the auto-approval without the UI needing its own timer.
+  VerificationApplication? verificationFor(CapabilityType capability) {
+    final account = currentAccount;
+    if (account == null) return null;
+    processDueVerifications();
+    return _applicationFor(account.id, capability);
+  }
+
+  /// How far the signed-in account is for [capability]: null means they have
+  /// neither applied nor been approved.
+  VerificationStatus? verificationStatusFor(CapabilityType capability) {
+    final account = currentAccount;
+    if (account == null) return null;
+    final app = verificationFor(capability);
+    if (app != null) return app.status;
+    return account.authorizedFor(capability)
+        ? VerificationStatus.approved
+        : null;
+  }
+
+  /// One-line summary for the profile tiles: how many capabilities still need
+  /// documents, or which state the account is in.
+  String get verificationSummaryLabel {
+    final account = currentAccount;
+    if (account == null) return 'Not signed in';
+    if (!account.isActive) return 'Suspended';
+    final open = account.eligibleCapabilities
+        .where((c) => c != CapabilityType.passenger)
+        .toList();
+    if (open.isEmpty) return 'Fully verified';
+    final inFlight = myVerifications.any((a) =>
+        a.status == VerificationStatus.draft ||
+        a.status == VerificationStatus.submitted ||
+        a.status == VerificationStatus.underReview);
+    if (inFlight) return 'In progress';
+    return '${open.length} ${open.length == 1 ? 'step' : 'steps'} to go';
+  }
+
+  /// Opens (or reopens) the signed-in account's application for [capability].
+  ///
+  /// Returns null when the account cannot apply: not signed in, not eligible,
+  /// or already mid-flow. Reopening resets a rejected or needs-resubmission
+  /// application back to draft so the checklist is editable again.
+  VerificationApplication? startVerification(CapabilityType capability) {
+    final account = currentAccount;
+    if (account == null || !account.canApplyFor(capability)) return null;
+    var app = _applicationFor(account.id, capability);
+    if (app == null) {
+      app = VerificationApplication(
+        id: 'VAPP-${DateTime.now().microsecondsSinceEpoch}',
+        accountId: account.id,
+        capabilityType: capability,
+        status: VerificationStatus.draft,
+        documents: [
+          for (final spec in VerificationPolicy.requirementsFor(capability))
+            VerificationDocumentItem(
+              id: spec.id,
+              capabilityType: capability,
+              label: spec.label,
+              hint: spec.hint,
+              required: spec.required,
+            ),
+        ],
+      );
+      db.verificationApplications.add(app);
+    } else if (app.status == VerificationStatus.needsResubmission ||
+        app.status == VerificationStatus.rejected) {
+      app.status = VerificationStatus.draft;
+      app.reviewerNote = null;
+    }
+    notifyListeners();
+    return app;
+  }
+
+  /// Marks one document uploaded. Only works on a draft application that
+  /// belongs to the signed-in account. Returns false when nothing changed —
+  /// the document was already uploaded, is unknown, or the application is not
+  /// a draft.
+  bool markDocumentUploaded(String appId, String docId, {String? fileName}) {
+    final account = currentAccount;
+    if (account == null) return false;
+    final app = _applicationForAccount(account, appId);
+    if (app == null || app.status != VerificationStatus.draft) return false;
+    for (final doc in app.documents) {
+      if (doc.id == docId) {
+        if (doc.uploaded) return false;
+        doc.uploaded = true;
+        doc.fileName = fileName ?? doc.label;
+        notifyListeners();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Submits a finished draft for the simulated review.
+  VerificationSubmitResult submitVerification(String appId) {
+    final account = currentAccount;
+    if (account == null) return VerificationSubmitResult.notEligible;
+    final app = _applicationForAccount(account, appId);
+    if (app == null) return VerificationSubmitResult.notFound;
+    if (!account.eligibleCapabilities.contains(app.capabilityType)) {
+      return VerificationSubmitResult.notEligible;
+    }
+    if (app.status != VerificationStatus.draft) {
+      return VerificationSubmitResult.alreadyInReview;
+    }
+    if (!app.isComplete) return VerificationSubmitResult.incomplete;
+    app.status = VerificationStatus.submitted;
+    app.submittedAt = DateTime.now();
+    notifyListeners();
+    return VerificationSubmitResult.ok;
+  }
+
+  /// Advances any reviews whose simulated window has elapsed: Submitted ->
+  /// Under review -> Approved, which grants the capability.
+  ///
+  /// Runs on demand from the verification screen and when a status is read, so
+  /// the demo needs no background timers. [at] lets tests drive the clock.
+  void processDueVerifications({DateTime? at}) {
+    final now = at ?? DateTime.now();
+    var changed = false;
+    for (final app in db.verificationApplications) {
+      final submitted = app.submittedAt;
+      if (submitted == null) continue;
+      final elapsed = now.difference(submitted);
+      if (app.status == VerificationStatus.submitted &&
+          elapsed >= VerificationPolicy.submittedUnderReview) {
+        app.status = VerificationStatus.underReview;
+        app.reviewerNote = 'Documents received, checking credentials…';
+        changed = true;
+      } else if (app.status == VerificationStatus.underReview &&
+          elapsed >= VerificationPolicy.underReviewApproval) {
+        _approveApplication(app);
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+  }
+
+  void _approveApplication(VerificationApplication app) {
+    Account? account;
+    for (final a in db.accounts) {
+      if (a.id == app.accountId) {
+        account = a;
+        break;
+      }
+    }
+    if (account == null) return;
+    app.status = VerificationStatus.approved;
+    app.reviewedAt = DateTime.now();
+    app.reviewerNote = 'Approved automatically in the local demo.';
+    if (!account.authorizedFor(app.capabilityType)) {
+      _grantCapability(account, app.capabilityType);
+    }
+  }
+
+  /// Moves [capability] from the account's eligible set to its approved set.
+  /// Account fields are held by immutable-styled instances, so the grant
+  /// replaces the account in [DbService.accounts] and re-points the session.
+  void _grantCapability(Account account, CapabilityType capability) {
+    final approved = {...account.approvedCapabilities, capability};
+    final eligible = {...account.eligibleCapabilities}..remove(capability);
+    final updated = Account(
+      id: account.id,
+      name: account.name,
+      phone: account.phone,
+      email: account.email,
+      password: account.password,
+      passengerId: account.passengerId,
+      riderId: account.riderId,
+      ownerId: account.ownerId,
+      approvedCapabilities: approved,
+      eligibleCapabilities: eligible,
+      status: account.status,
+    );
+    _replaceAccount(updated);
+    if (currentAccount?.id == updated.id) {
+      currentAccount = updated;
+      db.activateAccount(updated);
+    }
+  }
+
+  void _replaceAccount(Account updated) {
+    db.accounts = [
+      for (final a in db.accounts) a.id == updated.id ? updated : a,
+    ];
+  }
+
+  VerificationApplication? _applicationFor(
+      String accountId, CapabilityType capability) {
+    for (final app in db.verificationApplications) {
+      if (app.accountId == accountId && app.capabilityType == capability) {
+        return app;
+      }
+    }
+    return null;
+  }
+
+  VerificationApplication? _applicationForAccount(
+      Account account, String appId) {
+    for (final app in db.verificationApplications) {
+      if (app.id == appId && app.accountId == account.id) return app;
+    }
+    return null;
+  }
+
   // ---- booking draft ----
   String pickupLabel = 'Purok 3, Barangay Poblacion';
   String destinationLabel = 'SM Terminal, Downtown';
@@ -261,17 +538,27 @@ class AppState extends ChangeNotifier {
   /// Returns the stored request so the matching screen can follow it. The
   /// request is inserted before any matching happens: an unpersisted request
   /// would mean a proposal the app cannot trace back to a trip.
-  RideRequestItem createRideRequest() {
+  RideRequestItem createRideRequest({String? forPassenger}) {
     final option = selectedRide;
     final pickup = pickupLabel;
     final destination = destinationLabel;
+
+    // Assisted booking: the account holder books on behalf of someone who
+    // cannot use the app, so the request carries that person's name while the
+    // account stays the one paying. The rider should see who is travelling.
+    final assistedName = forPassenger?.trim();
+    final ridesFor = (assistedName == null || assistedName.isEmpty)
+        ? passenger.name
+        : assistedName;
 
     final request = RideRequestItem(
       id: _nextRequestId(),
       passengerId: passenger.id,
       vehicleId: option.name,
-      passengerName: passenger.name,
-      passengerInitials: passenger.initials,
+      passengerName: ridesFor,
+      passengerInitials: ridesFor == passenger.name
+          ? passenger.initials
+          : _initialsFor(ridesFor),
       passengerRating: passenger.rating,
       pickupBarangay: pickup.split(',').first.trim(),
       pickupPurok: _purokFrom(pickup),
@@ -297,6 +584,15 @@ class AppState extends ChangeNotifier {
     rideProposal = null;
     notifyListeners();
     return request;
+  }
+
+  /// Initials for an assisted-booking passenger's name, matching the seed
+  /// convention: first letter of the first and last word.
+  String _initialsFor(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
   }
 
   /// Picks a rider for [request] and holds them as a proposal.
@@ -439,7 +735,6 @@ class AppState extends ChangeNotifier {
   /// Builds and stores the thread for [request]. Private because the status
   /// gate has already been checked by the callers above.
   RideChatThread? _createRideChat(RideRequestItem request) {
-
     final existing = _rideChats[request.id];
     if (existing != null) return existing;
 
@@ -763,7 +1058,8 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- notifications ----
-  List<NotificationItem> get passengerNotifications => db.passengerNotifications;
+  List<NotificationItem> get passengerNotifications =>
+      db.passengerNotifications;
   List<NotificationItem> get earnerNotifications => db.earnerNotifications;
 
   int get unreadNotifications =>
@@ -944,6 +1240,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- live session activity ----
+
+  /// The passenger's own ride request while it is still live: searching, being
+  /// matched, or on the road. Null once it completes or is cancelled, so a
+  /// dashboard can show only what is actually in progress rather than a stale
+  /// request the account already finished.
+  RideRequestItem? get liveRideRequest {
+    final request = myRideRequest;
+    if (request == null || request.status.isTerminal) return null;
+    return request;
+  }
+
+  /// Errands this account posted that have not finished, newest first. An
+  /// errand still at `available` counts: the customer is waiting for a helper,
+  /// so it belongs on their dashboard and activity list.
+  List<PasuyoTask> get livePasuyoOrders =>
+      myPasuyoOrders.where((t) => !t.status.isTerminal).toList();
+
   // ---- rental booking simulation (passenger) ----
   // A passenger can only have one open rental request/active rental at a
   // time in this simulation. It starts as "Pending" the moment they tap
@@ -962,15 +1276,16 @@ class AppState extends ChangeNotifier {
   /// Reads the same seeded record and bookings the detail screen does, so the
   /// two screens cannot show different answers for the same vehicle.
   RentalListingState rentalListingState(String vehicleId) {
-    final vehicle = _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId);
+    final vehicle =
+        _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId);
     if (vehicle == null) return RentalListingState.unknown;
 
     if (vehicle.status == 'Maintenance') return RentalListingState.maintenance;
 
     // An accepted booking means it is out with a renter now, even if the seed
     // still says `Listed`: the live trip is the truer source.
-    final outNow = _rentalBookings.any(
-        (b) => b.vehicleId == vehicleId && b.blocksAvailability);
+    final outNow = _rentalBookings
+        .any((b) => b.vehicleId == vehicleId && b.blocksAvailability);
     if (vehicle.status == 'Rented' || outNow) return RentalListingState.rented;
 
     return RentalListingState.available;
@@ -986,13 +1301,13 @@ class AppState extends ChangeNotifier {
     required String vehicleId,
     required DateTime pickupDate,
     required DateTime returnDate,
-  }) => checkRentalAvailability(
+  }) =>
+      checkRentalAvailability(
         vehicle: _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId),
         pickupDate: pickupDate,
         returnDate: returnDate,
-        bookings: _rentalBookings
-            .where((b) => b.vehicleId == vehicleId)
-            .toList(),
+        bookings:
+            _rentalBookings.where((b) => b.vehicleId == vehicleId).toList(),
         ownerRequests: db.ownerBookingRequests
             .where((r) => r.vehicleId == vehicleId)
             .toList(),
@@ -1254,18 +1569,19 @@ class AppState extends ChangeNotifier {
   PasuyoTask? activePasuyoTask;
 
   /// Tasks this helper has claimed but not yet delivered.
-  List<PasuyoTask> get myPasuyoTasks =>
-      db.pasuyoTasks.where((t) => t.helperId == earner.id && t.isActive).toList();
+  List<PasuyoTask> get myPasuyoTasks => db.pasuyoTasks
+      .where((t) => t.helperId == earner.id && t.isActive)
+      .toList();
 
   List<PasuyoTask> get completedPasuyoTasks => db.pasuyoTasks
-      .where((t) => t.status == PasuyoStatus.delivered && t.helperId == earner.id)
+      .where(
+          (t) => t.status == PasuyoStatus.delivered && t.helperId == earner.id)
       .toList();
 
   /// Every task the signed-in customer posted, for the task tracker.
   List<PasuyoTask> get myPasuyoOrders {
-    final list = db.pasuyoTasks
-        .where((t) => t.customerId == passenger.id)
-        .toList();
+    final list =
+        db.pasuyoTasks.where((t) => t.customerId == passenger.id).toList();
     list.sort((a, b) => b.id.compareTo(a.id));
     return list;
   }
@@ -1353,7 +1669,9 @@ class AppState extends ChangeNotifier {
     // stale card cannot claim an errand another helper already took. The
     // transition is attempted before helperId is set, so a refused accept
     // leaves no trace of this helper on the task.
-    if (!task.advanceTo(PasuyoStatus.accepted)) return PasuyoAcceptRefusal.notOpen;
+    if (!task.advanceTo(PasuyoStatus.accepted)) {
+      return PasuyoAcceptRefusal.notOpen;
+    }
     task.helperId = earner.id;
     activePasuyoTask = task;
     activePasuyoBreakdown =
@@ -1530,9 +1848,9 @@ class AppState extends ChangeNotifier {
   int get ownerEarningsWeek => db.ownerEarningsWeek;
   int get ownerEarningsMonth => db.ownerEarningsMonth;
 
-  void respondToOwnerBooking(OwnerBookingRequest request, {required bool accepted}) {
-    request.status =
-        accepted ? RentalStatus.accepted : RentalStatus.declined;
+  void respondToOwnerBooking(OwnerBookingRequest request,
+      {required bool accepted}) {
+    request.status = accepted ? RentalStatus.accepted : RentalStatus.declined;
     if (accepted) {
       // Prefer the request's own vehicleId. Matching on name instead would mark
       // whichever same-named vehicle sorted first, which is how the wrong

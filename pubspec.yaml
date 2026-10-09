@@ -29,6 +29,7 @@ flutter:
     - assets/db/config.json
     - assets/db/users.json
     - assets/db/accounts.json
+    - assets/db/applications.json
     - assets/db/locations.json
     - assets/db/vehicles.json
     - assets/db/rides.json

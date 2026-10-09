@@ -4,6 +4,7 @@ import 'package:surgo/data/db_models.dart';
 import 'package:surgo/data/db_service.dart';
 import 'package:surgo/data/models.dart';
 import 'package:surgo/screens/active_rental_screen.dart';
+import 'package:surgo/screens/assisted_booking_screen.dart';
 import 'package:surgo/screens/pasuyo_task_screen.dart';
 import 'package:surgo/screens/rider_profile_screen.dart';
 import 'package:surgo/services/fee_calculator.dart';
@@ -79,6 +80,8 @@ void main() {
     state.activePasuyoBreakdown = null;
     state.lastRideBreakdown = null;
     state.lastRentalBreakdown = null;
+    state.myRideRequest = null;
+    state.rideProposal = null;
     PlatformLedger.instance.reset();
   });
 
@@ -205,7 +208,8 @@ void main() {
     await _drainSnackBars(tester);
   });
 
-  testWidgets('the rental screen moves the booking forward and settles the owner',
+  testWidgets(
+      'the rental screen moves the booking forward and settles the owner',
       (tester) async {
     await _useTallSurface(tester);
     final start = DateTime(2026, 10, 10);
@@ -264,6 +268,36 @@ void main() {
     expect(state.activeRentalBooking, isNull);
     expect(db.ownerWalletBalance, greaterThan(ownerBefore),
         reason: 'settling a returned vehicle is the one step that pays');
+
+    await _drainSnackBars(tester);
+  });
+
+  testWidgets(
+      'the assisted-booking screen creates a request for the other person',
+      (tester) async {
+    await _useTallSurface(tester);
+
+    await tester.pumpWidget(MaterialApp(
+      home: const AssistedBookingScreen(),
+      routes: {'/matching': (_) => const Scaffold(body: Text('matching'))},
+    ));
+
+    // The first two fields are the passenger name and contact number.
+    await tester.enterText(find.byType(TextField).at(0), 'Lola Iska');
+    await tester.enterText(find.byType(TextField).at(1), '0917 000 0000');
+    await tester.tap(find.text('Find a Rider for Them'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Booking for someone else must create the request, not merely navigate:
+    // an unwired screen dead-ends on the matching screen's "No active request".
+    final request = state.myRideRequest;
+    expect(request, isNotNull);
+    expect(request!.passengerName, 'Lola Iska',
+        reason: 'the rider should see the person actually travelling');
+    expect(request.passengerInitials, 'LI');
+    expect(find.text('matching'), findsOneWidget,
+        reason: 'the flow continues to the matching screen');
 
     await _drainSnackBars(tester);
   });

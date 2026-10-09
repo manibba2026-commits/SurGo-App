@@ -10,6 +10,8 @@ import 'vehicle_documents_screen.dart';
 import 'vehicle_owner_bookings_screen.dart';
 import 'vehicle_owner_earnings_screen.dart';
 import 'wallet_screen.dart';
+import 'verification_screen.dart';
+import '../widgets/verification_tile.dart';
 
 class VehicleOwnerProfileScreen extends StatelessWidget {
   final bool embedded;
@@ -36,16 +38,20 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(owner.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        Text(owner.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 16)),
                         if (owner.verified) ...[
                           const SizedBox(width: 6),
-                          const Icon(Icons.verified, size: 16, color: AppColors.primaryLight),
+                          const Icon(Icons.verified,
+                              size: 16, color: AppColors.primaryLight),
                         ],
                       ],
                     ),
                     Text(
                       '⭐ ${owner.rating} · ${owner.totalRentals} rentals · Since ${owner.memberSince}',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                      style:
+                          const TextStyle(color: AppColors.muted, fontSize: 12),
                     ),
                   ],
                 ),
@@ -60,7 +66,10 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
                       label: 'Bookings',
                       color: AppColors.primaryLight,
                       onTap: () => Navigator.push(
-                          context, MaterialPageRoute(builder: (_) => const VehicleOwnerBookingsScreen(embedded: false))),
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const VehicleOwnerBookingsScreen(
+                                  embedded: false))),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -71,7 +80,10 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
                       label: 'Earnings',
                       color: AppColors.secondaryLight,
                       onTap: () => Navigator.push(
-                          context, MaterialPageRoute(builder: (_) => const VehicleOwnerEarningsScreen(embedded: false))),
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const VehicleOwnerEarningsScreen(
+                                  embedded: false))),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -81,8 +93,11 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
                       icon: Icons.account_balance_wallet_outlined,
                       label: 'Cash Out',
                       color: AppColors.primaryLight,
-                      onTap: () => Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const WalletScreen(isOwner: true, embedded: false))),
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const WalletScreen(
+                                  isOwner: true, embedded: false))),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -92,19 +107,33 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
                       icon: Icons.description_outlined,
                       label: 'Documents',
                       color: AppColors.muted,
-                      onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const VehicleDocumentsScreen())),
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const VehicleDocumentsScreen())),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
               _settingsRow(context, 'Emergency Contacts',
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmergencyContactsScreen()))),
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const EmergencyContactsScreen()))),
+              const SizedBox(height: 8),
+              VerificationStatusRow(
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const VerificationScreen()))),
               const SizedBox(height: 8),
               _settingsRow(context, 'Account Settings',
                   onTap: () => Navigator.push(
-                      context, MaterialPageRoute(builder: (_) => const AccountSettingsScreen(isRider: true)))),
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              const AccountSettingsScreen(isRider: true)))),
               const SizedBox(height: 20),
               const SbModeSwitcher(),
             ],
@@ -117,7 +146,10 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
   }
 
   Widget _quickAction(BuildContext context,
-      {required IconData icon, required String label, required Color color, VoidCallback? onTap}) {
+      {required IconData icon,
+      required String label,
+      required Color color,
+      VoidCallback? onTap}) {
     return SbCard(
       padding: const EdgeInsets.symmetric(vertical: 12),
       onTap: onTap,
@@ -125,20 +157,26 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: color),
           const SizedBox(height: 6),
-          Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
+          Text(label,
+              textAlign: TextAlign.center,
+              style:
+                  const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 
-  Widget _settingsRow(BuildContext context, String label, {VoidCallback? onTap}) {
+  Widget _settingsRow(BuildContext context, String label,
+      {VoidCallback? onTap}) {
     return SbCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       onTap: onTap,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          Text(label,
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
           const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
         ],
       ),

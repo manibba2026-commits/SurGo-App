@@ -9,6 +9,7 @@ import 'active_rental_screen.dart';
 import 'activity_screen.dart';
 import 'assisted_booking_screen.dart';
 import 'notifications_screen.dart';
+import 'pasuyo_task_screen.dart';
 
 /// The passenger Home tab. When [embedded] is true (the normal case, as a
 /// page inside [PassengerShell]) it renders just its content with no
@@ -212,6 +213,32 @@ class _HomeContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          // Live requests created this run, above the seeded history so the
+          // dashboard reflects what the account is actually doing right now.
+          ListenableBuilder(
+            listenable: state,
+            builder: (context, _) {
+              final ride = state.liveRideRequest;
+              final orders = state.livePasuyoOrders;
+              if (ride == null && orders.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                children: [
+                  if (ride != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _liveRideCard(context, ride),
+                    ),
+                  for (final t in orders)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _livePasuyoCard(context, t),
+                    ),
+                ],
+              );
+            },
+          ),
           ListenableBuilder(
             listenable: state,
             builder: (context, _) {
@@ -262,7 +289,8 @@ class _HomeContent extends StatelessWidget {
                               ],
                             ),
                           ),
-                          SbTag(booking.status.shortLabel, secondary: !isPending),
+                          SbTag(booking.status.shortLabel,
+                              secondary: !isPending),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -382,6 +410,113 @@ class _HomeContent extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// The passenger's live ride request, tappable to whichever screen owns its
+  /// next step. Rendered by the home tab so a request just created is visible
+  /// without opening Activity.
+  Widget _liveRideCard(BuildContext context, RideRequestItem request) {
+    return SbCard(
+      borderColor: AppColors.primary.withValues(alpha: 0.4),
+      onTap: () => Navigator.pushNamed(
+        context,
+        request.status.isOpen ? '/matching' : '/livetrip',
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.electric_rickshaw,
+                    size: 18, color: AppColors.primaryLight),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${request.pickup} → ${request.dropoff}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    const SizedBox(height: 2),
+                    Text(request.status.label,
+                        style: const TextStyle(
+                            color: AppColors.muted, fontSize: 11)),
+                  ],
+                ),
+              ),
+              SbTag(request.status.shortLabel),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('${Money.format(request.fare)} · Tap to follow your ride',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
+  /// A Pasuyo errand this account posted and is still waiting on. Tapping opens
+  /// the customer-side tracker.
+  Widget _livePasuyoCard(BuildContext context, PasuyoTask task) {
+    return SbCard(
+      borderColor: AppColors.yellow.withValues(alpha: 0.3),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.panel2,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child:
+                    Icon(task.category.icon, size: 18, color: AppColors.yellow),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(task.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    const SizedBox(height: 2),
+                    Text(task.status.label,
+                        style: const TextStyle(
+                            color: AppColors.muted, fontSize: 11)),
+                  ],
+                ),
+              ),
+              SbTag(task.status.shortLabel),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('${Money.format(task.budget)} · Tap to track your errand',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
         ],
       ),
     );

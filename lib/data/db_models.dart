@@ -656,12 +656,102 @@ class VehicleOwnerProfile {
       );
 }
 
+/// The kinds of work an [Account] can be approved to do on SurGo.
+///
+/// Distinct from [UserMode] (a login shell): an Earner is approved for
+/// `earner` and/or `rider`, so a driver who only takes passenger rides and a
+/// courier who only runs errands are different capabilities here even though
+/// they share the same Earner shell.
+enum CapabilityType {
+  passenger,
+  earner,
+  rider,
+  vehicleOwner;
+
+  static CapabilityType fromJson(Object? raw) => switch ('$raw') {
+        'passenger' => CapabilityType.passenger,
+        'earner' => CapabilityType.earner,
+        'rider' => CapabilityType.rider,
+        'vehicleOwner' => CapabilityType.vehicleOwner,
+        _ => CapabilityType.passenger,
+      };
+
+  String get jsonKey => switch (this) {
+        CapabilityType.passenger => 'passenger',
+        CapabilityType.earner => 'earner',
+        CapabilityType.rider => 'rider',
+        CapabilityType.vehicleOwner => 'vehicleOwner',
+      };
+
+  String get label => switch (this) {
+        CapabilityType.passenger => 'Passenger',
+        CapabilityType.earner => 'Earner',
+        CapabilityType.rider => 'Rider',
+        CapabilityType.vehicleOwner => 'Vehicle Owner',
+      };
+}
+
+/// Whether an [Account] may sign in and use its approved capabilities at all.
+enum AccountStatus {
+  active,
+  suspended;
+
+  static AccountStatus fromJson(Object? raw) =>
+      '$raw' == 'suspended' ? AccountStatus.suspended : AccountStatus.active;
+
+  String get label => switch (this) {
+        AccountStatus.active => 'Active',
+        AccountStatus.suspended => 'Suspended',
+      };
+}
+
+/// How far verification for one [CapabilityType] has progressed.
+enum VerificationStatus {
+  draft,
+  submitted,
+  underReview,
+  approved,
+  rejected,
+  needsResubmission;
+
+  static VerificationStatus fromJson(Object? raw) => switch ('$raw') {
+        'submitted' => VerificationStatus.submitted,
+        'underReview' => VerificationStatus.underReview,
+        'approved' => VerificationStatus.approved,
+        'rejected' => VerificationStatus.rejected,
+        'needsResubmission' => VerificationStatus.needsResubmission,
+        _ => VerificationStatus.draft,
+      };
+
+  String get jsonKey => switch (this) {
+        VerificationStatus.draft => 'draft',
+        VerificationStatus.submitted => 'submitted',
+        VerificationStatus.underReview => 'underReview',
+        VerificationStatus.approved => 'approved',
+        VerificationStatus.rejected => 'rejected',
+        VerificationStatus.needsResubmission => 'needsResubmission',
+      };
+
+  String get label => switch (this) {
+        VerificationStatus.draft => 'Draft',
+        VerificationStatus.submitted => 'Submitted',
+        VerificationStatus.underReview => 'Under review',
+        VerificationStatus.approved => 'Approved',
+        VerificationStatus.rejected => 'Rejected',
+        VerificationStatus.needsResubmission => 'Action needed',
+      };
+}
+
 /// One sign-in identity for the local mock.
 ///
 /// This is deliberately not real authentication: [password] is stored in the
 /// seed in plaintext and compared in memory. An account can hold any mix of
 /// roles, each pointing at the profile it acts as, so one person can be a
 /// passenger, an earner and a vehicle owner at the same time.
+///
+/// What an account may *do* is separate from which profiles it links to:
+/// [approvedCapabilities] is the gate the screens enforce, [eligibleCapabilities]
+/// is what it may still apply for, and [status] suspends everything at once.
 class Account {
   final String id;
   final String name;
@@ -674,7 +764,21 @@ class Account {
   final String? riderId;
   final String? ownerId;
 
-  const Account({
+  /// The capabilities this account is approved to use right now. This is the
+  /// gate the app enforces: eligibility alone never unlocks a mode, and a
+  /// reverted document removes the capability here before any screen is shown.
+  final Set<CapabilityType> approvedCapabilities;
+
+  /// What this account can apply for. Kept apart from
+  /// [approvedCapabilities] so "eligible to become" and "already approved to
+  /// act as" are two facts the app can tell apart.
+  final Set<CapabilityType> eligibleCapabilities;
+
+  /// Whether the account can sign in. A suspended account is refused at login
+  /// even though its capabilities above are unchanged.
+  final AccountStatus status;
+
+  Account({
     required this.id,
     required this.name,
     required this.phone,
@@ -683,11 +787,35 @@ class Account {
     this.passengerId,
     this.riderId,
     this.ownerId,
-  });
+    Set<CapabilityType>? approvedCapabilities,
+    Set<CapabilityType>? eligibleCapabilities,
+    this.status = AccountStatus.active,
+  })  : approvedCapabilities = approvedCapabilities ??
+            Account._defaultApprovedFor(passengerId, riderId, ownerId),
+        eligibleCapabilities = eligibleCapabilities ??
+            {
+              for (final c in CapabilityType.values)
+                if (!(approvedCapabilities ?? const {}).contains(c)) c,
+            };
+
+  bool get isActive => status == AccountStatus.active;
 
   bool get hasPassengerRole => passengerId != null;
   bool get hasRiderRole => riderId != null;
   bool get hasOwnerRole => ownerId != null;
+
+  /// The capabilities usable while the account is active. A suspended account
+  /// returns nothing for the same [approvedCapabilities].
+  Set<CapabilityType> get usableCapabilities =>
+      isActive ? approvedCapabilities : const {};
+
+  /// Whether [type] is approved *and* the account is active enough to use it.
+  bool authorizedFor(CapabilityType type) =>
+      isActive && approvedCapabilities.contains(type);
+
+  /// Whether the account may apply for [type]. Approval is a separate fact —
+  /// see [authorizedFor].
+  bool canApplyFor(CapabilityType type) => eligibleCapabilities.contains(type);
 
   /// True when [identifier] is this account's phone or email, case-insensitive.
   bool matches(String identifier) {
@@ -696,21 +824,166 @@ class Account {
         (phone.toLowerCase() == needle || email.toLowerCase() == needle);
   }
 
+  /// The approved set an old-style seed (roles only, no `capabilities` block)
+  /// implies: every role it links to, plus errand work for whoever has an
+  /// earner profile — before this list an earner profile could always enter
+  /// rider mode.
+  static Set<CapabilityType> _defaultApprovedFor(
+      String? passengerId, String? riderId, String? ownerId) {
+    return {
+      if (passengerId != null) CapabilityType.passenger,
+      if (riderId != null) CapabilityType.rider,
+      if (riderId != null) CapabilityType.earner,
+      if (ownerId != null) CapabilityType.vehicleOwner,
+    };
+  }
+
   factory Account.fromJson(Map<String, dynamic> j) {
     final roles = j['roles'] is Map<String, dynamic>
         ? j['roles'] as Map<String, dynamic>
         : const <String, dynamic>{};
+    final passengerId = roles['passenger'] as String?;
+    final riderId = roles['earner'] as String?;
+    final ownerId = roles['vehicleOwner'] as String?;
+
+    final caps = j['capabilities'] is Map<String, dynamic>
+        ? j['capabilities'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final approvedRaw = caps['approved'];
+    final eligibleRaw = caps['eligible'];
+    final approved = approvedRaw is List
+        ? {for (final c in approvedRaw) CapabilityType.fromJson(c)}
+        : Account._defaultApprovedFor(passengerId, riderId, ownerId);
+
     return Account(
       id: j['id'],
       name: j['name'],
       phone: j['phone'],
       email: j['email'],
       password: j['password'] ?? '',
-      passengerId: roles['passenger'] as String?,
-      riderId: roles['earner'] as String?,
-      ownerId: roles['vehicleOwner'] as String?,
+      passengerId: passengerId,
+      riderId: riderId,
+      ownerId: ownerId,
+      approvedCapabilities: approved,
+      eligibleCapabilities: eligibleRaw is List
+          ? {for (final c in eligibleRaw) CapabilityType.fromJson(c)}
+          : {
+              for (final c in CapabilityType.values)
+                if (!approved.contains(c)) c,
+            },
+      status: AccountStatus.fromJson(j['accountStatus']),
     );
   }
+}
+
+/// One document in a [VerificationApplication]. Only metadata: the prototype
+/// never stores real document bytes, just each requirement plus what has been
+/// "uploaded" for it in the demo.
+class VerificationDocumentItem {
+  final String id;
+
+  /// Which capability this document proves. Binds the requirement to a single
+  /// application because an NBI clearance proves an errand applicant's record,
+  /// not their drive-to-park-at-night fitness.
+  final CapabilityType capabilityType;
+  final String label;
+  final String hint;
+  final bool required;
+  bool uploaded;
+  String? fileName;
+
+  VerificationDocumentItem({
+    required this.id,
+    required this.capabilityType,
+    required this.label,
+    this.hint = '',
+    this.required = true,
+    this.uploaded = false,
+    this.fileName,
+  });
+
+  factory VerificationDocumentItem.fromJson(Map<String, dynamic> j) =>
+      VerificationDocumentItem(
+        id: j['id'],
+        capabilityType: CapabilityType.fromJson(j['capability']),
+        label: j['label'],
+        hint: j['hint'] ?? '',
+        required: j['required'] ?? true,
+        uploaded: j['uploaded'] ?? false,
+        fileName: j['fileName'],
+      );
+}
+
+/// An application for one [CapabilityType], from document collection through
+/// review to approval. Approval here is what moves a capability out of
+/// [Account.eligibleCapabilities] and into [Account.approvedCapabilities].
+class VerificationApplication {
+  final String id;
+  final String accountId;
+  final CapabilityType capabilityType;
+  VerificationStatus status;
+  DateTime? submittedAt;
+  DateTime? reviewedAt;
+  String? reviewerNote;
+  final List<VerificationDocumentItem> documents;
+
+  VerificationApplication({
+    required this.id,
+    required this.accountId,
+    required this.capabilityType,
+    this.status = VerificationStatus.draft,
+    this.submittedAt,
+    this.reviewedAt,
+    this.reviewerNote,
+    required this.documents,
+  });
+
+  /// Whether every required document has been uploaded. An application cannot
+  /// be submitted until this is true.
+  bool get isComplete => documents.every((d) => !d.required || d.uploaded);
+
+  /// Whether the account can submit for review right now.
+  bool get canSubmit => isComplete && status == VerificationStatus.draft;
+
+  bool get isApproved => status == VerificationStatus.approved;
+
+  factory VerificationApplication.fromJson(Map<String, dynamic> j) =>
+      VerificationApplication(
+        id: j['id'],
+        accountId: j['accountId'],
+        capabilityType: CapabilityType.fromJson(j['capability']),
+        status: VerificationStatus.fromJson(j['status']),
+        submittedAt: parseIsoTimestamp(j['submittedAt']),
+        reviewedAt: parseIsoTimestamp(j['reviewedAt']),
+        reviewerNote: j['reviewerNote'],
+        documents: [
+          for (final d in (j['documents'] as List? ?? const []))
+            if (d is Map<String, dynamic>) VerificationDocumentItem.fromJson(d),
+        ],
+      );
+
+  /// Serialized for the local JSON server; the seed file uses the same shape.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'accountId': accountId,
+        'capability': capabilityType.jsonKey,
+        'status': status.jsonKey,
+        'submittedAt': submittedAt?.toIso8601String(),
+        'reviewedAt': reviewedAt?.toIso8601String(),
+        'reviewerNote': reviewerNote,
+        'documents': [
+          for (final d in documents)
+            {
+              'id': d.id,
+              'capability': d.capabilityType.jsonKey,
+              'label': d.label,
+              'hint': d.hint,
+              'required': d.required,
+              'uploaded': d.uploaded,
+              'fileName': d.fileName,
+            },
+        ],
+      };
 }
 
 /// One barangay in Tandag City, together with its puroks — used to power

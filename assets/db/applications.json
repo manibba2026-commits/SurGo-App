@@ -1,0 +1,105 @@
+{
+  "_note": "Verification applications per account, matching accounts.json: an approved application documents a capability already in capabilities.approved; drafts and needsResubmission belong to capabilities.eligible. The simulated review only ever moves newly submitted applications — seeded outcomes are fixed so nothing auto-approves at boot.",
+  "applications": [
+    {
+      "id": "VAPP-ACC002-OWNER",
+      "accountId": "ACC002",
+      "capability": "vehicleOwner",
+      "status": "approved",
+      "submittedAt": "2026-09-01T08:30:00",
+      "reviewedAt": "2026-09-01T08:32:00",
+      "reviewerNote": "Approved in the local demo.",
+      "documents": [
+        {
+          "id": "orcr",
+          "capability": "vehicleOwner",
+          "label": "Vehicle OR/CR",
+          "hint": "Official Receipt and Certificate of Registration for each vehicle you will list.",
+          "required": true,
+          "uploaded": true,
+          "fileName": "orcr_grace_ann.pdf"
+        },
+        {
+          "id": "insurance",
+          "capability": "vehicleOwner",
+          "label": "Motor insurance policy",
+          "hint": "Comprehensive or third-party insurance covering the vehicles you will rent out.",
+          "required": true,
+          "uploaded": true,
+          "fileName": "insurance_grace_ann.pdf"
+        },
+        {
+          "id": "permit",
+          "capability": "vehicleOwner",
+          "label": "Rental business permit",
+          "hint": "Barangay or municipal permit authorizing vehicle rentals.",
+          "required": true,
+          "uploaded": true,
+          "fileName": "permit_grace_ann.pdf"
+        }
+      ]
+    },
+    {
+      "id": "VAPP-ACC006-OWNER",
+      "accountId": "ACC006",
+      "capability": "vehicleOwner",
+      "status": "needsResubmission",
+      "submittedAt": "2026-10-02T14:00:00",
+      "reviewedAt": "2026-10-02T14:03:00",
+      "reviewerNote": "Your insurance policy is expired. Upload a current one and resubmit.",
+      "documents": [
+        {
+          "id": "orcr",
+          "capability": "vehicleOwner",
+          "label": "Vehicle OR/CR",
+          "hint": "Official Receipt and Certificate of Registration for each vehicle you will list.",
+          "required": true,
+          "uploaded": true,
+          "fileName": "orcr_bebot.pdf"
+        },
+        {
+          "id": "insurance",
+          "capability": "vehicleOwner",
+          "label": "Motor insurance policy",
+          "hint": "Comprehensive or third-party insurance covering the vehicles you will rent out.",
+          "required": true,
+          "uploaded": true,
+          "fileName": "insurance_bebot_expired.pdf"
+        },
+        {
+          "id": "permit",
+          "capability": "vehicleOwner",
+          "label": "Rental business permit",
+          "hint": "Barangay or municipal permit authorizing vehicle rentals.",
+          "required": true,
+          "uploaded": false
+        }
+      ]
+    },
+    {
+      "id": "VAPP-ACC010-RIDER",
+      "accountId": "ACC010",
+      "capability": "rider",
+      "status": "draft",
+      "documents": [
+        {
+          "id": "dl",
+          "capability": "rider",
+          "label": "Driver's license",
+          "hint": "Valid non-professional or professional driver's license, front and back.",
+          "required": true,
+          "uploaded": true,
+          "fileName": "license_isabella.jpg"
+        },
+        {
+          "id": "orcr",
+          "capability": "rider",
+          "label": "Vehicle OR/CR",
+          "hint": "Official Receipt and Certificate of Registration for the vehicle you will drive.",
+          "required": true,
+          "uploaded": false
+        }
+      ]
+    }
+  ]
+}

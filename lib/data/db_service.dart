@@ -52,6 +52,10 @@ class DbService {
   /// Seed accounts from `accounts.json`. Empty until [load] runs.
   List<Account> accounts = const [];
 
+  /// Verification applications from `applications.json`, plus any created
+  /// during this run.
+  List<VerificationApplication> verificationApplications = const [];
+
   // Per-profile data, keyed by profile id, so activating an account also swaps
   // the wallet, notifications and settings the screens read from.
   final Map<String, int> walletBalanceByUser = {};
@@ -121,8 +125,11 @@ class DbService {
     final users = _expect(files, 'users.json');
     _readUsers(users);
 
-    accounts =
-        _parseList(_expect(files, 'accounts.json'), 'accounts', Account.fromJson);
+    accounts = _parseList(
+        _expect(files, 'accounts.json'), 'accounts', Account.fromJson);
+
+    verificationApplications = _parseList(_expect(files, 'applications.json'),
+        'applications', VerificationApplication.fromJson);
 
     final locations = _expect(files, 'locations.json');
     barangays = _parseList(locations, 'barangays', Barangay.fromJson);
@@ -196,7 +203,8 @@ class DbService {
   /// settings. The three signed-in slices are pointed at the primary account by
   /// [activatePrimary] once wallets have loaded too.
   void _readUsers(Map<String, dynamic> users) {
-    for (final p in _parseList(users, 'passengers', PassengerProfile.fromJson)) {
+    for (final p
+        in _parseList(users, 'passengers', PassengerProfile.fromJson)) {
       passengers[p.id] = p;
     }
     for (final e in _parseList(users, 'earners', EarnerProfile.fromJson)) {
@@ -208,8 +216,8 @@ class DbService {
 
     paymentMethods =
         _parseList(users, 'paymentMethods', PaymentMethodItem.fromJson);
-    emergencyContacts = _parseList(
-        users, 'emergencyContacts', EmergencyContactItem.fromJson);
+    emergencyContacts =
+        _parseList(users, 'emergencyContacts', EmergencyContactItem.fromJson);
     final fav = _map(users, 'favorites');
     favoriteRiders = _parseList(fav, 'riders', FavoriteRider.fromJson);
     favoriteVehicles = _parseList(fav, 'vehicles', FavoriteVehicle.fromJson);
@@ -286,8 +294,8 @@ class DbService {
     if (passengerProfile != null) {
       passenger = passengerProfile;
       passengerWalletBalance = walletBalanceByUser[passengerProfile.id] ?? 0;
-      passengerTransactions =
-          walletTransactionsByUser[passengerProfile.id] ?? <WalletTransaction>[];
+      passengerTransactions = walletTransactionsByUser[passengerProfile.id] ??
+          <WalletTransaction>[];
       passengerNotifications =
           notificationsByUser[passengerProfile.id] ?? <NotificationItem>[];
       passengerSettings =
@@ -377,7 +385,8 @@ class DbService {
         id: 'welcome-$passengerId',
         type: 'system',
         title: 'Welcome to SurGo',
-        body: 'Your account is ready. Book a ride, rent a vehicle, or post an errand.',
+        body:
+            'Your account is ready. Book a ride, rent a vehicle, or post an errand.',
         time: 'Just now',
         read: false,
       ),
@@ -390,6 +399,12 @@ class DbService {
       email: email,
       password: password,
       passengerId: passengerId,
+      approvedCapabilities: const {CapabilityType.passenger},
+      eligibleCapabilities: const {
+        CapabilityType.earner,
+        CapabilityType.rider,
+        CapabilityType.vehicleOwner,
+      },
     );
     accounts = [...accounts, account];
     return account;
@@ -402,7 +417,10 @@ class DbService {
       );
 
   PassengerProfile _guestPassenger(
-          {String id = '', String name = '', String phone = '', String email = ''}) =>
+          {String id = '',
+          String name = '',
+          String phone = '',
+          String email = ''}) =>
       PassengerProfile(
         id: id,
         name: name,
@@ -417,7 +435,10 @@ class DbService {
       );
 
   EarnerProfile _guestEarner(
-          {String id = '', String name = '', String phone = '', String email = ''}) =>
+          {String id = '',
+          String name = '',
+          String phone = '',
+          String email = ''}) =>
       EarnerProfile(
         id: id,
         name: name,
@@ -436,7 +457,10 @@ class DbService {
       );
 
   VehicleOwnerProfile _guestOwner(
-          {String id = '', String name = '', String phone = '', String email = ''}) =>
+          {String id = '',
+          String name = '',
+          String phone = '',
+          String email = ''}) =>
       VehicleOwnerProfile(
         id: id,
         name: name,
@@ -515,7 +539,10 @@ class DbService {
   List<Map<String, dynamic>> _list(Map<String, dynamic> file, String key) {
     final raw = file[key];
     if (raw is! List) return const [];
-    return [for (final e in raw) if (e is Map<String, dynamic>) e];
+    return [
+      for (final e in raw)
+        if (e is Map<String, dynamic>) e
+    ];
   }
 
   /// Parses a list section, ignoring entries that are not objects. An absent

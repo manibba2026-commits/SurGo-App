@@ -1,5 +1,5 @@
 {
-  "_note": "Local mock sign-in. Passwords are stored in plaintext on purpose and compared in memory — this is NOT real authentication. Each account links to the profile ids it can act as, so one account can be a passenger, an earner and a vehicle owner at once. Every seeded password is 'surgo123'.",
+  "_note": "Local mock sign-in. Passwords are stored in plaintext on purpose and compared in memory — this is NOT real authentication. Each account links to the profile ids it can act as (roles) and declares which capabilities it is approved for (capabilities.approved) and which it may still apply for (capabilities.eligible). Approval is the gate: an eligible-but-not-approved capability never unlocks its mode. ACC001 is approved for all four so the seeded ride demo works. Every seeded password is 'surgo123'.",
   "accounts": [
     {
       "id": "ACC001",
@@ -7,10 +7,15 @@
       "phone": "+63 917 512 4809",
       "email": "jr.derigay@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
         "passenger": "P001",
         "earner": "R001",
         "vehicleOwner": "VOW-77213"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner", "rider", "vehicleOwner"],
+        "eligible": []
       }
     },
     {
@@ -19,8 +24,14 @@
       "phone": "+63 917 220 4411",
       "email": "grace.villaflor@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
-        "passenger": "P002"
+        "passenger": "P002",
+        "vehicleOwner": "VOW-77214"
+      },
+      "capabilities": {
+        "approved": ["passenger", "vehicleOwner"],
+        "eligible": ["earner", "rider"]
       }
     },
     {
@@ -29,8 +40,13 @@
       "phone": "+63 918 335 2290",
       "email": "nena.villareal@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
         "passenger": "P003"
+      },
+      "capabilities": {
+        "approved": ["passenger"],
+        "eligible": ["earner", "rider", "vehicleOwner"]
       }
     },
     {
@@ -39,8 +55,14 @@
       "phone": "+63 919 447 8812",
       "email": "danilo.cruz@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
-        "passenger": "P004"
+        "passenger": "P004",
+        "vehicleOwner": "VOW-77215"
+      },
+      "capabilities": {
+        "approved": ["passenger", "vehicleOwner"],
+        "eligible": ["earner", "rider"]
       }
     },
     {
@@ -49,8 +71,14 @@
       "phone": "+63 916 558 7734",
       "email": "rosalinda.pajo@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
-        "passenger": "P005"
+        "passenger": "P005",
+        "vehicleOwner": "VOW-77216"
+      },
+      "capabilities": {
+        "approved": ["passenger", "vehicleOwner"],
+        "eligible": ["earner", "rider"]
       }
     },
     {
@@ -59,8 +87,14 @@
       "phone": "+63 926 771 3390",
       "email": "bebot.lim@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
+        "passenger": "P007",
         "earner": "R002"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner"],
+        "eligible": ["rider", "vehicleOwner"]
       }
     },
     {
@@ -69,8 +103,14 @@
       "phone": "+63 927 882 4415",
       "email": "carlo.mendoza@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
+        "passenger": "P008",
         "earner": "R003"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner"],
+        "eligible": ["rider", "vehicleOwner"]
       }
     },
     {
@@ -79,8 +119,14 @@
       "phone": "+63 928 993 5521",
       "email": "danny.reyes@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
+        "passenger": "P009",
         "earner": "R004"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner"],
+        "eligible": ["rider", "vehicleOwner"]
       }
     },
     {
@@ -89,8 +135,45 @@
       "phone": "+63 929 104 6632",
       "email": "edwin.santillan@email.com",
       "password": "surgo123",
+      "accountStatus": "active",
       "roles": {
-        "earner": "R005"
+        "passenger": "P010"
+      },
+      "capabilities": {
+        "approved": ["passenger"],
+        "eligible": ["earner", "rider", "vehicleOwner"]
+      }
+    },
+    {
+      "id": "ACC010",
+      "name": "Isabella Dizon",
+      "phone": "+63 930 215 8888",
+      "email": "isabella.dizon@email.com",
+      "password": "surgo123",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P006",
+        "earner": "R006",
+        "vehicleOwner": "VOW-77217"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner", "vehicleOwner"],
+        "eligible": ["rider"]
+      }
+    },
+    {
+      "id": "ACC011",
+      "name": "Marco Villanueva",
+      "phone": "+63 931 326 9977",
+      "email": "marco.villanueva@email.com",
+      "password": "surgo123",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P011"
+      },
+      "capabilities": {
+        "approved": ["passenger"],
+        "eligible": ["earner", "rider", "vehicleOwner"]
       }
     }
   ]

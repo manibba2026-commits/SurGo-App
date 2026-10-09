@@ -19,7 +19,8 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
   final nameCtrl = TextEditingController();
   final phoneCtrl = TextEditingController();
   final pickupCtrl = TextEditingController(text: 'Barangay Hall, Poblacion');
-  final destinationCtrl = TextEditingController(text: 'Tandag City Public Market');
+  final destinationCtrl =
+      TextEditingController(text: 'Tandag City Public Market');
   String channel = 'App';
 
   @override
@@ -45,25 +46,47 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
             style: TextStyle(color: AppColors.muted, fontSize: 12, height: 1.6),
           ),
           const SizedBox(height: 18),
-          const Text('Requested via', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.muted)),
+          const Text('Requested via',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                  color: AppColors.muted)),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: SbChip('App', active: channel == 'App', onTap: () => setState(() => channel = 'App'))),
+              Expanded(
+                  child: SbChip('App',
+                      active: channel == 'App',
+                      onTap: () => setState(() => channel = 'App'))),
               const SizedBox(width: 8),
-              Expanded(child: SbChip('Phone Call', active: channel == 'Phone Call', onTap: () => setState(() => channel = 'Phone Call'))),
+              Expanded(
+                  child: SbChip('Phone Call',
+                      active: channel == 'Phone Call',
+                      onTap: () => setState(() => channel = 'Phone Call'))),
               const SizedBox(width: 8),
-              Expanded(child: SbChip('SMS', active: channel == 'SMS', onTap: () => setState(() => channel = 'SMS'))),
+              Expanded(
+                  child: SbChip('SMS',
+                      active: channel == 'SMS',
+                      onTap: () => setState(() => channel = 'SMS'))),
             ],
           ),
           const SizedBox(height: 18),
-          const Text('Passenger details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.muted)),
+          const Text('Passenger details',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                  color: AppColors.muted)),
           const SizedBox(height: 8),
           _textField('Passenger name', nameCtrl, Icons.person_outline),
           const SizedBox(height: 8),
-          _textField('Contact number', phoneCtrl, Icons.call_outlined, keyboardType: TextInputType.phone),
+          _textField('Contact number', phoneCtrl, Icons.call_outlined,
+              keyboardType: TextInputType.phone),
           const SizedBox(height: 18),
-          const Text('Trip details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: AppColors.muted)),
+          const Text('Trip details',
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                  color: AppColors.muted)),
           const SizedBox(height: 8),
           _textField('Pickup location', pickupCtrl, Icons.radio_button_checked),
           const SizedBox(height: 8),
@@ -72,17 +95,24 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
           SbPrimaryButton(
             label: 'Find a Rider for Them',
             onPressed: () {
-              if (nameCtrl.text.trim().isEmpty || phoneCtrl.text.trim().isEmpty) {
+              if (nameCtrl.text.trim().isEmpty ||
+                  phoneCtrl.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Enter the passenger\'s name and contact number first')),
+                  const SnackBar(
+                      content: Text(
+                          'Enter the passenger\'s name and contact number first')),
                 );
                 return;
               }
               state.setPickup(pickupCtrl.text.trim());
               state.setDestination(destinationCtrl.text.trim());
-              Navigator.pushNamed(context, '/matching', arguments: {
-                'assistedFor': nameCtrl.text.trim(),
-              });
+              // Create the request before matching, exactly like the normal
+              // booking screen: without it the matching screen has nothing to
+              // match against and dead-ends on "No active request". The
+              // assisted passenger's name rides on the request so the rider
+              // sees who is actually travelling.
+              state.createRideRequest(forPassenger: nameCtrl.text.trim());
+              Navigator.pushNamed(context, '/matching');
             },
           ),
         ],
@@ -90,7 +120,8 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
     );
   }
 
-  Widget _textField(String label, TextEditingController ctrl, IconData icon, {TextInputType? keyboardType}) {
+  Widget _textField(String label, TextEditingController ctrl, IconData icon,
+      {TextInputType? keyboardType}) {
     return TextField(
       controller: ctrl,
       keyboardType: keyboardType,

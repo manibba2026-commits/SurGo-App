@@ -36,8 +36,12 @@ class RiderHomeScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(earner.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                      Text('Earner ID ${earner.id}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                      Text(earner.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 14)),
+                      Text('Earner ID ${earner.id}',
+                          style: const TextStyle(
+                              color: AppColors.muted, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -48,14 +52,17 @@ class RiderHomeScreen extends StatelessWidget {
                       children: [
                         SbIconButton(
                           icon: Icons.map_outlined,
-                          onTap: () => Navigator.pushNamed(context, '/map/earner'),
+                          onTap: () =>
+                              Navigator.pushNamed(context, '/map/earner'),
                         ),
                         const SizedBox(width: 8),
                         SbIconButton(
                           icon: Icons.notifications_none,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const NotificationsScreen(isRider: true)),
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const NotificationsScreen(isRider: true)),
                           ),
                         ),
                       ],
@@ -68,10 +75,15 @@ class RiderHomeScreen extends StatelessWidget {
                           width: 15,
                           height: 15,
                           alignment: Alignment.center,
-                          decoration: const BoxDecoration(color: AppColors.secondary, shape: BoxShape.circle),
+                          decoration: const BoxDecoration(
+                              color: AppColors.secondary,
+                              shape: BoxShape.circle),
                           child: Text(
                             '${state.unreadRiderNotifications}',
-                            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.onAccent),
+                            style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.onAccent),
                           ),
                         ),
                       ),
@@ -88,10 +100,17 @@ class RiderHomeScreen extends StatelessWidget {
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: state.riderOnline ? AppColors.secondary : AppColors.muted2,
+                      color: state.riderOnline
+                          ? AppColors.secondary
+                          : AppColors.muted2,
                       shape: BoxShape.circle,
                       boxShadow: state.riderOnline
-                          ? [const BoxShadow(color: AppColors.secondarySoft, blurRadius: 0, spreadRadius: 3)]
+                          ? [
+                              const BoxShadow(
+                                  color: AppColors.secondarySoft,
+                                  blurRadius: 0,
+                                  spreadRadius: 3)
+                            ]
                           : null,
                     ),
                   ),
@@ -100,10 +119,15 @@ class RiderHomeScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(state.riderOnline ? "You're Online" : "You're Offline",
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                        Text(
+                            state.riderOnline
+                                ? "You're Online"
+                                : "You're Offline",
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 13)),
                         const Text('Visible for new ride requests',
-                            style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 11)),
                       ],
                     ),
                   ),
@@ -120,19 +144,29 @@ class RiderHomeScreen extends StatelessWidget {
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: _statBox(Money.format(state.earningsToday), 'Earnings')),
+                Expanded(
+                    child: _statBox(
+                        Money.format(state.earningsToday), 'Earnings')),
                 const SizedBox(width: 8),
-                Expanded(child: _statBox('${state.riderTrips.where((t) => t.status == 'Completed').length}', 'Trips')),
+                Expanded(
+                    child: _statBox(
+                        '${state.riderTrips.where((t) => t.status == 'Completed').length}',
+                        'Trips')),
                 const SizedBox(width: 8),
-                Expanded(child: _statBox('5h 20m', 'Online')),
+                Expanded(
+                    child: _statBox(
+                        Money.format(state.earningsWeek), 'This Week')),
               ],
             ),
             const SizedBox(height: 18),
-            if (state.activeRide != null) SbActiveRideBanner(ride: state.activeRide!),
+            if (state.activeRide != null)
+              SbActiveRideBanner(ride: state.activeRide!),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Incoming Requests', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+                const Text('Incoming Requests',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
                 SbTag('${state.pendingRequests.length} New', secondary: true),
               ],
             ),
@@ -148,7 +182,8 @@ class RiderHomeScreen extends StatelessWidget {
             else if (state.pendingRequests.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
-                child: Text('No pending requests right now.', style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+                child: Text('No pending requests right now.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
               )
             else
               ...state.pendingRequests.map(
@@ -168,7 +203,8 @@ class RiderHomeScreen extends StatelessWidget {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        appBar: AppBar(automaticallyImplyLeading: false, title: const Text('Rider Mode')),
+        appBar: AppBar(
+            automaticallyImplyLeading: false, title: const Text('Rider Mode')),
         body: content,
       ),
     );
@@ -231,9 +267,14 @@ class RiderHomeScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.primaryLight)),
+          Text(value,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: AppColors.primaryLight)),
           const SizedBox(height: 2),
-          Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+          Text(label,
+              style: const TextStyle(color: AppColors.muted, fontSize: 10)),
         ],
       ),
     );
@@ -257,52 +298,55 @@ class _NearbyPasuyoCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id, helperMode: true)),
+        MaterialPageRoute(
+            builder: (_) =>
+                PasuyoTaskScreen(taskId: task.id, helperMode: true)),
       ),
       child: SbCard(
-      borderColor: AppColors.yellow.withValues(alpha: 0.25),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(task.category.icon, size: 17, color: AppColors.yellow),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(task.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+        borderColor: AppColors.yellow.withValues(alpha: 0.25),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(task.category.icon, size: 17, color: AppColors.yellow),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(task.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 12.5)),
+                ),
+                Text(b.providerGetsLabel,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 12.5)),
-              ),
-              Text(b.providerGetsLabel,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      color: AppColors.secondaryLight)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text('${task.pickup} → ${task.dropoff}',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-          const SizedBox(height: 10),
-          // Read-only: claiming the errand lives on the details screen, so the
-          // feed is a browse list and every card has exactly one job, which is
-          // to open the errand.
-          Row(
-            children: [
-              Expanded(
-                child: Text('You keep ${b.providerGetsLabel} of ${b.customerPaysLabel}',
-                    style: const TextStyle(
-                        color: AppColors.muted2, fontSize: 10.5)),
-              ),
-              const SizedBox(width: 10),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: AppColors.muted2),
-            ],
-          ),
-        ],
-      ),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AppColors.secondaryLight)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text('${task.pickup} → ${task.dropoff}',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(height: 10),
+            // Read-only: claiming the errand lives on the details screen, so the
+            // feed is a browse list and every card has exactly one job, which is
+            // to open the errand.
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                      'You keep ${b.providerGetsLabel} of ${b.customerPaysLabel}',
+                      style: const TextStyle(
+                          color: AppColors.muted2, fontSize: 10.5)),
+                ),
+                const SizedBox(width: 10),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 18, color: AppColors.muted2),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -324,49 +368,53 @@ class _ActivePasuyoCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id, helperMode: true)),
+        MaterialPageRoute(
+            builder: (_) =>
+                PasuyoTaskScreen(taskId: task.id, helperMode: true)),
       ),
       child: SbCard(
-      borderColor: AppColors.secondary.withValues(alpha: 0.4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Active task',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 12.5)),
-              ),
-              SbTag(task.status.shortLabel, secondary: true),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(task.title,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
-          const SizedBox(height: 12),
-          PasuyoStepper(task: task),
-          const SizedBox(height: 12),
-          // Progress only. The advance button is deliberately absent here: one
-          // screen per task owns its actions, so a stray tap on a banner in the
-          // feed cannot skip a step.
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  next == null
-                      ? 'Waiting for the customer to rate this task.'
-                      : 'Next: ${task.status.advanceActionLabel}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+        borderColor: AppColors.secondary.withValues(alpha: 0.4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Active task',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 12.5)),
                 ),
-              ),
-              const SizedBox(width: 10),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: AppColors.muted2),
-            ],
-          ),
-        ],
-      ),
+                SbTag(task.status.shortLabel, secondary: true),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(task.title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 12.5)),
+            const SizedBox(height: 12),
+            PasuyoStepper(task: task),
+            const SizedBox(height: 12),
+            // Progress only. The advance button is deliberately absent here: one
+            // screen per task owns its actions, so a stray tap on a banner in the
+            // feed cannot skip a step.
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    next == null
+                        ? 'Waiting for the customer to rate this task.'
+                        : 'Next: ${task.status.advanceActionLabel}',
+                    style:
+                        const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 18, color: AppColors.muted2),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@
     "config.json",
     "users.json",
     "accounts.json",
+    "applications.json",
     "locations.json",
     "vehicles.json",
     "rides.json",

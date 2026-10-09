@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:surgo/data/db_models.dart';
 import 'package:surgo/state/app_state.dart';
 
 /// Exercises the local mock sign-in: matching, role gating, identity swap and
@@ -49,14 +50,29 @@ void main() {
     expect(state.mode, UserMode.vehicleOwner);
   });
 
-  test('a rider-only account cannot switch to a role it does not hold', () {
+  test('an account cannot switch to a mode it was not approved for', () {
     state.login('bebot.lim@email.com', 'surgo123');
-    expect(state.availableModes, [UserMode.earner]);
-    expect(state.mode, UserMode.earner);
+    expect(state.availableModes, [UserMode.passenger, UserMode.earner]);
+    expect(state.mode, UserMode.passenger);
 
-    state.switchToMode(UserMode.passenger);
-    expect(state.mode, UserMode.earner,
-        reason: 'a rider account has no passenger shell to drop into');
+    state.switchToMode(UserMode.vehicleOwner);
+    expect(state.mode, UserMode.passenger,
+        reason: 'ACC006 is not approved to act as a vehicle owner');
+
+    state.switchToMode(UserMode.earner);
+    expect(state.mode, UserMode.earner);
+  });
+
+  test('approval gates a mode; eligibility alone does not', () {
+    state.login('grace.villaflor@email.com', 'surgo123');
+    expect(state.availableModes, [UserMode.passenger, UserMode.vehicleOwner]);
+    expect(state.authorizedFor(CapabilityType.vehicleOwner), isTrue);
+    expect(state.authorizedFor(CapabilityType.earner), isFalse);
+    expect(state.canApplyFor(CapabilityType.earner), isTrue);
+
+    state.switchToMode(UserMode.earner);
+    expect(state.mode, UserMode.passenger,
+        reason: 'eligible but not approved must not unlock the earner shell');
   });
 
   test('signing in swaps the wallet and profile the screens read', () {
