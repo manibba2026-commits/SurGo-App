@@ -4,7 +4,7 @@ import '../state/rental_status.dart';
 
 /// A vehicle option shown on the "choose a vehicle" step of booking.
 ///
-/// [fare] is an integer number of centavos â€” `4500` is â‚±45.00. See [Money].
+/// [fare] is an integer number of centavos — `4500` is ₱45.00. See [Money].
 class RideOption {
   final String name;
   final IconData icon;
@@ -65,7 +65,7 @@ class RecentBooking {
 
 /// A rentable vehicle listing.
 ///
-/// [pricePerDay] and [depositFee] are integer centavos â€” `90000` is â‚±900.00.
+/// [pricePerDay] and [depositFee] are integer centavos — `90000` is ₱900.00.
 class RentalVehicle {
   /// Stable identity for this listing, so a booking can be traced back to the
   /// listing it holds. Availability is checked per listing, and a name is not
@@ -105,7 +105,7 @@ const RentalVehicle({
 }
 
 /// The passenger's current rental request, created the moment they tap
-/// "Request Rental" and tracked in memory from then on â€” this is what
+/// "Request Rental" and tracked in memory from then on — this is what
 /// powers the pending-request card on the Home tab and the Active Rental
 /// screen. Unlike the classes above it isn't seeded from JSON; it's created
 /// and mutated at runtime by [AppState].
@@ -185,7 +185,7 @@ class RentalBooking {
 
   /// Moves to [target] if the path allows it, and reports whether it did.
   ///
-  /// The guard lives here so no screen can skip a step â€” most importantly, so
+  /// The guard lives here so no screen can skip a step — most importantly, so
   /// the owner's payout cannot be released on a vehicle that was never
   /// actually returned.
   bool advanceTo(RentalStatus target) {
@@ -253,14 +253,14 @@ class MockData {
 
   static const List<RecentBooking> recentBookings = [
     RecentBooking(
-      route: 'Poblacion â†’ SM Terminal',
-      subtitle: 'Yesterday, 6:40 PM Â· â‚±65.00',
+      route: 'Poblacion → SM Terminal',
+      subtitle: 'Yesterday, 6:40 PM · ₱65.00',
       fare: 6500,
       status: 'Done',
     ),
     RecentBooking(
-      route: 'Purok 5 â†’ Barangay Hall',
-      subtitle: 'Aug 24, 8:12 AM Â· â‚±30.00',
+      route: 'Purok 5 → Barangay Hall',
+      subtitle: 'Aug 24, 8:12 AM · ₱30.00',
       fare: 3000,
       status: 'Done',
     ),

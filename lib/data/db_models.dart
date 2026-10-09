@@ -7,13 +7,13 @@ import '../state/ride_status.dart';
 /// Typed wrappers around the raw JSON records in the `assets/db/` seed files.
 /// Every model below has a `fromJson` factory so DbService can parse the
 /// "temporary database" once at startup. Nothing here talks to a real
-/// backend â€” this is purely an offline UI simulation.
+/// backend — this is purely an offline UI simulation.
 ///
 /// Every amount in these files is an integer number of centavos.
 ///
-/// Records that used to carry only a display string (e.g. "Aug 28, 2026 Â·
+/// Records that used to carry only a display string (e.g. "Aug 28, 2026 ·
 /// 6:40 PM") also carry a real ISO 8601 field. Keep the string for rendering
-/// and use the parsed `DateTime` for sorting, filtering or grouping â€” never
+/// and use the parsed `DateTime` for sorting, filtering or grouping — never
 /// try to sort by the display string.
 DateTime? parseIsoTimestamp(Object? raw) {
   if (raw is! String || raw.isEmpty) return null;
@@ -656,7 +656,7 @@ class VehicleOwnerProfile {
       );
 }
 
-/// One barangay in Tandag City, together with its puroks â€” used to power
+/// One barangay in Tandag City, together with its puroks — used to power
 /// the pickup/destination barangay + purok picker.
 class Barangay {
   final String name;
@@ -1094,7 +1094,7 @@ class AccountSettingsData {
 }
 
 // ============================================================================
-// Map V1 â€” typed wrappers around assets/data/surgo_map_v1_mock_data.json.
+// Map V1 — typed wrappers around assets/data/surgo_map_v1_mock_data.json.
 // Fixed mock coordinates for riders/rentals/passengers/ride-requests; the
 // live device GPS position is resolved separately at runtime by
 // LocationService and is never read from this file.

@@ -59,7 +59,7 @@ enum PasuyoAcceptRefusal {
 }
 
 /// Everything here lives only in memory for the lifetime of the app run.
-/// There is no backend, no local storage, no network â€” purely a UI
+/// There is no backend, no local storage, no network — purely a UI
 /// simulation of what SurGo would look and feel like. Seed data is loaded
 /// once from the manifest-driven files under `assets/db/` via [DbService], and
 /// every "write" (accepting a ride, adding a saved place, topping up a
@@ -844,8 +844,8 @@ class AppState extends ChangeNotifier {
   // ---- rental booking simulation (passenger) ----
   // A passenger can only have one open rental request/active rental at a
   // time in this simulation. It starts as "Pending" the moment they tap
-  // Request Rental, shows up as a card on the Home tab, and â€” after a
-  // simulated 10s owner-approval delay â€” flips to "Active" in place.
+  // Request Rental, shows up as a card on the Home tab, and — after a
+  // simulated 10s owner-approval delay — flips to "Active" in place.
   RentalBooking? activeRentalBooking;
   Timer? _rentalApprovalTimer;
 
@@ -973,8 +973,8 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  /// Advances the live booking one step: requested â†’ awaiting owner â†’
-  /// accepted â†’ out with the customer â†’ returned.
+  /// Advances the live booking one step: requested → awaiting owner →
+  /// accepted → out with the customer → returned.
   ///
   /// [active] is the caller's explicit "I am moving on" signal, so a screen
   /// cannot advance a booking the user has not confirmed.
@@ -1259,9 +1259,9 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Advances the active task one step along [PasuyoStatus]: available â†’
-  /// accepted â†’ going to pickup â†’ at pickup â†’ collected â†’ delivering â†’ arrived
-  /// â†’ delivered.
+  /// Advances the active task one step along [PasuyoStatus]: available →
+  /// accepted → going to pickup → at pickup → collected → delivering → arrived
+  /// → delivered.
   ///
   /// The legal next status comes from the enum, so this cannot skip a step.
   /// Payment is released exactly once, on reaching [PasuyoStatus.delivered],
@@ -1319,7 +1319,7 @@ class AppState extends ChangeNotifier {
   /// Adds [amount] to the rider's seeded earnings roll-ups.
   ///
   /// The earnings screen derives its breakdown from trips and tasks, so those
-  /// totals move on their own â€” but the "Earnings" tile on the rider home screen
+  /// totals move on their own — but the "Earnings" tile on the rider home screen
   /// reads `earningsToday/Week/Month`, which are plain seed fields. Crediting a
   /// completed job has to update them too, or the tile stays frozen at the
   /// seeded figure after the rider has already been paid.
@@ -1377,7 +1377,7 @@ class AppState extends ChangeNotifier {
       );
 
   /// Incentives and tips, from wallet entries explicitly tagged `kind: "bonus"`.
-  /// Zero until a bonus is seeded â€” kept as its own line so the earnings
+  /// Zero until a bonus is seeded — kept as its own line so the earnings
   /// breakdown has somewhere for promos to land later.
   int get bonusEarnings {
     var sum = 0;
