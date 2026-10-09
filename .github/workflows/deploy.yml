@@ -1,14 +1,9 @@
-name: Deploy SurGo to Vercel
+name: CI
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
-# Only one deploy at a time; newer pushes supersede queued runs.
-concurrency:
-  group: deploy-production
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -30,60 +25,9 @@ jobs:
 
       - name: Analyze
         # Lint severity is tuned in analysis_options.yaml. Infos and the
-      # cosmetic rules ignored there are reported but not fatal; errors and
-      # real warnings still fail the job.
+        # cosmetic rules ignored there are reported but not fatal; errors and
+        # real warnings still fail the job.
         run: flutter analyze --fatal-infos --fatal-warnings
 
       - name: Test
         run: flutter test
-
-  build:
-    name: Build web
-    runs-on: ubuntu-latest
-    needs: analyze
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Resolve dependencies
-        run: flutter pub get
-
-      - name: Build
-        run: flutter build web --release
-
-      - name: Upload build/web
-        uses: actions/upload-artifact@v4
-        with:
-          name: surgo-web
-          path: build/web
-          retention-days: 7
-          if-no-files-found: error
-
-  deploy:
-    name: Deploy to Vercel
-    runs-on: ubuntu-latest
-    needs: build
-    # Deploy even if the Vercel CLI step fails, so the failure is visible in
-    # the run summary rather than hidden behind a skipped step.
-    if: success()
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.deployment-url }}
-    steps:
-      - name: Download build/web
-        uses: actions/download-artifact@v4
-        with:
-          name: surgo-web
-          path: build/web
-
-      - name: Deploy
-        id: deploy
-        run: npx --yes vercel@latest deploy --prebuilt --prod --yes
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
