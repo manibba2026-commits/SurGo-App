@@ -45,7 +45,7 @@
     },
     {
       "id": "R002",
-      "name": "Rider B",
+      "name": "Bebot Lim",
       "vehicle_type": "tricycle",
       "vehicle_model": "Local Tricycle",
       "vehicle_plate": "NGD 3355",
@@ -62,7 +62,7 @@
     },
     {
       "id": "R003",
-      "name": "Rider C",
+      "name": "Carlo Mendoza",
       "vehicle_type": "motorcycle",
       "vehicle_model": "Yamaha Mio i125",
       "vehicle_plate": "NGF 1188",
@@ -79,7 +79,7 @@
     },
     {
       "id": "R004",
-      "name": "Rider D",
+      "name": "Danny Reyes",
       "vehicle_type": "tricycle",
       "vehicle_model": "Local Tricycle",
       "vehicle_plate": "NGD 7742",
@@ -96,7 +96,7 @@
     },
     {
       "id": "R005",
-      "name": "Rider E",
+      "name": "Edwin Santillan",
       "vehicle_type": "motorcycle",
       "vehicle_model": "Honda TMX 125",
       "vehicle_plate": "NGF 9034",
