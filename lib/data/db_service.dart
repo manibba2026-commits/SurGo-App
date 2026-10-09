@@ -33,9 +33,37 @@ class DbService {
   static const String manifestPath = 'assets/db/manifest.json';
   static const String mapPath = 'assets/data/surgo_map_v1_mock_data.json';
 
+  /// The three "signed-in" slices the screens read. They always point at the
+  /// profiles of the [activeAccount] (or the primary account before anyone has
+  /// signed in), and [activateAccount] swaps them without the screens knowing.
   late PassengerProfile passenger;
   late EarnerProfile earner;
   late VehicleOwnerProfile vehicleOwner;
+
+  /// Every profile in the seed, keyed by id, so an account can be activated by
+  /// the ids it links to rather than by whichever profile loaded first.
+  final Map<String, PassengerProfile> passengers = {};
+  final Map<String, EarnerProfile> earners = {};
+  final Map<String, VehicleOwnerProfile> owners = {};
+
+  /// The account currently signed in, or null for the pre-login primary.
+  Account? activeAccount;
+
+  /// Seed accounts from `accounts.json`. Empty until [load] runs.
+  List<Account> accounts = const [];
+
+  // Per-profile data, keyed by profile id, so activating an account also swaps
+  // the wallet, notifications and settings the screens read from.
+  final Map<String, int> walletBalanceByUser = {};
+  final Map<String, List<WalletTransaction>> walletTransactionsByUser = {};
+  final Map<String, List<NotificationItem>> notificationsByUser = {};
+  final Map<String, AccountSettingsData> settingsByUser = {};
+
+  /// The profile ids the app shows before anyone signs in, and the ones the
+  /// seed tests pin. Keep these in sync with `accounts.json`.
+  static const String primaryPassengerId = 'P001';
+  static const String primaryEarnerId = 'R001';
+  static const String primaryOwnerId = 'VOW-77213';
 
   late List<Barangay> barangays;
   late List<PlaceItem> places;
@@ -91,23 +119,10 @@ class DbService {
     _readConfig(_expect(files, 'config.json'));
 
     final users = _expect(files, 'users.json');
-    passenger = PassengerProfile.fromJson(_map(users, 'passenger'));
-    earner = EarnerProfile.fromJson(_map(users, 'earner'));
-    vehicleOwner = VehicleOwnerProfile.fromJson(_map(users, 'vehicleOwner'));
-    paymentMethods =
-        _parseList(users, 'paymentMethods', PaymentMethodItem.fromJson);
-    emergencyContacts = _parseList(
-        users, 'emergencyContacts', EmergencyContactItem.fromJson);
-    final fav = _map(users, 'favorites');
-    favoriteRiders = _parseList(fav, 'riders', FavoriteRider.fromJson);
-    favoriteVehicles = _parseList(fav, 'vehicles', FavoriteVehicle.fromJson);
-    final notif = _map(users, 'notifications');
-    passengerNotifications =
-        _parseList(notif, 'passenger', NotificationItem.fromJson);
-    earnerNotifications = _parseList(notif, 'earner', NotificationItem.fromJson);
-    final settings = _map(users, 'accountSettings');
-    passengerSettings = AccountSettingsData.fromJson(_map(settings, 'passenger'));
-    earnerSettings = AccountSettingsData.fromJson(_map(settings, 'earner'));
+    _readUsers(users);
+
+    accounts =
+        _parseList(_expect(files, 'accounts.json'), 'accounts', Account.fromJson);
 
     final locations = _expect(files, 'locations.json');
     barangays = _parseList(locations, 'barangays', Barangay.fromJson);
@@ -144,6 +159,10 @@ class DbService {
     mapPassengers = _parseList(mj, 'passengers', MapPassenger.fromJson);
     mapRideRequests = _parseList(mj, 'ride_requests', MapRideRequest.fromJson);
 
+    // Everyone starts signed out, so the app boots showing the primary account
+    // exactly as it did before accounts existed.
+    activatePrimary();
+
     _loaded = true;
   }
 
@@ -172,27 +191,288 @@ class DbService {
     );
   }
 
-  /// `wallets.json` holds one entry per role, each a balance plus its own
-  /// transaction log. A missing role falls back to an empty wallet so an
+  /// Reads `users.json`: the three profile collections, the collections still
+  /// scoped to the primary account, and the per-profile notifications and
+  /// settings. The three signed-in slices are pointed at the primary account by
+  /// [activatePrimary] once wallets have loaded too.
+  void _readUsers(Map<String, dynamic> users) {
+    for (final p in _parseList(users, 'passengers', PassengerProfile.fromJson)) {
+      passengers[p.id] = p;
+    }
+    for (final e in _parseList(users, 'earners', EarnerProfile.fromJson)) {
+      earners[e.id] = e;
+    }
+    for (final o in _parseList(users, 'owners', VehicleOwnerProfile.fromJson)) {
+      owners[o.id] = o;
+    }
+
+    paymentMethods =
+        _parseList(users, 'paymentMethods', PaymentMethodItem.fromJson);
+    emergencyContacts = _parseList(
+        users, 'emergencyContacts', EmergencyContactItem.fromJson);
+    final fav = _map(users, 'favorites');
+    favoriteRiders = _parseList(fav, 'riders', FavoriteRider.fromJson);
+    favoriteVehicles = _parseList(fav, 'vehicles', FavoriteVehicle.fromJson);
+
+    // Notifications and settings are keyed by the profile id they belong to.
+    _map(users, 'notifications').forEach((userId, raw) {
+      if (raw is List) {
+        notificationsByUser[userId] = [
+          for (final e in raw)
+            if (e is Map<String, dynamic>) NotificationItem.fromJson(e),
+        ];
+      }
+    });
+    _map(users, 'accountSettings').forEach((userId, raw) {
+      if (raw is Map<String, dynamic>) {
+        settingsByUser[userId] = AccountSettingsData.fromJson(raw);
+      }
+    });
+  }
+
+  /// `wallets.json` holds one wallet per profile id, each a balance plus its
+  /// own transaction log. A missing wallet falls back to an empty one so an
   /// incomplete file still boots.
   void _readWallets(Map<String, dynamic> file) {
-    final roles = {
-      for (final entry in _list(file, 'roles'))
-        if (entry['role'] is String) entry['role'] as String: entry,
-    };
-    final pw = roles['passenger'] ?? const {};
-    passengerWalletBalance = (pw['balance'] as num?)?.toInt() ?? 0;
+    for (final entry in _list(file, 'wallets')) {
+      final userId = entry['userId'];
+      if (userId is! String) continue;
+      walletBalanceByUser[userId] = (entry['balance'] as num?)?.toInt() ?? 0;
+      walletTransactionsByUser[userId] =
+          _parseList(entry, 'transactions', WalletTransaction.fromJson);
+    }
+  }
+
+  /// Points the three signed-in slices back at the primary seed account. Runs
+  /// at boot (before anyone signs in) and on sign-out. An account that lacks a
+  /// role gets a lightweight guest profile so shared screens still show the
+  /// signed-in name instead of a stale one.
+  void activatePrimary() {
+    activeAccount = null;
+    passenger = passengers[primaryPassengerId] ??
+        (passengers.isEmpty ? _guestPassenger() : passengers.values.first);
+    earner = earners[primaryEarnerId] ??
+        (earners.isEmpty ? _guestEarner() : earners.values.first);
+    vehicleOwner = owners[primaryOwnerId] ??
+        (owners.isEmpty ? _guestOwner() : owners.values.first);
+
+    passengerWalletBalance = walletBalanceByUser[primaryPassengerId] ?? 0;
     passengerTransactions =
-        _parseList(pw, 'transactions', WalletTransaction.fromJson);
-
-    final ew = roles['earner'] ?? const {};
-    earnerWalletBalance = (ew['balance'] as num?)?.toInt() ?? 0;
+        walletTransactionsByUser[primaryPassengerId] ?? <WalletTransaction>[];
+    earnerWalletBalance = walletBalanceByUser[primaryEarnerId] ?? 0;
     earnerTransactions =
-        _parseList(ew, 'transactions', WalletTransaction.fromJson);
+        walletTransactionsByUser[primaryEarnerId] ?? <WalletTransaction>[];
+    ownerWalletBalance = walletBalanceByUser[primaryOwnerId] ?? 0;
+    ownerTransactions =
+        walletTransactionsByUser[primaryOwnerId] ?? <WalletTransaction>[];
 
-    final ow = roles['owner'] ?? const {};
-    ownerWalletBalance = (ow['balance'] as num?)?.toInt() ?? 0;
-    ownerTransactions = _parseList(ow, 'transactions', WalletTransaction.fromJson);
+    passengerNotifications =
+        notificationsByUser[primaryPassengerId] ?? <NotificationItem>[];
+    earnerNotifications =
+        notificationsByUser[primaryEarnerId] ?? <NotificationItem>[];
+
+    passengerSettings =
+        settingsByUser[primaryPassengerId] ?? _defaultSettings();
+    earnerSettings = settingsByUser[primaryEarnerId] ?? _defaultSettings();
+  }
+
+  /// Swaps the signed-in slices to [account]'s linked profiles, along with the
+  /// wallet, notifications and settings those screens read.
+  void activateAccount(Account account) {
+    activeAccount = account;
+
+    final passengerProfile =
+        account.passengerId == null ? null : passengers[account.passengerId];
+    if (passengerProfile != null) {
+      passenger = passengerProfile;
+      passengerWalletBalance = walletBalanceByUser[passengerProfile.id] ?? 0;
+      passengerTransactions =
+          walletTransactionsByUser[passengerProfile.id] ?? <WalletTransaction>[];
+      passengerNotifications =
+          notificationsByUser[passengerProfile.id] ?? <NotificationItem>[];
+      passengerSettings =
+          settingsByUser[passengerProfile.id] ?? _defaultSettings();
+    } else {
+      passenger = _guestPassenger(
+          id: account.id,
+          name: account.name,
+          phone: account.phone,
+          email: account.email);
+      passengerWalletBalance = 0;
+      passengerTransactions = <WalletTransaction>[];
+      passengerNotifications = <NotificationItem>[];
+      passengerSettings = _defaultSettings();
+    }
+
+    final earnerProfile =
+        account.riderId == null ? null : earners[account.riderId];
+    if (earnerProfile != null) {
+      earner = earnerProfile;
+      earnerWalletBalance = walletBalanceByUser[earnerProfile.id] ?? 0;
+      earnerTransactions =
+          walletTransactionsByUser[earnerProfile.id] ?? <WalletTransaction>[];
+      earnerNotifications =
+          notificationsByUser[earnerProfile.id] ?? <NotificationItem>[];
+      earnerSettings = settingsByUser[earnerProfile.id] ?? _defaultSettings();
+    } else {
+      earner = _guestEarner(
+          id: account.id,
+          name: account.name,
+          phone: account.phone,
+          email: account.email);
+      earnerWalletBalance = 0;
+      earnerTransactions = <WalletTransaction>[];
+      earnerNotifications = <NotificationItem>[];
+      earnerSettings = _defaultSettings();
+    }
+
+    final ownerProfile =
+        account.ownerId == null ? null : owners[account.ownerId];
+    if (ownerProfile != null) {
+      vehicleOwner = ownerProfile;
+      ownerWalletBalance = walletBalanceByUser[ownerProfile.id] ?? 0;
+      ownerTransactions =
+          walletTransactionsByUser[ownerProfile.id] ?? <WalletTransaction>[];
+    } else {
+      vehicleOwner = _guestOwner(
+          id: account.id,
+          name: account.name,
+          phone: account.phone,
+          email: account.email);
+      ownerWalletBalance = 0;
+      ownerTransactions = <WalletTransaction>[];
+    }
+  }
+
+  /// Adds a brand-new sign-in account with a fresh passenger profile and an
+  /// empty wallet. Returns null when the phone or email is already taken.
+  Account? registerAccount({
+    required String name,
+    required String phone,
+    required String email,
+    required String password,
+  }) {
+    final taken = accounts.any((a) =>
+        a.phone.toLowerCase() == phone.trim().toLowerCase() ||
+        a.email.toLowerCase() == email.trim().toLowerCase());
+    if (taken) return null;
+
+    final passengerId = _nextId('P', passengers.keys);
+    passengers[passengerId] = PassengerProfile(
+      id: passengerId,
+      name: name,
+      firstName: _firstName(name),
+      initials: _initials(name),
+      phone: phone,
+      email: email,
+      rating: 0,
+      totalRides: 0,
+      memberSince: DateTime.now().year,
+      verified: false,
+    );
+    walletBalanceByUser[passengerId] = 0;
+    walletTransactionsByUser[passengerId] = <WalletTransaction>[];
+    notificationsByUser[passengerId] = [
+      NotificationItem(
+        id: 'welcome-$passengerId',
+        type: 'system',
+        title: 'Welcome to SurGo',
+        body: 'Your account is ready. Book a ride, rent a vehicle, or post an errand.',
+        time: 'Just now',
+        read: false,
+      ),
+    ];
+
+    final account = Account(
+      id: _nextId('ACC', accounts.map((a) => a.id)),
+      name: name,
+      phone: phone,
+      email: email,
+      password: password,
+      passengerId: passengerId,
+    );
+    accounts = [...accounts, account];
+    return account;
+  }
+
+  AccountSettingsData _defaultSettings() => AccountSettingsData(
+        pushNotifications: true,
+        lowDataMode: false,
+        language: 'English',
+      );
+
+  PassengerProfile _guestPassenger(
+          {String id = '', String name = '', String phone = '', String email = ''}) =>
+      PassengerProfile(
+        id: id,
+        name: name,
+        firstName: _firstName(name),
+        initials: _initials(name),
+        phone: phone,
+        email: email,
+        rating: 0,
+        totalRides: 0,
+        memberSince: DateTime.now().year,
+        verified: false,
+      );
+
+  EarnerProfile _guestEarner(
+          {String id = '', String name = '', String phone = '', String email = ''}) =>
+      EarnerProfile(
+        id: id,
+        name: name,
+        initials: _initials(name),
+        phone: phone,
+        email: email,
+        rating: 0,
+        totalTrips: 0,
+        memberSince: DateTime.now().year,
+        verified: false,
+        vehicleType: '',
+        vehicleModel: '',
+        vehiclePlate: '',
+        documentsStatus: 'Pending',
+        capabilities: const {},
+      );
+
+  VehicleOwnerProfile _guestOwner(
+          {String id = '', String name = '', String phone = '', String email = ''}) =>
+      VehicleOwnerProfile(
+        id: id,
+        name: name,
+        initials: _initials(name),
+        phone: phone,
+        email: email,
+        rating: 0,
+        totalVehicles: 0,
+        totalRentals: 0,
+        memberSince: DateTime.now().year,
+        verified: false,
+      );
+
+  String _firstName(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'))
+      ..removeWhere((p) => p.isEmpty);
+    return parts.isEmpty ? name : parts.first;
+  }
+
+  String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'))
+      ..removeWhere((p) => p.isEmpty);
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
+        .toUpperCase();
+  }
+
+  /// Next id in a `PREFIXnnn` family, one past the highest number in use.
+  String _nextId(String prefix, Iterable<String> ids) {
+    var max = 0;
+    for (final id in ids) {
+      final n = int.tryParse(id.replaceAll(RegExp(r'\D'), '')) ?? 0;
+      if (n > max) max = n;
+    }
+    return '$prefix${(max + 1).toString().padLeft(3, '0')}';
   }
 
   void _readEarnings(Map<String, dynamic> file) {

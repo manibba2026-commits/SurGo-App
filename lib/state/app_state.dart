@@ -20,6 +20,39 @@ import 'ride_status.dart';
 /// work as well as passenger rides - see `EarnerCapability`.
 enum UserMode { passenger, earner, vehicleOwner }
 
+/// Why a sign-in attempt failed. [ok] means the session was established.
+enum AuthResult {
+  ok,
+
+  /// No seeded account matches the phone or email.
+  unknownAccount,
+
+  /// The account exists but the password did not match.
+  wrongPassword;
+
+  String get message => switch (this) {
+        AuthResult.ok => '',
+        AuthResult.unknownAccount =>
+          'We could not find an account with that phone or email.',
+        AuthResult.wrongPassword => 'That password is not correct.',
+      };
+}
+
+/// Why a registration attempt failed. [ok] means the account was created and
+/// signed in.
+enum RegisterResult {
+  ok,
+
+  /// The phone or email already belongs to an account.
+  identifierTaken;
+
+  String get message => switch (this) {
+        RegisterResult.ok => '',
+        RegisterResult.identifierTaken =>
+          'That phone number or email is already registered.',
+      };
+}
+
 /// First element matching [test], or null.
 ///
 /// Written out rather than pulled from `package:collection`, which is not a
@@ -95,26 +128,88 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- account mode ----
+  // ---- session and account mode ----
+
+  /// The account signed in this run, or null while signed out. Kept in memory
+  /// only: a refresh signs the user out again (the seed is the source of truth).
+  Account? currentAccount;
+
+  bool get isSignedIn => currentAccount != null;
+
   UserMode mode = UserMode.passenger;
 
-  void switchToEarner() {
-    mode = UserMode.earner;
-    notifyListeners();
+  /// The roles the signed-in account can act as, in a stable order. Signed out
+  /// or unknown accounts keep all three so the demo can still be explored.
+  List<UserMode> get availableModes {
+    final account = currentAccount;
+    if (account == null) return UserMode.values;
+    return [
+      if (account.hasPassengerRole) UserMode.passenger,
+      if (account.hasRiderRole) UserMode.earner,
+      if (account.hasOwnerRole) UserMode.vehicleOwner,
+    ];
   }
 
-  void switchToPassenger() {
+  /// Signs in against the local seed. Plaintext comparison on purpose — see
+  /// [Account]. Returns [AuthResult.ok] and activates the account on success.
+  AuthResult login(String identifier, String password) {
+    Account? match;
+    for (final account in db.accounts) {
+      if (account.matches(identifier)) {
+        match = account;
+        break;
+      }
+    }
+    if (match == null) return AuthResult.unknownAccount;
+    if (match.password != password) return AuthResult.wrongPassword;
+    _applyAccount(match);
+    return AuthResult.ok;
+  }
+
+  /// Creates and signs into a new account. Registration always starts as a
+  /// passenger; rider/owner roles are added later from the profile.
+  RegisterResult register({
+    required String name,
+    required String phone,
+    required String email,
+    required String password,
+  }) {
+    final account = db.registerAccount(
+      name: name.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      password: password,
+    );
+    if (account == null) return RegisterResult.identifierTaken;
+    _applyAccount(account);
+    return RegisterResult.ok;
+  }
+
+  /// Clears the session and returns the app to the primary seed identity.
+  void logout() {
+    currentAccount = null;
+    db.activatePrimary();
     mode = UserMode.passenger;
     notifyListeners();
   }
 
-  void switchToVehicleOwner() {
-    mode = UserMode.vehicleOwner;
+  void _applyAccount(Account account) {
+    currentAccount = account;
+    db.activateAccount(account);
+    mode = availableModes.isEmpty ? UserMode.passenger : availableModes.first;
     notifyListeners();
   }
 
-  /// Central switcher used by the 3-mode dropdown menu.
+  void switchToEarner() => switchToMode(UserMode.earner);
+
+  void switchToPassenger() => switchToMode(UserMode.passenger);
+
+  void switchToVehicleOwner() => switchToMode(UserMode.vehicleOwner);
+
+  /// Central switcher used by the mode dropdown. Refuses a mode the signed-in
+  /// account cannot act as, rather than dropping the user into an empty shell.
   void switchToMode(UserMode m) {
+    if (!availableModes.contains(m)) return;
     mode = m;
     notifyListeners();
   }

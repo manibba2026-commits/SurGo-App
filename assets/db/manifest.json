@@ -5,6 +5,7 @@
   "files": [
     "config.json",
     "users.json",
+    "accounts.json",
     "locations.json",
     "vehicles.json",
     "rides.json",

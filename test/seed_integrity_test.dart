@@ -48,6 +48,7 @@ void main() {
         containsAll(<String>[
           'config.json',
           'users.json',
+          'accounts.json',
           'locations.json',
           'vehicles.json',
           'rides.json',
@@ -64,13 +65,14 @@ void main() {
       // read, which is how seed drift starts.
       const expected = {
         'config.json': {'schemaVersion', 'commissionBps', 'currency', 'fare', 'payouts', '_note'},
-        'users.json': {'passenger', 'earner', 'vehicleOwner', 'credentials', 'paymentMethods', 'emergencyContacts', 'favorites', 'notifications', 'accountSettings', '_note'},
+        'users.json': {'passengers', 'earners', 'owners', 'paymentMethods', 'emergencyContacts', 'favorites', 'notifications', 'accountSettings', '_note'},
+        'accounts.json': {'accounts', '_note'},
         'locations.json': {'city', 'barangays', 'savedPlaces', 'places', '_note'},
         'vehicles.json': {'owned', 'documents', 'bookingRequests', '_note'},
         'rides.json': {'requests', 'history', '_note'},
         'rentals.json': {'history'},
         'pasuyo.json': {'tasks', '_note'},
-        'wallets.json': {'roles', '_note'},
+        'wallets.json': {'wallets', '_note'},
         'earnings.json': {'earner', 'owner'},
         'manifest.json': {'schemaVersion', 'city', 'files', '_note'},
       };

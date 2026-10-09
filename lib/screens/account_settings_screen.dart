@@ -124,12 +124,12 @@ class AccountSettingsScreen extends StatelessWidget {
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Log out?'),
-        content: const Text("You'll need to verify your number again to sign back in."),
+        content: const Text("You'll be returned to the login screen."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           TextButton(
             onPressed: () {
-              AppState.instance.switchToPassenger();
+              AppState.instance.logout();
               Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
             },
             child: const Text('Log Out'),

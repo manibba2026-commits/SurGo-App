@@ -1,7 +1,8 @@
 {
-  "_note": "Balances are centavos and must stay consistent with their transaction log.",
-  "roles": [
+  "_note": "One wallet per profile id (passenger P*, earner R*, owner VOW-*). Balances are centavos and must stay consistent with their transaction log; activating an account swaps the wallet the screens read.",
+  "wallets": [
     {
+      "userId": "P001",
       "role": "passenger",
       "balance": 85000,
       "transactions": [
@@ -134,6 +135,143 @@
       ]
     },
     {
+      "userId": "P002",
+      "role": "passenger",
+      "balance": 124000,
+      "transactions": [
+        {
+          "id": "wt201",
+          "type": "debit",
+          "title": "Ride · Poblacion → Public Market",
+          "amount": 6500,
+          "date": "Oct 1, 2026 · 9:00 AM",
+          "createdAt": "2026-10-01T09:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt202",
+          "type": "topup",
+          "title": "Wallet Top-up via GCash",
+          "amount": 150000,
+          "date": "Sep 29, 2026 · 5:00 PM",
+          "createdAt": "2026-09-29T17:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt203",
+          "type": "debit",
+          "title": "Rental deposit · Honda Click 125",
+          "amount": 25000,
+          "date": "Sep 27, 2026 · 1:00 PM",
+          "createdAt": "2026-09-27T13:00:00.000Z",
+          "status": "Refunded"
+        }
+      ]
+    },
+    {
+      "userId": "P003",
+      "role": "passenger",
+      "balance": 32000,
+      "transactions": [
+        {
+          "id": "wt301",
+          "type": "debit",
+          "title": "Ride · Telaje → Public Market",
+          "amount": 6000,
+          "date": "Oct 2, 2026 · 8:00 AM",
+          "createdAt": "2026-10-02T08:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt302",
+          "type": "debit",
+          "title": "Pasuyo budget",
+          "amount": 13000,
+          "date": "Sep 30, 2026 · 10:00 AM",
+          "createdAt": "2026-09-30T10:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt303",
+          "type": "topup",
+          "title": "Wallet Top-up via Maya",
+          "amount": 50000,
+          "date": "Sep 28, 2026 · 3:00 PM",
+          "createdAt": "2026-09-28T15:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "userId": "P004",
+      "role": "passenger",
+      "balance": 210500,
+      "transactions": [
+        {
+          "id": "wt401",
+          "type": "topup",
+          "title": "Wallet Top-up via GCash",
+          "amount": 200000,
+          "date": "Oct 4, 2026 · 2:00 PM",
+          "createdAt": "2026-10-04T14:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt402",
+          "type": "debit",
+          "title": "Ride · San Agustin Sur → Buenavista",
+          "amount": 11000,
+          "date": "Oct 3, 2026 · 9:00 AM",
+          "createdAt": "2026-10-03T09:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt403",
+          "type": "debit",
+          "title": "Ride fare",
+          "amount": 8500,
+          "date": "Oct 1, 2026 · 6:00 PM",
+          "createdAt": "2026-10-01T18:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "userId": "P005",
+      "role": "passenger",
+      "balance": 74000,
+      "transactions": [
+        {
+          "id": "wt501",
+          "type": "topup",
+          "title": "Wallet Top-up via GCash",
+          "amount": 100000,
+          "date": "Oct 5, 2026 · 11:00 AM",
+          "createdAt": "2026-10-05T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt502",
+          "type": "debit",
+          "title": "Ride · Mabua → Bioto",
+          "amount": 6500,
+          "date": "Oct 4, 2026 · 7:00 AM",
+          "createdAt": "2026-10-04T07:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "wt503",
+          "type": "debit",
+          "title": "Pasuyo budget",
+          "amount": 9000,
+          "date": "Oct 2, 2026 · 4:00 PM",
+          "createdAt": "2026-10-02T16:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "userId": "R001",
       "role": "earner",
       "balance": 312000,
       "transactions": [
@@ -269,6 +407,144 @@
       ]
     },
     {
+      "userId": "R002",
+      "role": "earner",
+      "balance": 187500,
+      "transactions": [
+        {
+          "id": "rwt201",
+          "type": "credit",
+          "title": "Trip earnings · Grace",
+          "amount": 6000,
+          "date": "Oct 5, 2026 · 9:00 AM",
+          "createdAt": "2026-10-05T09:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt202",
+          "type": "credit",
+          "title": "Delivery earnings",
+          "amount": 8500,
+          "date": "Oct 3, 2026 · 5:00 PM",
+          "createdAt": "2026-10-03T17:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt203",
+          "type": "payout",
+          "title": "Payout to GCash",
+          "amount": 90000,
+          "date": "Oct 1, 2026 · 2:00 PM",
+          "createdAt": "2026-10-01T14:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "userId": "R003",
+      "role": "earner",
+      "balance": 264000,
+      "transactions": [
+        {
+          "id": "rwt301",
+          "type": "credit",
+          "title": "Trip earnings · Danilo",
+          "amount": 11000,
+          "date": "Oct 5, 2026 · 7:00 AM",
+          "createdAt": "2026-10-05T07:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt302",
+          "type": "credit",
+          "title": "Errand earnings",
+          "amount": 7000,
+          "date": "Oct 4, 2026 · 1:00 PM",
+          "createdAt": "2026-10-04T13:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt303",
+          "type": "payout",
+          "title": "Payout to GCash",
+          "amount": 150000,
+          "date": "Sep 30, 2026 · 10:00 AM",
+          "createdAt": "2026-09-30T10:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "userId": "R004",
+      "role": "earner",
+      "balance": 118000,
+      "transactions": [
+        {
+          "id": "rwt401",
+          "type": "credit",
+          "title": "Trip earnings · Nena",
+          "amount": 6500,
+          "date": "Oct 4, 2026 · 8:00 AM",
+          "createdAt": "2026-10-04T08:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt402",
+          "type": "credit",
+          "title": "Trip earnings · Rosalinda",
+          "amount": 5500,
+          "date": "Oct 2, 2026 · 6:00 PM",
+          "createdAt": "2026-10-02T18:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt403",
+          "type": "debit",
+          "title": "Withdrawal to GCash",
+          "amount": 40000,
+          "date": "Sep 29, 2026 · 3:00 PM",
+          "createdAt": "2026-09-29T15:00:00.000Z",
+          "status": "Completed"
+        }
+      ]
+    },
+    {
+      "userId": "R005",
+      "role": "earner",
+      "balance": 203500,
+      "transactions": [
+        {
+          "id": "rwt501",
+          "type": "credit",
+          "title": "Trip earnings · Grace",
+          "amount": 9000,
+          "date": "Oct 5, 2026 · 11:00 AM",
+          "createdAt": "2026-10-05T11:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt502",
+          "type": "credit",
+          "title": "Errand earnings",
+          "amount": 7500,
+          "date": "Oct 3, 2026 · 12:00 PM",
+          "createdAt": "2026-10-03T12:00:00.000Z",
+          "status": "Completed"
+        },
+        {
+          "id": "rwt503",
+          "type": "credit",
+          "title": "Bonus incentive",
+          "amount": 20000,
+          "date": "Oct 1, 2026 · 4:00 PM",
+          "createdAt": "2026-10-01T16:00:00.000Z",
+          "status": "Completed",
+          "kind": "bonus"
+        }
+      ]
+    },
+    {
+      "userId": "VOW-77213",
       "role": "owner",
       "balance": 420000,
       "transactions": [

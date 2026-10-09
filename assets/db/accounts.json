@@ -1,0 +1,97 @@
+{
+  "_note": "Local mock sign-in. Passwords are stored in plaintext on purpose and compared in memory — this is NOT real authentication. Each account links to the profile ids it can act as, so one account can be a passenger, an earner and a vehicle owner at once. Every seeded password is 'surgo123'.",
+  "accounts": [
+    {
+      "id": "ACC001",
+      "name": "Jr Derigay",
+      "phone": "+63 917 512 4809",
+      "email": "jr.derigay@email.com",
+      "password": "surgo123",
+      "roles": {
+        "passenger": "P001",
+        "earner": "R001",
+        "vehicleOwner": "VOW-77213"
+      }
+    },
+    {
+      "id": "ACC002",
+      "name": "Grace Ann Villaflor",
+      "phone": "+63 917 220 4411",
+      "email": "grace.villaflor@email.com",
+      "password": "surgo123",
+      "roles": {
+        "passenger": "P002"
+      }
+    },
+    {
+      "id": "ACC003",
+      "name": "Nena Villareal",
+      "phone": "+63 918 335 2290",
+      "email": "nena.villareal@email.com",
+      "password": "surgo123",
+      "roles": {
+        "passenger": "P003"
+      }
+    },
+    {
+      "id": "ACC004",
+      "name": "Danilo Cruz",
+      "phone": "+63 919 447 8812",
+      "email": "danilo.cruz@email.com",
+      "password": "surgo123",
+      "roles": {
+        "passenger": "P004"
+      }
+    },
+    {
+      "id": "ACC005",
+      "name": "Rosalinda Pajo",
+      "phone": "+63 916 558 7734",
+      "email": "rosalinda.pajo@email.com",
+      "password": "surgo123",
+      "roles": {
+        "passenger": "P005"
+      }
+    },
+    {
+      "id": "ACC006",
+      "name": "Bebot Lim",
+      "phone": "+63 926 771 3390",
+      "email": "bebot.lim@email.com",
+      "password": "surgo123",
+      "roles": {
+        "earner": "R002"
+      }
+    },
+    {
+      "id": "ACC007",
+      "name": "Carlo Mendoza",
+      "phone": "+63 927 882 4415",
+      "email": "carlo.mendoza@email.com",
+      "password": "surgo123",
+      "roles": {
+        "earner": "R003"
+      }
+    },
+    {
+      "id": "ACC008",
+      "name": "Danny Reyes",
+      "phone": "+63 928 993 5521",
+      "email": "danny.reyes@email.com",
+      "password": "surgo123",
+      "roles": {
+        "earner": "R004"
+      }
+    },
+    {
+      "id": "ACC009",
+      "name": "Edwin Santillan",
+      "phone": "+63 929 104 6632",
+      "email": "edwin.santillan@email.com",
+      "password": "surgo123",
+      "roles": {
+        "earner": "R005"
+      }
+    }
+  ]
+}

@@ -25,7 +25,12 @@ class SbModeSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
-    final current = _modes.firstWhere((m) => m.mode == state.mode);
+    // Only the roles this account actually holds; a passenger-only account must
+    // not be offered an Earner or Vehicle Owner shell it cannot fill.
+    final modes =
+        _modes.where((m) => state.availableModes.contains(m.mode)).toList();
+    final current = modes.firstWhere((m) => m.mode == state.mode,
+        orElse: () => modes.first);
 
     return PopupMenuButton<_ModeInfo>(
       color: AppColors.panel2,
@@ -39,7 +44,7 @@ class SbModeSwitcher extends StatelessWidget {
         state.switchToMode(picked.mode);
         Navigator.pushNamedAndRemoveUntil(context, picked.route, (r) => false);
       },
-      itemBuilder: (context) => _modes
+      itemBuilder: (context) => modes
           .map(
             (m) => PopupMenuItem(
               value: m,

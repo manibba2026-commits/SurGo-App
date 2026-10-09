@@ -656,6 +656,63 @@ class VehicleOwnerProfile {
       );
 }
 
+/// One sign-in identity for the local mock.
+///
+/// This is deliberately not real authentication: [password] is stored in the
+/// seed in plaintext and compared in memory. An account can hold any mix of
+/// roles, each pointing at the profile it acts as, so one person can be a
+/// passenger, an earner and a vehicle owner at the same time.
+class Account {
+  final String id;
+  final String name;
+  final String phone;
+  final String email;
+  final String password;
+
+  /// Profile ids this account can act as; null when it lacks the role.
+  final String? passengerId;
+  final String? riderId;
+  final String? ownerId;
+
+  const Account({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.email,
+    required this.password,
+    this.passengerId,
+    this.riderId,
+    this.ownerId,
+  });
+
+  bool get hasPassengerRole => passengerId != null;
+  bool get hasRiderRole => riderId != null;
+  bool get hasOwnerRole => ownerId != null;
+
+  /// True when [identifier] is this account's phone or email, case-insensitive.
+  bool matches(String identifier) {
+    final needle = identifier.trim().toLowerCase();
+    return needle.isNotEmpty &&
+        (phone.toLowerCase() == needle || email.toLowerCase() == needle);
+  }
+
+  factory Account.fromJson(Map<String, dynamic> j) {
+    final roles = j['roles'] is Map<String, dynamic>
+        ? j['roles'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    return Account(
+      id: j['id'],
+      name: j['name'],
+      phone: j['phone'],
+      email: j['email'],
+      password: j['password'] ?? '',
+      passengerId: roles['passenger'] as String?,
+      riderId: roles['earner'] as String?,
+      ownerId: roles['vehicleOwner'] as String?,
+    );
+  }
+}
+
 /// One barangay in Tandag City, together with its puroks — used to power
 /// the pickup/destination barangay + purok picker.
 class Barangay {
