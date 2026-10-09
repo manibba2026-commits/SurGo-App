@@ -189,22 +189,6 @@ class _HomeContent extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SbCard(
-                  onTap: () => Navigator.pushNamed(context, '/pasuyo_post'),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.auto_awesome, color: AppColors.primaryLight),
-                      SizedBox(height: 8),
-                      Text('Ask Sugo',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 12.5)),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 10),

@@ -134,4 +134,3 @@ refresh resets the app to seed data — there is no persistence layer yet.
 - No real authentication; login and OTP screens are UI only.
 - `geolocator` / `permission_handler` have incomplete web support — location degrades
   on Chrome, and the maps fall back to Tandag City centering.
-- Sugo AI (natural-language request parsing) is not implemented yet.
