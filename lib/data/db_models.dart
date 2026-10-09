@@ -1144,6 +1144,14 @@ class MapRider {
   final bool verified;
   final int estimatedFare;
 
+  /// Real plate, carried in the map seed so the live trip screen can show the
+  /// assigned rider's vehicle. The matching card uses a vehicle-type monogram
+  /// only because it has no plate; once a rider is assigned, they do.
+  final String vehiclePlate;
+
+  /// Completed trips, shown next to the rating as social proof.
+  final int totalTrips;
+
   const MapRider({
     required this.id,
     required this.name,
@@ -1157,7 +1165,21 @@ class MapRider {
     required this.available,
     required this.verified,
     required this.estimatedFare,
+    this.vehiclePlate = '',
+    this.totalTrips = 0,
   });
+
+  /// Two-letter monogram for the avatar, derived the same way as
+  /// [RideMatchProposal.initials] - `substring` rather than `characters`,
+  /// which is not a declared dependency.
+  String get initials {
+    final parts = name.trim().split(RegExp(r'\s+'))
+      ..removeWhere((p) => p.isEmpty);
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
+        .toUpperCase();
+  }
 
   factory MapRider.fromJson(Map<String, dynamic> j) => MapRider(
         id: j['id'],
@@ -1175,6 +1197,8 @@ class MapRider {
         available: j['available'] ?? false,
         verified: j['verified'] ?? false,
         estimatedFare: (j['estimated_fare'] as num?)?.toInt() ?? 0,
+        vehiclePlate: j['vehicle_plate'] ?? '',
+        totalTrips: (j['total_trips'] as num?)?.toInt() ?? 0,
       );
 }
 

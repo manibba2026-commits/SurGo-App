@@ -103,6 +103,18 @@ class LiveTripScreen extends StatelessWidget {
         break;
       }
     }
+    // The trip belongs to whoever the matching actually assigned, not the
+    // signed-in earner - all three roles run on the same account, so the
+    // signed-in earner is frequently not the driver. Fall back to the earner
+    // only while nothing is assigned, so the card is never blank.
+    final driverName = assignedRider?.name ?? earner.name;
+    final driverInitials = assignedRider?.initials ?? earner.initials;
+    final driverModel = assignedRider?.vehicleModel ?? earner.vehicleModel;
+    final driverVehicleLabel = assignedRider != null
+        ? '${assignedRider.vehicleType} · ${assignedRider.vehiclePlate}'
+        : '${earner.vehicleType} · ${earner.vehiclePlate}';
+    final driverRating = assignedRider?.rating ?? earner.rating;
+    final driverTrips = assignedRider?.totalTrips ?? earner.totalTrips;
     final driverPosition = (assignedRider ??
             (db.mapRiders.isNotEmpty ? db.mapRiders.first : null))
         ?.position ??
@@ -121,10 +133,10 @@ class LiveTripScreen extends StatelessWidget {
         position: driverPosition,
         icon: surgoMarkerIcon('motorcycle'),
         title: 'You',
-        subtitle: '${earner.vehicleType} · ${earner.vehiclePlate}',
+        subtitle: driverVehicleLabel,
         details: [
-          MapEntry('Name', earner.name),
-          MapEntry('Vehicle', earner.vehicleModel),
+          MapEntry('Name', driverName),
+          MapEntry('Vehicle', driverModel),
         ],
       ),
       SurgoMapMarker(
@@ -235,7 +247,7 @@ class LiveTripScreen extends StatelessWidget {
                               secondary: true,
                             ),
                             Text(
-                              '${earner.vehicleType} · ${earner.vehiclePlate}',
+                              driverVehicleLabel,
                               style: const TextStyle(
                                   color: AppColors.muted, fontSize: 11.5),
                             ),
@@ -244,18 +256,18 @@ class LiveTripScreen extends StatelessWidget {
                         const SizedBox(height: 14),
                         Row(
                           children: [
-                            SbAvatar(initials: earner.initials),
+                            SbAvatar(initials: driverInitials),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(earner.name,
+                                  Text(driverName,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 14)),
                                   Text(
-                                      '⭐ ${earner.rating} · ${earner.totalTrips} trips',
+                                      '⭐ $driverRating · $driverTrips trips',
                                       style: const TextStyle(
                                           color: AppColors.muted,
                                           fontSize: 11.5)),
@@ -266,7 +278,7 @@ class LiveTripScreen extends StatelessWidget {
                               icon: Icons.call_outlined,
                               onTap: () =>
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Call ${earner.name}')),
+                                SnackBar(content: Text('Call $driverName')),
                               ),
                             ),
                             const SizedBox(width: 8),

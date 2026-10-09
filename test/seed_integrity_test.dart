@@ -150,6 +150,22 @@ void main() {
       }
     });
 
+    test('every map rider carries a plate and a trip count', () {
+      // The live trip screen shows the assigned rider's plate and trips, so a
+      // rider without them renders a blank card rather than a rounded one.
+      for (final r in db.mapRiders) {
+        expect(r.vehiclePlate.trim(), isNotEmpty, reason: r.id);
+        expect(r.totalTrips, greaterThan(0), reason: r.id);
+      }
+    });
+
+    test('the signed-in earner agrees with their own map rider record', () {
+      final rider = db.mapRiders.firstWhere((r) => r.id == db.earner.id);
+      expect(rider.name, db.earner.name);
+      expect(rider.vehiclePlate, db.earner.vehiclePlate);
+      expect(rider.totalTrips, db.earner.totalTrips);
+    });
+
     test('an open errand has no helper and a claimed one does', () {
       for (final task in db.pasuyoTasks) {
         if (task.isOpen) {
