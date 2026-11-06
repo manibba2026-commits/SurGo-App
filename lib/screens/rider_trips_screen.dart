@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/money.dart';
+import '../services/ride_pricing.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
@@ -53,7 +54,7 @@ class RiderTripsScreen extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(t.route, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
                     const SizedBox(height: 2),
-                    Text('${t.date} · ${t.distanceKm} km',
+                    Text('${t.date} · ${distanceLabelKm(t.distanceKm)}',
                         style: const TextStyle(color: AppColors.muted2, fontSize: 10.5)),
                     const SizedBox(height: 8),
                     Row(

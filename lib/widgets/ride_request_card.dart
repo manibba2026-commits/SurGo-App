@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/money.dart';
+import '../services/ride_pricing.dart';
 import '../state/app_state.dart';
 import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
@@ -55,7 +56,7 @@ class _SbRideRequestCardState extends State<SbRideRequestCard> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('${r.distanceKm} km',
+                  Text(distanceLabelKm(r.distanceKm),
                       style: const TextStyle(
                           color: AppColors.muted, fontSize: 11)),
                   Icon(
@@ -236,7 +237,7 @@ class _SbRideRequestCardState extends State<SbRideRequestCard> {
                       '${r.dropoffPurok}, ${r.dropoffBarangay}'),
                   const SizedBox(height: 10),
                   _detailRow(Icons.straighten, 'Distance & ETA',
-                      '${r.distanceKm} km · ${r.etaMinutes} min away'),
+                      '${distanceLabelKm(r.distanceKm)} · ${r.etaMinutes} min away'),
                 ],
               ),
             ),
