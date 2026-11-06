@@ -1,0 +1,12 @@
+{
+  "name": "surgo-supabase-sql-tests",
+  "private": true,
+  "description": "Docker-free SQL verification for supabase/migrations using PGlite.",
+  "type": "module",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.17"
+  }
+}

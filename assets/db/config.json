@@ -1,0 +1,33 @@
+{
+  "_note": "Commission rates and fare rules. FeeCalculator and RidePricing read these at boot; they are the only place a rate is defined.",
+  "_pricingPolicy": {
+    "ride": "Customer pays providerFare + platformFee. Provider keeps the whole fare. platformFee = min(maximumFee, max(minimumFee, distanceKm * perKm)).",
+    "pasuyo": "UNRESOLVED: still priced by the legacy percentage commission below. Not changed in this sprint.",
+    "rental": "UNRESOLVED: still priced by the legacy percentage commission below. Not changed in this sprint."
+  },
+  "schemaVersion": 3,
+  "commissionBps": {
+    "pasuyo": 1500,
+    "rental": 1000
+  },
+  "platformFee": {
+    "perKmCentavos": 200,
+    "minCentavos": 500,
+    "maxCentavos": 3000,
+    "_note": "Centavos. perKmCentavos 200 = PHP 2.00/km; minCentavos 500 = PHP 5.00; maxCentavos 3000 = PHP 30.00. These configure the ride platform fee only; providerFare is the agreed fare and is paid to the provider in full."
+  },
+  "currency": {
+    "code": "PHP",
+    "symbol": "₱",
+    "minorUnits": 2
+  },
+  "fare": {
+    "baseFare": 5000,
+    "perKm": 125000,
+    "minimumFare": 5000
+  },
+  "payouts": {
+    "minWithdrawal": 30000,
+    "arrivalDays": 2
+  }
+}

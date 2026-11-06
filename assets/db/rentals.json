@@ -1,0 +1,92 @@
+{
+  "history": [
+    {
+      "id": "rnh1",
+      "vehicleName": "Honda Click 125i",
+      "ownerName": "Alex Tan",
+      "startDate": "Aug 20, 2026",
+      "endDate": "Aug 21, 2026",
+      "totalFare": 70000,
+      "status": "Completed",
+      "startAt": "2026-08-20T00:00:00.000Z",
+      "endAt": "2026-08-21T00:00:00.000Z"
+    },
+    {
+      "id": "rnh2",
+      "vehicleName": "Local Tricycle Rental",
+      "ownerName": "Rico D.",
+      "startDate": "Jul 30, 2026",
+      "endDate": "Aug 1, 2026",
+      "totalFare": 180000,
+      "status": "Completed",
+      "startAt": "2026-07-30T00:00:00.000Z",
+      "endAt": "2026-08-01T00:00:00.000Z"
+    },
+    {
+      "id": "rnh3",
+      "vehicleName": "Toyota Innova",
+      "ownerName": "Rico D.",
+      "startDate": "Sep 3, 2026 · 9:00 AM",
+      "startAt": "2026-09-03T09:00:00.000Z",
+      "endDate": "Sep 4, 2026 · 9:00 AM",
+      "endAt": "2026-09-04T09:00:00.000Z",
+      "totalFare": 100000,
+      "status": "Completed"
+    },
+    {
+      "id": "rnh4",
+      "vehicleName": "Toyota Avanza",
+      "ownerName": "Rico D.",
+      "startDate": "Aug 31, 2026 · 9:00 AM",
+      "startAt": "2026-08-31T09:00:00.000Z",
+      "endDate": "Sep 4, 2026 · 9:00 AM",
+      "endAt": "2026-09-04T09:00:00.000Z",
+      "totalFare": 600000,
+      "status": "Completed"
+    },
+    {
+      "id": "rnh5",
+      "vehicleName": "Nissan Urvan",
+      "ownerName": "Rico D.",
+      "startDate": "Sep 28, 2026 · 9:00 AM",
+      "startAt": "2026-09-28T09:00:00.000Z",
+      "endDate": "Sep 30, 2026 · 9:00 AM",
+      "endAt": "2026-09-30T09:00:00.000Z",
+      "totalFare": 80000,
+      "status": "Completed"
+    },
+    {
+      "id": "rnh6",
+      "vehicleName": "Kawasaki Ninja 155",
+      "ownerName": "Rico D.",
+      "startDate": "Aug 28, 2026 · 9:00 AM",
+      "startAt": "2026-08-28T09:00:00.000Z",
+      "endDate": "Sep 1, 2026 · 9:00 AM",
+      "endAt": "2026-09-01T09:00:00.000Z",
+      "totalFare": 240000,
+      "status": "Completed"
+    },
+    {
+      "id": "rnh7",
+      "vehicleName": "Kawasaki Ninja 155",
+      "ownerName": "Rico D.",
+      "startDate": "Sep 14, 2026 · 9:00 AM",
+      "startAt": "2026-09-14T09:00:00.000Z",
+      "endDate": "Sep 16, 2026 · 9:00 AM",
+      "endAt": "2026-09-16T09:00:00.000Z",
+      "totalFare": 120000,
+      "status": "Completed"
+    },
+    {
+      "id": "rnh8",
+      "vehicleName": "Honda Click 125i",
+      "ownerName": "Rico D.",
+      "startDate": "Sep 9, 2026 · 9:00 AM",
+      "startAt": "2026-09-09T09:00:00.000Z",
+      "endDate": "Sep 13, 2026 · 9:00 AM",
+      "endAt": "2026-09-13T09:00:00.000Z",
+      "totalFare": 200000,
+      "status": "Completed"
+    }
+  ]
+}

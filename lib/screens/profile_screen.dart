@@ -1,0 +1,235 @@
+import 'package:flutter/material.dart';
+import '../repositories/backend_rows.dart';
+import '../state/app_state.dart';
+import '../state/domain_cache.dart';
+import '../theme/app_colors.dart';
+import '../widgets/app_shell.dart';
+import '../widgets/common.dart';
+import '../widgets/mode_switcher.dart';
+import '../widgets/repository_states.dart';
+import 'account_settings_screen.dart';
+import 'activity_screen.dart';
+import 'emergency_contacts_screen.dart';
+import 'favorites_screen.dart';
+import 'payment_methods_screen.dart';
+import 'revenue_screen.dart';
+import 'saved_places_screen.dart';
+import 'wallet_screen.dart';
+import 'verification_screen.dart';
+import '../widgets/verification_tile.dart';
+
+class ProfileScreen extends StatelessWidget {
+  final bool embedded;
+  const ProfileScreen({super.key, this.embedded = true});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppState.instance;
+    final body = ListenableBuilder(
+      listenable: state,
+      builder: (context, _) {
+        return SafeArea(
+          bottom: false,
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(18, embedded ? 4 : 16, 18, 90),
+            children: [
+              if (embedded) const SbTabHeader(title: 'Profile'),
+              Center(child: _identityBlock()),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: _quickAction(
+                      context,
+                      icon: Icons.receipt_long,
+                      label: 'Ride History',
+                      color: AppColors.primaryLight,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ActivityScreen())),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _quickAction(
+                      context,
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Wallet',
+                      color: AppColors.secondaryLight,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const WalletScreen())),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _quickAction(
+                      context,
+                      icon: Icons.place_outlined,
+                      label: 'Saved Places',
+                      color: AppColors.muted,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const SavedPlacesScreen())),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _settingsRow(context, 'Platform Revenue',
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const RevenueScreen()))),
+              const SizedBox(height: 8),
+              _settingsRow(context, 'Payment Methods',
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const PaymentMethodsScreen()))),
+              const SizedBox(height: 8),
+              _settingsRow(context, 'Favorites',
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const FavoritesScreen()))),
+              const SizedBox(height: 8),
+              _settingsRow(context, 'Emergency Contacts',
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const EmergencyContactsScreen()))),
+              const SizedBox(height: 8),
+              VerificationStatusRow(
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const VerificationScreen()))),
+              const SizedBox(height: 8),
+              _settingsRow(context, 'Account Settings',
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AccountSettingsScreen()))),
+              const SizedBox(height: 20),
+              const SbModeSwitcher(),
+            ],
+          ),
+        );
+      },
+    );
+    if (embedded) return body;
+    return Scaffold(body: body);
+  }
+
+  /// The signed-in person, read through the repository layer.
+  ///
+  /// The rating line and the avatar come from the profile record; the verified
+  /// mark needs the approved roles, so it reads a slot of its own rather than
+  /// making the whole header wait on a second query.
+  Widget _identityBlock() {
+    return RepositoryView<ProfileRecord>(
+      slot: DomainSlot.profile,
+      data: (context, profile) => Column(
+        children: [
+          SbAvatar(initials: _initials(profile.fullName), size: 64),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(profile.fullName,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 16)),
+              const _VerifiedMark(),
+            ],
+          ),
+          Text(_memberLine(profile),
+              style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  /// First letter of the first name plus the first letter of the last, which is
+  /// how the seed writes its initials out.
+  static String _initials(String fullName) {
+    final parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    final leading = parts.first.substring(0, 1).toUpperCase();
+    if (parts.length == 1) return leading;
+    return '$leading${parts.last.substring(0, 1).toUpperCase()}';
+  }
+
+  static String _memberLine(ProfileRecord profile) {
+    final since = profile.createdAt?.year;
+    final rating = '⭐ ${profile.rating}';
+    return since == null ? rating : '$rating · Member since $since';
+  }
+
+  Widget _quickAction(BuildContext context,
+      {required IconData icon,
+      required String label,
+      required Color color,
+      VoidCallback? onTap}) {
+    return SbCard(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      onTap: onTap,
+      child: Column(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(height: 6),
+          Text(label,
+              textAlign: TextAlign.center,
+              style:
+                  const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsRow(BuildContext context, String label,
+      {VoidCallback? onTap}) {
+    return SbCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+        ],
+      ),
+    );
+  }
+}
+
+/// The badge an approved identity carries.
+///
+/// It is deliberately quiet in every state except a role list: a header whose
+/// roles have not landed yet looks the same as one with no roles at all.
+class _VerifiedMark extends StatelessWidget {
+  const _VerifiedMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return RepositoryView<List<String>>(
+      slot: DomainSlot.profileRoles,
+      loading: const SizedBox.shrink(),
+      empty: (_) => const SizedBox.shrink(),
+      failure: (_, __) => const SizedBox.shrink(),
+      data: (context, roles) => const Padding(
+        padding: EdgeInsets.only(left: 6),
+        child: Icon(Icons.verified, size: 16, color: AppColors.primaryLight),
+      ),
+    );
+  }
+}

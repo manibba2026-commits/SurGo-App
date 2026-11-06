@@ -1,0 +1,375 @@
+{
+  "_note": "City geography. `places` is the map landmark list that pickup and drop-off pickers search; `savedPlaces` are per-person favourites, not part of the city.",
+  "city": {
+    "name": "Tandag City",
+    "province": "Surigao del Sur",
+    "center": {
+      "latitude": 9.0785,
+      "longitude": 126.1985
+    }
+  },
+  "barangays": [
+    {
+      "barangay": "Awasian",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Bagong Lungsod (Poblacion)",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Bioto",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6"
+      ]
+    },
+    {
+      "barangay": "Bongtod Poblacion (East West)",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5"
+      ]
+    },
+    {
+      "barangay": "Buenavista",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5"
+      ]
+    },
+    {
+      "barangay": "Dagocdoc (Poblacion)",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5"
+      ]
+    },
+    {
+      "barangay": "Mabua",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Mabuhay",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6",
+        "Purok 7",
+        "Purok 8"
+      ]
+    },
+    {
+      "barangay": "Maitum",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Maticdum",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6",
+        "Purok 7",
+        "Purok 8"
+      ]
+    },
+    {
+      "barangay": "Pandanon",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6",
+        "Purok 7"
+      ]
+    },
+    {
+      "barangay": "Pangi",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Quezon",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Rosario",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "Salvacion",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5"
+      ]
+    },
+    {
+      "barangay": "San Agustin Norte",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5"
+      ]
+    },
+    {
+      "barangay": "San Agustin Sur",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6",
+        "Purok 7",
+        "Purok 8"
+      ]
+    },
+    {
+      "barangay": "San Antonio",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6",
+        "Purok 7",
+        "Purok 8"
+      ]
+    },
+    {
+      "barangay": "San Isidro",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4"
+      ]
+    },
+    {
+      "barangay": "San Jose",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5",
+        "Purok 6",
+        "Purok 7",
+        "Purok 8"
+      ]
+    },
+    {
+      "barangay": "Telaje",
+      "puroks": [
+        "Purok 1",
+        "Purok 2",
+        "Purok 3",
+        "Purok 4",
+        "Purok 5"
+      ]
+    }
+  ],
+  "savedPlaces": [
+    {
+      "id": "sp1",
+      "label": "Home",
+      "address": "Purok 3, Barangay Poblacion, Tandag City",
+      "icon": "home"
+    },
+    {
+      "id": "sp2",
+      "label": "Work",
+      "address": "SurGo Terminal, Downtown, Tandag City",
+      "icon": "work"
+    },
+    {
+      "id": "sp3",
+      "label": "Mama's House",
+      "address": "Purok 5, Barangay San Isidro",
+      "icon": "place"
+    }
+  ],
+  "places": [
+    {
+      "id": "PL001",
+      "label": "SM Terminal",
+      "address": "SM Terminal, Awasian, Tandag City",
+      "barangay": "Awasian",
+      "purok": "Purok 1",
+      "latitude": 9.0825,
+      "longitude": 126.1985,
+      "category": "mall"
+    },
+    {
+      "id": "PL002",
+      "label": "Public Market",
+      "address": "Public Market, Bagong Lungsod (Poblacion), Tandag City",
+      "barangay": "Bagong Lungsod (Poblacion)",
+      "purok": "Purok 2",
+      "latitude": 9.0785,
+      "longitude": 126.2025,
+      "category": "market"
+    },
+    {
+      "id": "PL003",
+      "label": "SurGo Terminal",
+      "address": "SurGo Terminal, Bioto, Tandag City",
+      "barangay": "Bioto",
+      "purok": "Purok 3",
+      "latitude": 9.0745,
+      "longitude": 126.1985,
+      "category": "terminal"
+    },
+    {
+      "id": "PL004",
+      "label": "Jollibee",
+      "address": "Jollibee, Bongtod Poblacion (East West), Tandag City",
+      "barangay": "Bongtod Poblacion (East West)",
+      "purok": "Purok 4",
+      "latitude": 9.0785,
+      "longitude": 126.1945,
+      "category": "restaurant"
+    },
+    {
+      "id": "PL005",
+      "label": "Chowking",
+      "address": "Chowking, Buenavista, Tandag City",
+      "barangay": "Buenavista",
+      "purok": "Purok 5",
+      "latitude": 9.0865,
+      "longitude": 126.1985,
+      "category": "restaurant"
+    },
+    {
+      "id": "PL006",
+      "label": "Mercy Hospital",
+      "address": "Mercy Hospital, Dagocdoc (Poblacion), Tandag City",
+      "barangay": "Dagocdoc (Poblacion)",
+      "purok": "Purok 1",
+      "latitude": 9.0785,
+      "longitude": 126.2065,
+      "category": "hospital"
+    },
+    {
+      "id": "PL007",
+      "label": "Tandag Public Hall",
+      "address": "Tandag Public Hall, Mabua, Tandag City",
+      "barangay": "Mabua",
+      "purok": "Purok 3",
+      "latitude": 9.0705,
+      "longitude": 126.1985,
+      "category": "civic"
+    },
+    {
+      "id": "PL008",
+      "label": "Caraga State University",
+      "address": "Caraga State University, Mabuhay, Tandag City",
+      "barangay": "Mabuhay",
+      "purok": "Purok 8",
+      "latitude": 9.0785,
+      "longitude": 126.1905,
+      "category": "school"
+    },
+    {
+      "id": "PL009",
+      "label": "Gaisano Mall",
+      "address": "Gaisano Mall, Maitum, Tandag City",
+      "barangay": "Maitum",
+      "purok": "Purok 1",
+      "latitude": 9.0905,
+      "longitude": 126.1985,
+      "category": "mall"
+    },
+    {
+      "id": "PL010",
+      "label": "Tandag Port",
+      "address": "Tandag Port, Maticdum, Tandag City",
+      "barangay": "Maticdum",
+      "purok": "Purok 2",
+      "latitude": 9.0785,
+      "longitude": 126.2105,
+      "category": "port"
+    },
+    {
+      "id": "PL011",
+      "label": "BDO Tandag",
+      "address": "BDO Tandag, Pandanon, Tandag City",
+      "barangay": "Pandanon",
+      "purok": "Purok 4",
+      "latitude": 9.0665,
+      "longitude": 126.1985,
+      "category": "bank"
+    },
+    {
+      "id": "PL012",
+      "label": "Mambajao",
+      "address": "Mambajao, Pangi, Tandag City",
+      "barangay": "Pangi",
+      "purok": "Purok 4",
+      "latitude": 9.0785,
+      "longitude": 126.1865,
+      "category": "market"
+    }
+  ]
+}

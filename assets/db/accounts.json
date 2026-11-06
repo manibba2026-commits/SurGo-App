@@ -1,0 +1,169 @@
+{
+  "_note": "Demo business records, not credentials. Sign-in is handled by Supabase Auth (phone OTP or Google); a signed-in user is matched to one of these rows by phone or email, or gets a fresh passenger row. Each account links to the profile ids it can act as (roles) and declares which capabilities it is approved for (capabilities.approved) and which it may still apply for (capabilities.eligible). Approval is the gate: an eligible-but-not-approved capability never unlocks its mode. ACC001 is approved for all four so the seeded ride demo works.",
+  "accounts": [
+    {
+      "id": "ACC001",
+      "name": "Jr Derigay",
+      "phone": "+63 917 512 4809",
+      "email": "jr.derigay@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P001",
+        "earner": "R001",
+        "vehicleOwner": "VOW-77213"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner", "rider", "vehicleOwner"],
+        "eligible": []
+      }
+    },
+    {
+      "id": "ACC002",
+      "name": "Grace Ann Villaflor",
+      "phone": "+63 917 220 4411",
+      "email": "grace.villaflor@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P002",
+        "vehicleOwner": "VOW-77214"
+      },
+      "capabilities": {
+        "approved": ["passenger", "vehicleOwner"],
+        "eligible": ["earner", "rider"]
+      }
+    },
+    {
+      "id": "ACC003",
+      "name": "Nena Villareal",
+      "phone": "+63 918 335 2290",
+      "email": "nena.villareal@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P003"
+      },
+      "capabilities": {
+        "approved": ["passenger"],
+        "eligible": ["earner", "rider", "vehicleOwner"]
+      }
+    },
+    {
+      "id": "ACC004",
+      "name": "Danilo Cruz",
+      "phone": "+63 919 447 8812",
+      "email": "danilo.cruz@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P004",
+        "vehicleOwner": "VOW-77215"
+      },
+      "capabilities": {
+        "approved": ["passenger", "vehicleOwner"],
+        "eligible": ["earner", "rider"]
+      }
+    },
+    {
+      "id": "ACC005",
+      "name": "Rosalinda Pajo",
+      "phone": "+63 916 558 7734",
+      "email": "rosalinda.pajo@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P005",
+        "vehicleOwner": "VOW-77216"
+      },
+      "capabilities": {
+        "approved": ["passenger", "vehicleOwner"],
+        "eligible": ["earner", "rider"]
+      }
+    },
+    {
+      "id": "ACC006",
+      "name": "Bebot Lim",
+      "phone": "+63 926 771 3390",
+      "email": "bebot.lim@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P007",
+        "earner": "R002"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner"],
+        "eligible": ["rider", "vehicleOwner"]
+      }
+    },
+    {
+      "id": "ACC007",
+      "name": "Carlo Mendoza",
+      "phone": "+63 927 882 4415",
+      "email": "carlo.mendoza@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P008",
+        "earner": "R003"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner"],
+        "eligible": ["rider", "vehicleOwner"]
+      }
+    },
+    {
+      "id": "ACC008",
+      "name": "Danny Reyes",
+      "phone": "+63 928 993 5521",
+      "email": "danny.reyes@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P009",
+        "earner": "R004"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner"],
+        "eligible": ["rider", "vehicleOwner"]
+      }
+    },
+    {
+      "id": "ACC009",
+      "name": "Edwin Santillan",
+      "phone": "+63 929 104 6632",
+      "email": "edwin.santillan@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P010"
+      },
+      "capabilities": {
+        "approved": ["passenger"],
+        "eligible": ["earner", "rider", "vehicleOwner"]
+      }
+    },
+    {
+      "id": "ACC010",
+      "name": "Isabella Dizon",
+      "phone": "+63 930 215 8888",
+      "email": "isabella.dizon@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P006",
+        "earner": "R006",
+        "vehicleOwner": "VOW-77217"
+      },
+      "capabilities": {
+        "approved": ["passenger", "earner", "vehicleOwner"],
+        "eligible": ["rider"]
+      }
+    },
+    {
+      "id": "ACC011",
+      "name": "Marco Villanueva",
+      "phone": "+63 931 326 9977",
+      "email": "marco.villanueva@email.com",
+      "accountStatus": "active",
+      "roles": {
+        "passenger": "P011"
+      },
+      "capabilities": {
+        "approved": ["passenger"],
+        "eligible": ["earner", "rider", "vehicleOwner"]
+      }
+    }
+  ]
+}
