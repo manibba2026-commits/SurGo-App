@@ -10,12 +10,13 @@ const s = (f: FormData, k: string) => {
 };
 
 /** Every action re-verifies admin server-side, then calls an audited SECURITY DEFINER RPC.
- *  Tables are never written from the browser. */
+ *  Tables are never written from the browser. Paths revalidate as layouts so the
+ *  per-person page (/users/[id]) refreshes together with its list page. */
 async function run(rpc: string, args: Record<string, unknown>, paths: string[], okMsg: string): Promise<ActionState> {
   await requireAdmin();
   const { error } = await createClient().rpc(rpc, args);
   if (error) return { error: error.message };
-  paths.forEach((p) => revalidatePath(p));
+  paths.forEach((p) => revalidatePath(p, 'layout'));
   return { ok: okMsg };
 }
 
@@ -27,7 +28,7 @@ export async function reviewApplication(_: ActionState, f: FormData) {
 export async function reviewDocument(_: ActionState, f: FormData) {
   return run('admin_review_document',
     { p_kind: s(f, 'kind'), p_document_id: s(f, 'id'), p_decision: s(f, 'decision'), p_reason: s(f, 'reason') },
-    ['/verification'], 'Document updated');
+    ['/verification', '/users'], 'Document updated');
 }
 export async function setAccountStatus(_: ActionState, f: FormData) {
   return run('admin_set_account_status',

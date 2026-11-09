@@ -31,9 +31,30 @@ enum DomainSlot {
   barangays,
   unreadPassengerNotifications,
   unreadEarnerNotifications,
+
+  /// The full feed a notifications screen lists, newest first. The unread
+  /// counts above are the badge; these are the rows.
+  passengerNotificationFeed,
+  earnerNotificationFeed,
+
+  /// The last few terminal rides behind the passenger home's Recent Bookings
+  /// card. Open requests are not bookings, so the read asks for history only.
+  passengerRecentRides,
   passengerWalletBalance,
   earnerWalletBalance,
   ownerWalletBalance,
+
+  /// The ledger rows behind each wallet screen's history list.
+  passengerWalletEntries,
+  earnerWalletEntries,
+  ownerWalletEntries,
+
+  /// One owner's whole fleet, listing status included.
+  ownerFleet,
+
+  /// The compliance paperwork behind the fleet, read through the vehicles it
+  /// belongs to because `vehicle_documents` has no owner column.
+  ownerVehicleDocuments,
 }
 
 /// Repository reads held for the screens, each in an explicit state.
@@ -63,6 +84,11 @@ class DomainCache extends ChangeNotifier {
   final Map<DomainSlot, RepositoryState<Object?>> _states = {};
   final Map<DomainSlot, int> _generations = {};
   final Set<DomainSlot> _inFlight = {};
+
+  /// Slots a caller asked to be read again while an older read still held
+  /// them. One entry per slot is enough: the parked request wants the newest
+  /// answer, not each of the ones it asked for.
+  final Set<DomainSlot> _rerun = {};
   bool _propagating = false;
   bool _notifyScheduled = false;
   bool _disposed = false;
@@ -102,13 +128,15 @@ class DomainCache extends ChangeNotifier {
   /// displaying a failure or an empty list and was asked to try once more.
   Future<void> retry(DomainSlot slot) => _load(slot, keepOld: false);
 
-  /// Re-reads every slot a screen has already asked for.
+  /// Re-reads every slot a screen has asked for, or is about to answer for.
   ///
   /// A cached answer belongs to whoever was signed in when it was read, so a
   /// session or mode change must not leave it on screen. The slots are kept
-  /// rather than dropped because a screen only reads once when it opens.
+  /// rather than dropped because a screen only reads once when it opens, and a
+  /// read still in flight is retired by [_load] rather than being allowed to
+  /// land the previous session's row in the new session's cache.
   void restart() {
-    final slots = List.of(_states.keys);
+    final slots = {..._states.keys, ..._inFlight};
     _states.clear();
     for (final slot in slots) {
       unawaited(_load(slot, keepOld: false));
@@ -144,7 +172,20 @@ class DomainCache extends ChangeNotifier {
   }
 
   Future<void> _load(DomainSlot slot, {required bool keepOld}) async {
-    if (_inFlight.contains(slot)) return;
+    if (_inFlight.contains(slot)) {
+      // The read holding this slot was asked for by an earlier caller, against
+      // whatever identity and snapshot were current then. Retiring it by
+      // generation is what keeps a previous session's answer out of the cache,
+      // and parking this request is what stops the slot from settling for good
+      // on an answer nobody asked for anymore.
+      _generations[slot] = (_generations[slot] ?? 0) + 1;
+      _rerun.add(slot);
+      if (!keepOld) {
+        _states[slot] = const RepositoryState.loading();
+        _notify();
+      }
+      return;
+    }
     final generation = (_generations[slot] ?? 0) + 1;
     _generations[slot] = generation;
     if (!keepOld) {
@@ -154,11 +195,25 @@ class DomainCache extends ChangeNotifier {
     _inFlight.add(slot);
     final next = await _attempt(slot);
     _inFlight.remove(slot);
+    final rerunRequested = _rerun.remove(slot);
 
     // A newer read for this slot has started, so this answer is stale.
-    if (_generations[slot] != generation) return;
+    if (_generations[slot] != generation) {
+      if (rerunRequested) _rerunLoad(slot, keepOld: false);
+      return;
+    }
     _states[slot] = next;
     _notify();
+    if (rerunRequested) _rerunLoad(slot, keepOld: true);
+  }
+
+  /// Runs the read that was asked for while [_load] was still waiting.
+  ///
+  /// The parked read is the one that sees the current profile key, because it
+  /// only reaches [_read] once the retired read has let go of the slot.
+  void _rerunLoad(DomainSlot slot, {required bool keepOld}) {
+    if (_disposed) return;
+    unawaited(_load(slot, keepOld: keepOld));
   }
 
   /// Runs [slot]'s read and turns any answer into a state.
@@ -195,12 +250,27 @@ class DomainCache extends ChangeNotifier {
         registry.notifications.countUnread(_keyFor(ActorRole.passenger)),
       DomainSlot.unreadEarnerNotifications =>
         registry.notifications.countUnread(_keyFor(ActorRole.earner)),
+      DomainSlot.passengerNotificationFeed =>
+        registry.notifications.fetchNotifications(_keyFor(ActorRole.passenger)),
+      DomainSlot.earnerNotificationFeed =>
+        registry.notifications.fetchNotifications(_keyFor(ActorRole.earner)),
+      DomainSlot.passengerRecentRides =>
+        registry.rides.fetchRideHistory(_keyFor(ActorRole.passenger), limit: 3),
       DomainSlot.passengerWalletBalance =>
         registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.passenger)),
       DomainSlot.earnerWalletBalance =>
         registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.earner)),
       DomainSlot.ownerWalletBalance =>
         registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.vehicleOwner)),
+      DomainSlot.passengerWalletEntries =>
+        registry.wallet.fetchTransactions(_keyFor(ActorRole.passenger)),
+      DomainSlot.earnerWalletEntries =>
+        registry.wallet.fetchTransactions(_keyFor(ActorRole.earner)),
+      DomainSlot.ownerWalletEntries =>
+        registry.wallet.fetchTransactions(_keyFor(ActorRole.vehicleOwner)),
+      DomainSlot.ownerFleet =>
+        registry.vehicles.fetchVehiclesOwnedBy(_keyFor(ActorRole.vehicleOwner)),
+      DomainSlot.ownerVehicleDocuments => _readOwnerDocuments(registry),
     };
   }
 
@@ -232,6 +302,15 @@ class DomainCache extends ChangeNotifier {
       );
     }
     return registry.catalog.fetchBarangays(areas.first.id);
+  }
+
+  /// Documents are filed per vehicle, so the fleet is read first and the
+  /// paperwork asked for by those ids; an owner with no vehicles has no files.
+  Future<List<VehicleDocumentRecord>> _readOwnerDocuments(
+      RepositoryRegistry registry) async {
+    final fleet = await registry.vehicles
+        .fetchVehiclesOwnedBy(_keyFor(ActorRole.vehicleOwner));
+    return registry.vehicles.fetchDocuments([for (final v in fleet) v.id]);
   }
 
   RepositoryState<Object?> _stateFor(Object? value) {

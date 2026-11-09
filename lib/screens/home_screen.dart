@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
 import '../state/domain_cache.dart';
@@ -35,8 +36,6 @@ class _HomeContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
-    final recentRides =
-        state.ready ? state.rideHistory.take(3).toList() : <RideHistoryItem>[];
     return SafeArea(
       bottom: false,
       child: ListView(
@@ -349,41 +348,57 @@ class _HomeContent extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const ActivityScreen())),
           ),
           const SizedBox(height: 12),
-          ...recentRides.map(
-            (b) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: SbTintedCard(
-                tone: SbTone.activity,
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    SbToneIcon(
-                      tone: SbTone.activity,
-                      icon: Icons.electric_rickshaw_rounded,
-                      size: 42,
-                      iconSize: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(b.route,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 12.5)),
-                          const SizedBox(height: 2),
-                          Text('${b.date} · ${Money.format(b.fare)}',
-                              style: const TextStyle(
-                                  color: AppColors.muted, fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                    SbTag(b.status, secondary: b.status != 'Cancelled'),
-                  ],
-                ),
-              ),
+          RepositoryView<List<RideRecord>>(
+            slot: DomainSlot.passengerRecentRides,
+            empty: (_) => const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text('No bookings yet',
+                  style: TextStyle(color: AppColors.muted)),
+            ),
+            data: (context, rides) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final record in rides)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _bookingCard(rideHistoryFromRow(record)),
+                  ),
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bookingCard(RideHistoryItem b) {
+    return SbTintedCard(
+      tone: SbTone.activity,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          SbToneIcon(
+            tone: SbTone.activity,
+            icon: Icons.electric_rickshaw_rounded,
+            size: 42,
+            iconSize: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(b.route,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 12.5)),
+                const SizedBox(height: 2),
+                Text('${b.date} · ${Money.format(b.fare)}',
+                    style: const TextStyle(
+                        color: AppColors.muted, fontSize: 11)),
+              ],
+            ),
+          ),
+          SbTag(b.status, secondary: b.status != 'Cancelled'),
         ],
       ),
     );

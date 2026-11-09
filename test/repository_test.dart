@@ -219,7 +219,12 @@ void main() {
       expect(listed, isNotEmpty);
       expect(
           listed.every((vehicle) => vehicle.pricePerDayCentavos > 0), isTrue);
-      expect(listed.every((vehicle) => vehicle.status == 'active'), isTrue);
+      // A vehicle on rental is still a listing, so both tokens appear here;
+      // anything in maintenance is filtered out.
+      expect(
+          listed.every((vehicle) =>
+              vehicle.status == 'active' || vehicle.status == 'rented'),
+          isTrue);
     });
 
     test('rides are scoped to the passenger and keep centavo fares', () async {

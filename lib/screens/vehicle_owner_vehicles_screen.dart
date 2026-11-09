@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
+import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
 
 /// Vehicle Owner mode — Vehicles tab. Lets the owner see their fleet
@@ -26,81 +30,89 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
-    final content = ListenableBuilder(
-      listenable: state,
-      builder: (context, _) {
-        final all = state.ownerVehicles;
-        final vehicles = activeFilter == 'All' ? all : all.where((v) => v.category == activeFilter).toList();
-        return ListView(
-          padding: EdgeInsets.fromLTRB(18, widget.embedded ? 4 : 16, 18, 90),
-          children: [
-            if (widget.embedded)
-              SbTabHeader(
-                title: 'Vehicles',
-                actions: [
-                  SbIconButton(icon: Icons.add, onTap: () => _showAddVehicleSheet(context, state)),
-                ],
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('My Vehicles', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                  SbIconButton(icon: Icons.add, onTap: () => _showAddVehicleSheet(context, state)),
-                ],
-              ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 34,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: filters.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, i) => SbChip(
-                  filters[i],
-                  active: filters[i] == activeFilter,
-                  onTap: () => setState(() => activeFilter = filters[i]),
-                ),
-              ),
+    final content = ListView(
+      padding: EdgeInsets.fromLTRB(18, widget.embedded ? 4 : 16, 18, 90),
+      children: [
+        if (widget.embedded)
+          SbTabHeader(
+            title: 'Vehicles',
+            actions: [
+              SbIconButton(icon: Icons.add, onTap: () => _showAddVehicleSheet(context, state)),
+            ],
+          )
+        else
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('My Vehicles', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              SbIconButton(icon: Icons.add, onTap: () => _showAddVehicleSheet(context, state)),
+            ],
+          ),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 34,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: filters.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) => SbChip(
+              filters[i],
+              active: filters[i] == activeFilter,
+              onTap: () => setState(() => activeFilter = filters[i]),
             ),
-            const SizedBox(height: 16),
-            if (vehicles.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 24),
-                child: Column(
-                  children: [
-                    const Icon(Icons.directions_car_outlined, size: 36, color: AppColors.muted2),
-                    const SizedBox(height: 10),
-                    Text(
-                      activeFilter == 'All'
-                          ? 'You haven\'t listed any vehicles yet.'
-                          : 'No $activeFilter vehicles yet.',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
-                    ),
-                    const SizedBox(height: 14),
-                    SbOutlineButton(
-                      label: 'Add Vehicle',
-                      icon: Icons.add,
-                      block: false,
-                      onPressed: () => _showAddVehicleSheet(context, state),
-                    ),
-                  ],
-                ),
-              )
-            else
-              ...vehicles.map((v) => Padding(
+          ),
+        ),
+        const SizedBox(height: 16),
+        RepositoryView<List<VehicleRecord>>(
+          slot: DomainSlot.ownerFleet,
+          empty: (_) => _noVehicles(context, state),
+          data: (context, fleet) {
+            final vehicles = activeFilter == 'All'
+                ? fleet
+                : fleet.where((v) => v.category == activeFilter).toList();
+            if (vehicles.isEmpty) return _noVehicles(context, state);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final vehicle in vehicles)
+                  Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _vehicleCard(context, state, v),
-                  )),
-          ],
-        );
-      },
+                    child: _vehicleCard(context, state, vehicle),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
     if (widget.embedded) return SafeArea(bottom: false, child: content);
     return Scaffold(body: content);
   }
 
-  Widget _vehicleCard(BuildContext context, AppState state, OwnedVehicle v) {
+  Widget _noVehicles(BuildContext context, AppState state) => Padding(
+        padding: const EdgeInsets.only(top: 24),
+        child: Column(
+          children: [
+            const Icon(Icons.directions_car_outlined, size: 36, color: AppColors.muted2),
+            const SizedBox(height: 10),
+            Text(
+              activeFilter == 'All'
+                  ? 'You haven\'t listed any vehicles yet.'
+                  : 'No $activeFilter vehicles yet.',
+              style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
+            const SizedBox(height: 14),
+            SbOutlineButton(
+              label: 'Add Vehicle',
+              icon: Icons.add,
+              block: false,
+              onPressed: () => _showAddVehicleSheet(context, state),
+            ),
+          ],
+        ),
+      );
+
+  Widget _vehicleCard(BuildContext context, AppState state, VehicleRecord v) {
     return SbTintedCard(
       tone: SbTone.vehicle,
       padding: const EdgeInsets.all(13),
@@ -117,7 +129,8 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
               border: Border.all(
                   color: SbTone.vehicle.accent.withValues(alpha: 0.20)),
             ),
-            child: Icon(v.icon, size: 22, color: SbTone.vehicle.accent),
+            child: Icon(iconForVehicle(v.category, v.vehicleType),
+                size: 22, color: SbTone.vehicle.accent),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -126,21 +139,21 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
               children: [
                 Text(v.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                 const SizedBox(height: 2),
-                Text('${v.category} · ${v.type} · Plate ${v.plate}',
+                Text('${v.category} · ${v.vehicleType} · Plate ${v.plateNumber}',
                     style: const TextStyle(color: AppColors.muted, fontSize: 11)),
                 const SizedBox(height: 4),
-                Text('${Money.format(v.pricePerDay)}/day · ⭐ ${v.rating} · ${v.totalRentals} rentals',
+                Text('${Money.format(v.pricePerDayCentavos)}/day · ⭐ ${v.rating} · ${v.totalRentals} rentals',
                     style: const TextStyle(color: AppColors.muted, fontSize: 11)),
               ],
             ),
           ),
-          SbTag(v.status, secondary: v.status == 'Listed'),
+          SbTag(v.statusLabel, secondary: v.statusLabel == 'Listed'),
         ],
       ),
     );
   }
 
-  void _showManageSheet(BuildContext context, AppState state, OwnedVehicle v) {
+  void _showManageSheet(BuildContext context, AppState state, VehicleRecord v) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.panel,
@@ -152,7 +165,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(v.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-            Text('Plate ${v.plate} · ${Money.format(v.pricePerDay)}/day', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+            Text('Plate ${v.plateNumber} · ${Money.format(v.pricePerDayCentavos)}/day', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
             const SizedBox(height: 16),
             const Text('Set status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.muted2)),
             const SizedBox(height: 8),
@@ -162,9 +175,9 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
               children: ['Listed', 'Rented', 'Maintenance']
                   .map((s) => SbChip(
                         s,
-                        active: v.status == s,
+                        active: v.statusLabel == s,
                         onTap: () {
-                          state.setOwnedVehicleStatus(v, s);
+                          state.setOwnedVehicleStatusById(v.id, s);
                           Navigator.pop(context);
                         },
                       ))
@@ -175,7 +188,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
               label: 'Remove Vehicle',
               icon: Icons.delete_outline,
               onPressed: () {
-                state.removeOwnedVehicle(v);
+                state.removeOwnedVehicleById(v.id);
                 Navigator.pop(context);
               },
             ),

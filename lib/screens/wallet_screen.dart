@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
 import '../state/domain_cache.dart';
@@ -30,8 +31,11 @@ class WalletScreen extends StatelessWidget {
             : (isRider
                 ? DomainSlot.earnerWalletBalance
                 : DomainSlot.passengerWalletBalance);
-        final txns =
-            isOwner ? state.ownerTransactions : (isRider ? state.earnerTransactions : state.passengerTransactions);
+        final entriesSlot = isOwner
+            ? DomainSlot.ownerWalletEntries
+            : (isRider
+                ? DomainSlot.earnerWalletEntries
+                : DomainSlot.passengerWalletEntries);
         final title = isOwner ? 'Owner Wallet' : (isRider ? 'Earnings Wallet' : 'Wallet');
         return ListView(
           padding: EdgeInsets.fromLTRB(18, embedded ? 0 : 14, 18, embedded ? 90 : 24),
@@ -96,16 +100,24 @@ class WalletScreen extends StatelessWidget {
               const SizedBox(height: 20),
               const SbSectionHeader(title: 'Transaction History'),
               const SizedBox(height: 10),
-              if (txns.isEmpty)
-                const Padding(
+              RepositoryView<List<WalletEntryRecord>>(
+                slot: entriesSlot,
+                empty: (_) => const Padding(
                   padding: EdgeInsets.only(top: 12),
-                  child: Text('No transactions yet', style: TextStyle(color: AppColors.muted)),
-                )
-              else
-                ...txns.map((t) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _txnTile(t),
-                    )),
+                  child: Text('No transactions yet',
+                      style: TextStyle(color: AppColors.muted)),
+                ),
+                data: (context, entries) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final entry in entries)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _txnTile(entry),
+                      ),
+                  ],
+                ),
+              ),
             ],
           );
         },
@@ -176,8 +188,8 @@ class WalletScreen extends StatelessWidget {
           fontWeight: FontWeight.w800,
           letterSpacing: -0.5));
 
-  Widget _txnTile(WalletTransaction t) {
-    final positive = t.isPositive;
+  Widget _txnTile(WalletEntryRecord entry) {
+    final positive = entry.isCredit;
     final tone = positive ? SbTone.success : SbTone.neutral;
     return SbTintedCard(
       tone: tone,
@@ -197,14 +209,19 @@ class WalletScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(t.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                Text(entry.description ?? walletEntryTypeLabel(entry.type),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
                 const SizedBox(height: 2),
-                Text('${t.date} · ${t.status}', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                Text(
+                  '${displayTimestamp(entry.createdAt)} · '
+                  '${walletEntryTypeLabel(entry.type)}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
               ],
             ),
           ),
           Text(
-            '${positive ? '+' : '-'}${Money.format(t.amount)}',
+            '${positive ? '+' : '-'}${Money.format(entry.amountCentavos)}',
             style: TextStyle(
               fontWeight: FontWeight.w800,
               color: positive ? AppColors.secondaryLight : AppColors.text,

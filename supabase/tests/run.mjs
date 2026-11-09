@@ -88,11 +88,13 @@ const TEST_SUPPORT = `
 `;
 
 // Supabase applies default privileges that grant ALL on new public tables and
-// EXECUTE on new public functions to anon, authenticated and service_role.
-// The security hardening migration is written against that starting state, so
-// simulate it immediately before that migration runs. Applying it earlier
-// would also cover tables created by the baseline migrations.
-const HARDENING_MARKER = 'security_hardening';
+// EXECUTE on new public functions to anon, authenticated and service_role at
+// object-creation time. Simulate that immediately before the first migration
+// that revokes those grants again: the admin dashboard migration ends the
+// baseline, and the security hardening migration assumes the baseline objects
+// still carry the Supabase defaults. Applying the simulation after the admin
+// migration would hand anon back the EXECUTE it had just revoked.
+const DEFAULTS_MARKER = 'admin_dashboard_access_and_actions';
 
 async function grantSupabaseDefaults(db) {
   await db.exec(`
@@ -131,7 +133,7 @@ async function boot(label) {
   const migrations = readMigrations();
   let defaultsApplied = false;
   for (const { file, sql } of migrations) {
-    if (!defaultsApplied && file.includes(HARDENING_MARKER)) {
+    if (!defaultsApplied && file.includes(DEFAULTS_MARKER)) {
       await grantSupabaseDefaults(db);
       defaultsApplied = true;
     }

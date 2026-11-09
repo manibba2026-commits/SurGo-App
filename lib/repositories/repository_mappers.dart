@@ -5,6 +5,7 @@ import '../data/models.dart';
 import '../state/pasuyo_status.dart';
 import '../state/rental_status.dart';
 import '../state/ride_status.dart';
+import 'backend_rows.dart';
 import 'row_models.dart';
 
 /// Maps backend rows to the presentation models the existing screens already
@@ -13,8 +14,8 @@ import 'row_models.dart';
 /// No mapper invents money: every `*Centavos` row field lands unchanged in the
 /// model's integer `fare` / `amount` / `totalFare` field.
 ///
-/// These mappers are kept for a later presentation-mapping pass; the repository
-/// reads currently map through the records in `backend_rows.dart`.
+/// A mapper wired to a migrated read takes the record the repository returns
+/// (`backend_rows.dart`); the row-shaped mappers below it wait for their reads.
 
 const List<String> _monthNames = [
   'Jan',
@@ -48,6 +49,81 @@ String displayDateOnly(DateTime? value, {String fallback = '—'}) {
   return '${_monthNames[local.month - 1]} ${local.day}, ${local.year}';
 }
 
+/// "2 min ago", in the words the seed's own labels use.
+///
+/// A repository read returns a real timestamp instead of a hand-written string,
+/// so the notification feed renders ages from it. [now] is a test hook.
+String displayAge(DateTime? value, {DateTime? now, String fallback = '—'}) {
+  if (value == null) return fallback;
+  final elapsed = (now ?? DateTime.now()).difference(value);
+  final age = elapsed.isNegative ? Duration.zero : elapsed;
+  if (age.inMinutes < 1) return 'Just now';
+  if (age.inHours < 1) return '${age.inMinutes} min ago';
+  if (age.inDays < 1) return '${age.inHours} hr ago';
+  if (age.inDays == 1) return 'Yesterday';
+  if (age.inDays < 7) return '${age.inDays} days ago';
+  if (age.inDays < 14) return '1 week ago';
+  return displayDateOnly(value);
+}
+
+/// The fleet and catalogue glyph for a vehicle.
+///
+/// `vehicle_type` is free text in the database, so the category picks the
+/// shape and the type only separates the van-like vehicles.
+IconData iconForVehicle(String category, String vehicleType) =>
+    switch (category) {
+      '2-Wheel' => Icons.two_wheeler,
+      '3-Wheel' => Icons.electric_rickshaw,
+      'Truck' => Icons.local_shipping_outlined,
+      _ => vehicleType == 'Van' || vehicleType == 'Multicab'
+          ? Icons.airport_shuttle
+          : Icons.directions_car,
+    };
+
+/// The glyph for a notification type token.
+///
+/// The seed and the `notifications` check constraint use the same ten tokens,
+/// so both modes can share this mapping.
+IconData iconForNotificationType(String type) => switch (type) {
+      'promo' => Icons.local_offer_outlined,
+      'ride' => Icons.electric_rickshaw,
+      'rental' => Icons.two_wheeler,
+      'pasuyo' => Icons.delivery_dining,
+      'payment' || 'wallet' => Icons.account_balance_wallet_outlined,
+      'verification' => Icons.badge_outlined,
+      'safety' => Icons.shield_outlined,
+      'rating' => Icons.star_border_rounded,
+      _ => Icons.notifications_none,
+    };
+
+/// The paperwork chip, from the `document_review_status` token.
+///
+/// The prototype calls an approved document "Verified", so the token keeps the
+/// word the list already used.
+String documentStatusLabel(String token) => switch (token) {
+      'approved' => 'Verified',
+      'rejected' => 'Rejected',
+      'expired' => 'Expired',
+      _ => 'Pending',
+    };
+
+/// The glyph for a filed document.
+///
+/// `document_type` is a free-text label rather than an enum, and both the seed
+/// and the imported rows use the same long names, so the shape is matched from
+/// the words. NBI Clearance is tested first because it also reads "Clearance".
+IconData iconForVehicleDocument(String label) {
+  final text = label.toLowerCase();
+  if (text.contains('nbi')) return Icons.fingerprint;
+  if (text.contains('license')) return Icons.badge_outlined;
+  if (text.contains('insurance')) return Icons.shield_outlined;
+  if (text.contains('clearance')) return Icons.verified_user_outlined;
+  if (text.contains('registration') || text.contains('or / cr')) {
+    return Icons.description_outlined;
+  }
+  return Icons.insert_drive_file_outlined;
+}
+
 String initialsFor(String name) {
   final parts = name.trim().split(RegExp(r'\s+'))
     ..removeWhere((part) => part.isEmpty);
@@ -75,6 +151,23 @@ String paymentMethodLabel(String value) {
     _ => _titleCase(value),
   };
 }
+
+/// The ledger kind shown on a wallet history row.
+///
+/// `wallet_transactions` has no status column, so the entry's own type is what
+/// the list can say next to the date; the seed's vocabulary (`topup`, `bonus`)
+/// is folded into the same words.
+String walletEntryTypeLabel(String token) => switch (token) {
+      'top_up' || 'topup' => 'Top-up',
+      'earning' || 'credit' => 'Earning',
+      'payout' => 'Payout',
+      'platform_fee' => 'Platform fee',
+      'adjustment' => 'Adjustment',
+      'refund' => 'Refund',
+      'debit' => 'Payment',
+      'bonus' => 'Bonus',
+      _ => _titleCase(token),
+    };
 
 RideRequestItem rideRequestFromRow(RideRequestRow row) {
   final passengerName = asString(row.passenger?['full_name']) ?? 'Passenger';
@@ -106,27 +199,24 @@ RideRequestItem rideRequestFromRow(RideRequestRow row) {
 }
 
 RideHistoryItem rideHistoryFromRow(
-  RideRequestRow row, {
+  RideRecord record, {
   int rating = 0,
   String vehicleType = '',
 }) {
-  final riderName = asString(row.rider?['full_name']) ?? '—';
   return RideHistoryItem(
-    id: row.id,
-    route: '${row.pickupAddress} → ${row.dropoffAddress ?? 'Destination'}',
+    id: record.id,
+    route: record.dropoffAddress.isEmpty
+        ? record.pickupAddress
+        : '${record.pickupAddress} → ${record.dropoffAddress}',
     date: displayTimestamp(
-      row.completedAt ?? row.cancelledAt ?? row.requestedAt,
+      record.completedAt ?? record.cancelledAt ?? record.requestedAt,
     ),
-    fare: row.fareCentavos,
-    status: switch (row.status) {
-      'completed' => 'Completed',
-      'cancelled' => 'Cancelled',
-      _ => _titleCase(row.status),
-    },
+    fare: record.fareCentavos,
+    status: record.status.label,
     vehicleType: vehicleType,
-    driverName: riderName,
+    driverName: record.riderName ?? '—',
     rating: rating,
-    completedAt: row.completedAt,
+    completedAt: record.completedAt,
   );
 }
 

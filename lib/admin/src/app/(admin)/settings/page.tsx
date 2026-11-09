@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { ok, type Row } from '@/lib/query';
+import { ok, okOrDenied, type Row } from '@/lib/query';
 import { peso, dt, label, agreedRideFeeCentavos } from '@/lib/format';
 import { PageHeader, Panel, Table, Badge, Empty } from '@/components/ui';
 
@@ -13,7 +13,7 @@ export default async function Settings() {
     db.from('admin_audit_logs').select('id,action,entity_type,entity_id,created_at,actor:profiles!admin_audit_logs_actor_id_fkey(full_name)').order('created_at', { ascending: false }).limit(20),
   ]);
   const A = ok(areas as any, 'Service areas') as Row[], B = ok(brgy as any, 'Barangays') as Row[];
-  const P = ok(pol as any, 'Pricing policies') as Row[], L = ok(audit as any, 'Audit log') as Row[];
+  const P = ok(pol as any, 'Pricing policies') as Row[], L = okOrDenied<Row[]>(audit as any, 'Audit log');
   return (
     <>
       <PageHeader title="Platform settings" sub="Read-only. Configuration changes need an approved backend workflow and are intentionally not editable here." />
@@ -38,9 +38,13 @@ export default async function Settings() {
         </Panel>
       </div>
       <h2 className="mb-3 mt-8 text-lg font-semibold">Recent administrator actions</h2>
-      <Table head={['When', 'Administrator', 'Action', 'Record']} empty={<Empty title="No admin actions yet" hint="Every approval, suspension and remittance change is recorded here." />}>
-        {L.map((l) => <tr key={l.id}><td className="text-ink-500">{dt(l.created_at)}</td><td>{l.actor?.full_name ?? 'Unknown'}</td><td>{l.action}</td><td className="text-xs text-ink-500">{label(l.entity_type)} {String(l.entity_id).slice(0, 8)}</td></tr>)}
-      </Table>
+      {L === null ? (
+        <p className="text-sm text-ink-500">Not readable by this session: the &quot;authenticated&quot; role has no SELECT privilege on admin_audit_logs. The actions still happen and are still logged — reading the trail needs the service-role channel.</p>
+      ) : (
+        <Table head={['When', 'Administrator', 'Action', 'Record']} empty={<Empty title="No admin actions yet" hint="Every approval, suspension and remittance change is recorded here." />}>
+          {L.map((l) => <tr key={l.id}><td className="text-ink-500">{dt(l.created_at)}</td><td>{l.actor?.full_name ?? 'Unknown'}</td><td>{l.action}</td><td className="text-xs text-ink-500">{label(l.entity_type)} {String(l.entity_id).slice(0, 8)}</td></tr>)}
+        </Table>
+      )}
     </>
   );
 }

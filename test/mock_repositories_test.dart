@@ -169,26 +169,34 @@ void main() {
       expect(vehicles.every((v) => v.pricePerDayCentavos > 0), isTrue);
     });
 
-    test('listing status tokens match the database vocabulary', () async {
+    test('the seed status vocabulary survives into the record layer', () async {
       final repository = MockVehicleRepository(db);
       final listed = await repository.fetchListedVehicles();
       expect(listed, isNotEmpty);
       expect(listed.every((v) => v.isListed), isTrue);
-      expect(listed.every((v) => v.statusLabel == 'Listed'), isTrue);
 
+      const seedToToken = {
+        'Listed': 'active',
+        'Rented': 'rented',
+        'Maintenance': 'maintenance',
+      };
       final all = await repository.fetchVehiclesOwnedBy('any');
-      final maintenance = db.ownerVehicles
-          .where((v) => v.status == 'Maintenance')
-          .map((v) => v.id)
-          .toSet();
-      for (final vehicle in all) {
-        if (maintenance.contains(vehicle.id)) {
-          expect(vehicle.status, 'inactive');
-          expect(vehicle.isListed, isFalse);
-        } else {
-          expect(vehicle.status, 'active');
-        }
+      expect(all.length, db.ownerVehicles.length);
+      for (var i = 0; i < all.length; i++) {
+        expect(all[i].status, seedToToken[db.ownerVehicles[i].status]);
       }
+
+      // A vehicle that is out on rental is still a listing, only not free right
+      // now; one in maintenance is off the catalogue entirely.
+      expect(all.where((v) => v.status == 'rented').every((v) => v.isListed),
+          isTrue);
+      expect(
+        all.where((v) => v.status == 'maintenance').every((v) => !v.isListed),
+          isTrue,
+        reason: 'the seed should cover this state',
+      );
+      expect(listed.map((v) => v.id).toSet(),
+          all.where((v) => v.isListed).map((v) => v.id).toSet());
     });
 
     test('documents are fleet paperwork, not per-vehicle rows', () async {
@@ -345,8 +353,7 @@ void main() {
   });
 
   group('MockNotificationRepository', () {
-    test('the feed mirrors the seeded labels without inventing timestamps',
-        () async {
+    test('the feed mirrors the seeded labels and their real times', () async {
       final repository = MockNotificationRepository(db);
       final records = await repository.fetchNotifications(db.passenger.id);
       expect(records.length, db.passengerNotifications.length);
@@ -355,7 +362,7 @@ void main() {
         expect(records[i].id, seed.id);
         expect(records[i].title, seed.title);
         expect(records[i].isRead, seed.read);
-        expect(records[i].createdAt, isNull);
+        expect(records[i].createdAt, seed.createdAt);
       }
     });
 

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../state/rental_status.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_notice.dart';
 import 'vehicle_owner_vehicles_screen.dart';
@@ -66,8 +70,12 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                         _statBox(Money.format(state.ownerEarningsWeek), 'This Week')),
                 const SizedBox(width: 8),
                 Expanded(
-                    child:
-                        _statBox('${state.ownerVehicles.length}', 'Vehicles')),
+                    child: RepositoryInline<List<VehicleRecord>>(
+                  slot: DomainSlot.ownerFleet,
+                  placeholder: _statBox('—', 'Vehicles'),
+                  data: (context, fleet) =>
+                      _statBox('${fleet.length}', 'Vehicles'),
+                )),
               ],
             ),
             const SizedBox(height: 20),
@@ -82,39 +90,47 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            ...state.ownerVehicles.map(
-              (v) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: SbTintedCard(
-                  tone: SbTone.vehicle,
-                  padding: const EdgeInsets.all(13),
-                  child: Row(
-                    children: [
-                      SbToneIcon(
+            RepositoryView<List<VehicleRecord>>(
+              slot: DomainSlot.ownerFleet,
+              empty: (_) => const SizedBox.shrink(),
+              data: (context, fleet) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final v in fleet)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: SbTintedCard(
                         tone: SbTone.vehicle,
-                        icon: v.icon,
-                        size: 42,
-                        iconSize: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        padding: const EdgeInsets.all(13),
+                        child: Row(
                           children: [
-                            Text(v.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12.5)),
-                            Text('Plate ${v.plate} · ${Money.format(v.pricePerDay)}/day',
-                                style: const TextStyle(
-                                    color: AppColors.muted, fontSize: 11)),
+                            SbToneIcon(
+                              tone: SbTone.vehicle,
+                              icon: iconForVehicle(v.category, v.vehicleType),
+                              size: 42,
+                              iconSize: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(v.name,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12.5)),
+                                  Text('Plate ${v.plateNumber} · ${Money.format(v.pricePerDayCentavos)}/day',
+                                      style: const TextStyle(
+                                          color: AppColors.muted, fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                            SbTag(v.statusLabel, secondary: v.statusLabel == 'Listed'),
                           ],
                         ),
                       ),
-                      SbTag(v.status, secondary: v.status == 'Listed'),
-                    ],
-                  ),
-                ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 12),

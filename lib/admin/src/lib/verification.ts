@@ -1,0 +1,179 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { ok, type Row } from './query.ts';
+
+export const VERIFICATION_BUCKET = 'verification-documents';
+export const VEHICLE_BUCKET = 'vehicle-documents';
+
+/** Signed URLs expire with the page, never with the file. */
+const SIGN_TTL_SECONDS = 600;
+
+/**
+ * What the dashboard knows about one referenced document file.
+ * `present` comes from the bucket listing, so a path that was never uploaded is
+ * reported as missing instead of showing a preview link that would fail.
+ */
+export type FileState = { present: boolean; url: string | null };
+
+/**
+ * The honest file state for one document row. A link only appears when a signed
+ * URL exists; a referenced path with no object behind it is named as missing;
+ * and a lookup that failed is reported as unknown rather than as "no file",
+ * because the file may be there.
+ */
+export function documentFileState(doc: Row, file?: FileState): { text: string; hint: string } | null {
+  if (!doc.storage_path) return { text: 'No file uploaded', hint: 'This document was submitted without a file.' };
+  if (file?.url) return null;
+  if (file?.present === false)
+    return {
+      text: 'No file on record',
+      hint: `The application references ${doc.storage_path}, but that file is not in the bucket.`,
+    };
+  return { text: 'Preview unavailable', hint: 'The file listing did not answer.' };
+}
+
+const dirOf = (path: string) => {
+  const cut = path.lastIndexOf('/');
+  return cut < 0 ? '' : path.slice(0, cut + 1);
+};
+
+/**
+ * Lists the folders that hold the referenced paths, then signs only the files
+ * that actually exist. Reads go through the signed-in admin's own session, so
+ * the `surgo admin read documents` policy is what grants the listing.
+ */
+export async function fileStates(
+  db: SupabaseClient,
+  bucket: string,
+  paths: (string | null | undefined)[],
+): Promise<Map<string, FileState>> {
+  const wanted = [...new Set(paths.filter((p): p is string => !!p))];
+  const states = new Map<string, FileState>();
+  if (!wanted.length) return states;
+
+  const folders = [...new Set(wanted.map(dirOf))];
+  const listed = await Promise.all(
+    folders.map(async (folder) => {
+      const { data, error } = await db.storage.from(bucket).list(folder, { limit: 1000 });
+      if (error) throw new Error(`${bucket} ${folder || '/'}: ${error.message}`);
+      return (data ?? []).map((f) => `${folder}${f.name}`);
+    }),
+  );
+  const present = new Set(listed.flat());
+  const presentPaths = wanted.filter((p) => present.has(p));
+  wanted.forEach((p) => states.set(p, { present: present.has(p), url: null }));
+  if (!presentPaths.length) return states;
+
+  const { data, error } = await db.storage
+    .from(bucket)
+    .createSignedUrls(presentPaths, SIGN_TTL_SECONDS);
+  if (error) throw new Error(`${bucket} signing: ${error.message}`);
+  (data ?? []).forEach((row) => {
+    if (row.path && row.signedUrl) {
+      states.set(row.path, { present: true, url: row.signedUrl });
+    }
+  });
+  return states;
+}
+
+const APPLICATION_SELECT =
+  'id,profile_id,capability_type,status,submitted_at,reviewed_at,decided_at,rejection_reason,profile:profiles!verification_applications_profile_id_fkey(id,full_name,email,phone),documents:verification_documents(id,document_type,label,document_number,storage_path,expires_at,status,reviewed_at,rejection_reason)';
+
+const REVIEWABLE = ['submitted', 'under_review', 'needs_resubmission'];
+export const isReviewable = (status: string) => REVIEWABLE.includes(status);
+export const allDocsApproved = (documents: Row[]) =>
+  documents.length > 0 && documents.every((x) => x.status === 'approved');
+
+export type VerificationBundle = {
+  applications: Row[];
+  applicationFiles: Map<string, FileState>;
+  vehicleDocuments: Row[];
+  vehicleFiles: Map<string, FileState>;
+};
+
+/** Signs every referenced file in one pass so a page renders a single bundle. */
+async function bundle(
+  db: SupabaseClient,
+  applications: Row[],
+  vehicleDocuments: Row[],
+): Promise<VerificationBundle> {
+  const [applicationFiles, vehicleFiles] = await Promise.all([
+    fileStates(
+      db,
+      VERIFICATION_BUCKET,
+      applications.flatMap((a) => a.documents.map((x: Row) => x.storage_path)),
+    ),
+    fileStates(
+      db,
+      VEHICLE_BUCKET,
+      vehicleDocuments.map((x) => x.storage_path),
+    ),
+  ]);
+  return { applications, applicationFiles, vehicleDocuments, vehicleFiles };
+}
+
+/** The review queue: every application in one status view, oldest first. */
+export async function verificationQueue(
+  db: SupabaseClient,
+  filter: string,
+  limit = 50,
+): Promise<VerificationBundle> {
+  let query = db
+    .from('verification_applications')
+    .select(APPLICATION_SELECT)
+    .order('submitted_at', { ascending: true, nullsFirst: false })
+    .limit(limit);
+  query =
+    filter === 'open'
+      ? query.in('status', ['submitted', 'under_review'])
+      : filter === 'all'
+        ? query
+        : query.eq('status', filter);
+  const applications = ok((await query) as any, 'Applications') as Row[];
+  const vehicleDocuments = ok(
+    (await db
+      .from('vehicle_documents')
+      .select(
+        'id,document_type,document_number,storage_path,expires_at,status,rejection_reason,vehicle:vehicles(name,plate_number,owner_profile_id,owner:profiles!vehicles_owner_profile_id_fkey(full_name))',
+      )
+      .eq('status', 'pending')
+      .order('created_at')
+      .limit(limit)) as any,
+    'Vehicle documents',
+  ) as Row[];
+  return bundle(db, applications, vehicleDocuments);
+}
+
+/** Everything one person has ever submitted, plus the files on their vehicles. */
+export async function verificationForProfile(
+  db: SupabaseClient,
+  profileId: string,
+): Promise<VerificationBundle> {
+  const applications = ok(
+    (await db
+      .from('verification_applications')
+      .select(APPLICATION_SELECT)
+      .eq('profile_id', profileId)
+      .order('submitted_at', { ascending: false, nullsFirst: false })) as any,
+    'Applications',
+  ) as Row[];
+
+  // Documents belong to vehicles, so reach them through the person's own list.
+  const vehicleIds = ok(
+    (await db.from('vehicles').select('id').eq('owner_profile_id', profileId)) as any,
+    'Vehicles',
+  ) as Row[];
+  const vehicleDocuments = vehicleIds.length
+    ? (ok(
+        (await db
+          .from('vehicle_documents')
+          .select(
+            'id,document_type,document_number,storage_path,expires_at,status,rejection_reason,vehicle:vehicles!vehicle_documents_vehicle_id_fkey(name,plate_number,owner_profile_id)',
+          )
+          .in('vehicle_id', vehicleIds.map((v: Row) => v.id))
+          .order('created_at')) as any,
+        'Vehicle documents',
+      ) as Row[])
+    : [];
+
+  return bundle(db, applications, vehicleDocuments);
+}

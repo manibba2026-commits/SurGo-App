@@ -26,11 +26,15 @@ previous one ran.
 | 11 | `20261106091000_storage_buckets.sql` | `avatars`, `verification-documents`, `vehicle-documents` buckets and owner-path policies |
 | 12 | `20261106091100_realtime_publication.sql` | adds live tables to `supabase_realtime` |
 | 13 | `20261106091200_rls_baseline.sql` | read-own/catalog RLS plus access helper functions |
-| 14 | `20261106130000_security_hardening.sql` | least-privilege grants, pinned `search_path`, hardened default privileges |
-| 15 | `20261106140000_pricing_versions.sql` | versioned policies, fee modes/types and immutable approved terms |
-| 16 | `20261106140100_financial_ledger.sql` | pricing snapshots, cash collections, disputes, receivables, remittances, RLS |
-| 17 | `20261106140200_financial_rpc.sql` | server-side pricing, settlement, cash, dispute and remittance RPCs |
-| 18 | `20261106140300_financial_reporting.sql` | provider earnings and platform revenue views |
+| 14 | `20261106091300_admin_dashboard_access_and_actions.sql` | `is_admin()`, admin read policies, the five review RPCs, `admin_overview`/`admin_daily_activity` |
+| 15 | `20261106130000_security_hardening.sql` | least-privilege grants, pinned `search_path`, hardened default privileges |
+| 16 | `20261106140000_pricing_versions.sql` | versioned policies, fee modes/types and immutable approved terms |
+| 17 | `20261106140100_financial_ledger.sql` | pricing snapshots, cash collections, disputes, receivables, remittances, RLS |
+| 18 | `20261106140200_financial_rpc.sql` | server-side pricing, settlement, cash, dispute and remittance RPCs |
+| 19 | `20261106140300_financial_reporting.sql` | provider earnings and platform revenue views |
+
+Row 14 is a **verbatim copy** of SQL that is already on the hosted project under
+a different timestamp — see [Admin dashboard migration sync](#admin-dashboard-migration-sync).
 
 All 30 business tables use UUID primary keys, `timestamptz` timestamps and
 `bigint` centavos. Every mutable table has an `updated_at` trigger.
@@ -108,6 +112,143 @@ derived with `md5('surgo:...')::uuid`, so re-running the seed does not duplicate
 geography. Local sample users in `assets/db/users.json` and
 `assets/db/accounts.json` are deliberately not migrated.
 
+## Demo data
+
+`assets/db/*.json` is the mock dataset the Flutter app paints in dev mode. It is
+an **import input**, not a runtime source: the app never reads those files from
+the database, and `demo-data.sql` is generated from them.
+
+```
+assets/db/*.json  ->  supabase/tools/gen_demo_data.mjs  ->  supabase/demo-data.sql
+                                                        ->  supabase/tests/verify_demo.mjs   (PGlite, twice)
+                                                        ->  supabase/tools/apply_demo_data.mjs (hosted)
+```
+
+`demo-data.sql` is one `begin; … commit;` block of upserts keyed by deterministic
+UUIDs (`md5('surgo:demo:<kind>:<key>')::uuid`), so re-running it converges to the
+same rows instead of duplicating them. It lives outside `migrations/` and
+`seed.sql` so no demo row can reach a production deploy by accident.
+
+Applied to `lrhgktxmavnhjatqzbzr` on 2026-11-06 after local PGlite validation.
+Totals are what the hosted project holds now, so they include the real
+account's own `profiles` / `user_roles` rows on top of the 19 demo people:
+
+| table | rows | table | rows |
+| ----- | ---- | ----- | ---- |
+| `profiles` | 20 | `service_requests` | 20 |
+| `user_roles` | 60 | `service_request_items` | 23 |
+| `provider_profiles` | 15 | `service_transactions` | 29 |
+| `vehicles` | 14 | `wallet_accounts` | 11 |
+| `vehicle_documents` | 5 | `wallet_transactions` | 79 |
+| `verification_applications` | 3 | `notifications` | 25 |
+| `verification_documents` | 8 | `ride_requests` | 19 |
+| `rental_bookings` | 16 | | |
+
+Rules the generator follows:
+
+- **One profile per person.** `P001` / `R001` / `VOW-77213` in the JSON are the
+  same human, so they collapse into one `profiles` row with several `user_roles`
+  and `provider_profiles` entries. 11 roster people + 8 archived accounts = 19.
+- **Demo accounts cannot sign in.** Each gets an `auth.users` row with no
+  password and `banned_until = 'infinity'`; the trigger-created profile is then
+  overwritten by the imported row (`on conflict (id) do update`).
+- **Per-user scoping, not per-user databases.** All 19 people share the same 30
+  tables; the RLS read-own policies scope every query through `auth.uid()`, so an
+  account only sees its own profile, roles, wallets, ledger and notifications
+  plus the rides, rentals and Pasuyo jobs it actually participates in. Separate
+  databases per user would break the foreign keys and the admin dashboard.
+- **The real account is never touched.** The operator's admin account (supplied
+  through `SURGO_REAL_USER_ID` / `SURGO_REAL_USER_EMAIL`) stays unbanned with
+  its own roles; the demo roster's Jr uses `jr.derigay@email.com`.
+  `apply_demo_data.mjs preflight` aborts if those variables are unset or if that
+  row is missing or changed.
+- **Cash only.** `payment_method` stays `cash`; GCash/Maya mentions from the
+  JSON are preserved in the row's `note`.
+- **Wallets reconcile by construction.** Each account is seeded with an opening
+  `adjustment` derived from the JSON balance minus its ledger, plus two final
+  corrections (`P002`, `P005`). The generator throws if the ledger does not end
+  at `wallet_accounts.balance_centavos`.
+- **No platform fees.** Every `service_transactions` row uses
+  `platform_fee_centavos = 0` and pays the provider the full fare, because
+  `pricing_policies` is still empty and no pricing policy is approved for
+  activation. `verify` re-checks this on the hosted project. What the shipped
+  pricing logic *would* have earned on those 29 settlements is
+  **₱1,923.50** — ₱1,590.00 rental commission (10%), ₱268.50 Pasuyo commission
+  (15%) and only ₱65.00 of ride platform fees, because all 13 imported rides
+  carry `distance_km = 0` and so fall to the ₱5.00 floor. `--fees` recomputes
+  that per transaction; nothing is written while pricing stays gated.
+- **Ownership follows foreign keys, not JSON labels.** A rental booking's
+  `owner_id` is the vehicle's real owner even when the JSON names someone else;
+  `RV001` belongs to `alex-tan`, `RV002/003/008/013/014` to `rico-d`, the rest to
+  `ACC001`. `RV005` keeps `service_area_id = null` because its plate duplicates
+  `NGD 6612` under the partial unique index.
+- **Ratings below 1 are clamped to 1.00** and relative labels ("Just now",
+  "Yesterday") are anchored to 2026-11-06T12:00Z so re-runs are stable.
+- Anything the JSON cannot express honestly is left out rather than invented: no
+  records exist beyond what the mock files describe.
+
+Deliberately **not** imported, because no table models them (or they are device
+state):
+
+- `assets/db/config.json` — rates and fare rules; owned by the pricing phase,
+  which is on hold until settlement/payout merges.
+- favorites, saved places, free-form places, emergency contacts — device-local.
+- payment methods (the schema allows `cash` only), account settings.
+- `assets/db/manifest.json` — import bookkeeping.
+- `ride_ratings` and earnings aggregates — the JSON stores a single per-user
+  average, which is derived data; the tables would need real per-trip ratings.
+
+Verification:
+
+```bash
+node supabase/tests/verify_demo.mjs    # PGlite: migrations + seed + demo-data.sql, twice
+cd supabase/tests && npm test          # tracked schema tests stay green (9 files)
+node supabase/tools/apply_demo_data.mjs preflight   # read-only hosted check
+node supabase/tools/apply_demo_data.mjs apply       # chunked upserts
+node supabase/tools/apply_demo_data.mjs verify      # counts, real user, wallet balance match
+node supabase/tools/apply_demo_data.mjs auth        # auth roster: demo banned, real user not
+node supabase/tools/audit_hosted.mjs                # 132 read-only integrity checks
+node supabase/tools/audit_hosted.mjs --fees         # + the fee each settlement would owe
+```
+
+`apply_demo_data.mjs` uses the Supabase Management API SQL endpoint with the
+access token the Supabase CLI already keeps in the Windows Credential Manager; it
+posts no service-role key, prints no token, and the hosted project has no
+`db push` of these rows. The four financial migrations (16-19) are still not on
+the hosted project, so the demo SQL references none of their columns
+(`pricing_snapshot`, `fee_mode`, `fee_type`, `distance_km`, `duration_minutes`).
+
+### Hosted audit
+
+`audit_hosted.mjs` shares the same read-only channel (`db_admin.mjs`) and runs
+132 checks: the documented counts, an id-by-id comparison of every table against
+the ids in `demo-data.sql` (so a re-import cannot have duplicated a row), FK
+orphans in both directions, the role → provider → vehicle → wallet graph, wallet
+ledger replay, settlement coverage against the service rows it points at, the
+eight archived accounts, and the real account's untouched state. It also prints
+the remote migration history: 15 rows, every one of which now has a local file —
+`20261106062246_admin_dashboard_access_and_actions` is kept in the repo under the
+retimed name `20261106091300`, so the audit reports that single known ledger
+version drift instead of a remote-only migration, and the four
+`2026110614xxxx` financial migrations are the only local-only files.
+
+Four results are inconsistencies in the imported source data, not import damage,
+and the audit reports them as `NOTED` instead of hiding them:
+
+- **An approved `vehicle_owner` role with no listed vehicle** (Isabella Dizon,
+  and the demo `Jr Derigay`). Capability verification is account-level, so a
+  verified owner who happens to list nothing is legal.
+- **Edwin Santillan earns without an approved earner role.** His JSON
+  capabilities are `pending`, yet the history gives him a provider row, an earner
+  wallet at ₱2,035.00 and a completed Pasuyo settlement. A real signed-in flow
+  could not reproduce that, so Stage 3 must not assume every earner wallet has an
+  approved role behind it.
+- **Three ledger rows replay out of order.** The demo `Jr Derigay` earner wallet
+  has two entries in the same second (`2026-08-29T00:00:00Z`);
+  `balance_after_centavos` was written in JSON array order, so replaying by
+  `(created_at, id)` swaps them. Net sum and closing balance both reconcile — the
+  wallet ledger simply has no sequence column, which Stage 3 writes will need.
+
 ## RLS baseline
 
 RLS is enabled on all 30 tables. The baseline only grants reads:
@@ -118,11 +259,24 @@ RLS is enabled on all 30 tables. The baseline only grants reads:
 - participants of a ride, rental or Pasuyo request
 - the customer/provider on a cash collection, dispute, receivable or remittance
 - active vehicle listings plus a user's own vehicles
-- audit logs: no policy, so only `service_role` (admin dashboard) can read them
+- audit logs: no baseline policy, so only `service_role` can read them
 
 No INSERT/UPDATE/DELETE policies exist. Mobile writes should go through reviewed
-RPCs (or the admin dashboard via `service_role`), which is why the Flutter app
-only initializes a client for now and still paints from `AppState`.
+RPCs, and the admin dashboard only ever calls the audited `admin_*` RPCs as the
+signed-in `authenticated` role — migration 14's ten `admin_read_*` policies and
+its `surgo admin read documents` storage policy are SELECT-only and gated on
+`public.is_admin()`, which is why the dashboard needs no table writes and no
+service-role key in the browser.
+
+`admin_audit_logs` keeps one deliberate asymmetry: migration 14 adds an
+`admin_read_audit_logs` policy for it, but the hardening migration withholds the
+table-level `SELECT` grant from `authenticated` for that single table, and a
+policy cannot substitute for a privilege. So even an admin session gets
+`permission denied for table admin_audit_logs` (SQLSTATE 42501) from PostgREST;
+the log is written by the `SECURITY DEFINER` RPCs and readable only through
+`service_role`. Local test 09 asserts that denial stays true instead of working
+around it, and `verify_admin_reads.mjs` reports the table as
+`privilege withheld by design` so the asymmetry cannot silently change.
 
 ## Privilege hardening
 
@@ -170,7 +324,15 @@ npm test
 The harness boots the schema twice (fresh and reset), applies the seed twice,
 then runs the SQL tests in `supabase/tests/sql/`.
 
-Current result: **18 migrations + seed + 8 SQL test files pass on both runs.**
+Current result: **19 migrations + seed + 9 SQL test files pass on both runs.**
+
+Supabase grants default privileges to `anon`/`authenticated`/`service_role` when
+an object is created. The harness simulates that immediately before the first
+migration that revokes it again — `DEFAULTS_MARKER` in `tests/run.mjs` and
+`tests/verify_demo.mjs` names `admin_dashboard_access_and_actions`, the end of
+the baseline. Placing the simulation after that file would hand `anon` back the
+EXECUTE the admin migration had just revoked, and the local privileges would stop
+matching the hosted project (`anon_rpc: false`, `auth_rpc: true`).
 
 The tests cover:
 
@@ -193,17 +355,90 @@ The tests cover:
 - RLS helper EXECUTE kept for authenticated, removed for anon and trigger functions
 - hardened default privileges for future tables, functions and sequences
 - storage folder isolation and audit-log isolation
+- admin RPC EXECUTE boundary: authenticated-only, `_admin_audit` not callable
+  directly, every admin function pins `search_path = ''`
+- admin review decisions: reason rules, resubmission, re-deciding a decided
+  application, the granted capability role, `approved_by`, untouched passenger
+  role and the audit row per decision
+- the per-person verification read shape the dashboard uses, including a
+  referenced document whose storage object is absent
+- `admin_overview()` pending counts and `admin_daily_activity(7)` day rows
 - seed counts, deterministic IDs and idempotent re-seeding
 - `updated_at` trigger behavior
 
+## Admin dashboard migration sync
+
+The admin dashboard's SQL lived only on the hosted project: it was applied as
+`20261106062246_admin_dashboard_access_and_actions` before this repo tracked it,
+so `supabase/migrations/` had no file for it and a fresh local `db reset` could
+not reproduce verification review. Migration 14 is now that same SQL, stored
+verbatim in the repo.
+
+**It is a copy, not a change.** Nothing was applied to, or reverted on, the hosted
+database to create it. `node supabase/tools/verify_migration_sync.mjs` reads the
+statement back out of `supabase_migrations.schema_migrations` and compares it
+byte-for-byte with the local file (currently 13,538 bytes, one statement), so the
+copy cannot silently drift from what the host runs.
+
+**One deviation: the timestamp is not the original.** Requirement was to keep
+`20261106062246`; that filename sorts before `090100_enums.sql`, and the SQL
+cannot run there. Applying it at the original position fails with
+`type "public.user_role_type" does not exist`, because it needs:
+
+| needs | provided by |
+| ----- | ----------- |
+| `user_role_type` (`'admin'` literal) | `20261106090100_enums.sql` |
+| `verification_applications`, `verification_documents`, `vehicles`, `profiles`, `user_roles`, `admin_audit_logs` | `20261106090300` / `090400` / `090500` / `090600` / `090800` |
+| `has_approved_role()` (behind `is_admin()`) | `20261106091200_rls_baseline.sql` |
+| `storage.objects` + the two document buckets | Supabase's own `storage` schema + `20261106091000_storage_buckets.sql` |
+
+`20261106091300` is the first slot that satisfies all four and still lands before
+`20261106130000_security_hardening.sql`, which only *excludes*
+`admin_audit_logs` from its blanket SELECT grant and never depends on these
+functions. So the retimed file changes **ordering only** — the SQL text is
+unchanged, and the hosted ledger still says `20261106062246`.
+
+Consequences to keep in mind:
+
+- `npx supabase migration list` will show this one file as version drift. That is
+  expected and is exactly what `audit_hosted.mjs` reports as
+  `history: known ledger version drift` (1 row). Do **not** "fix" it with
+  `migration repair` or by renaming the local file without a decision; renaming
+  to `062246` would break `db reset` again.
+- Never `db push --remote --include-all` here: the local-only financial
+  migrations (16-19) are not approved for the host, and a push would also try to
+  reapply migration 14 under the new version.
+- There are no remote-only dependencies outside the table above. Everything the
+  host had when this SQL was applied is tracked locally.
+
+Local verification that the synced file really reproduces review:
+`supabase/tests/sql/09_admin_verification_review_test.sql` (runs on both the fresh
+and reset boots) covers the EXECUTE boundary of the eight admin functions, the
+per-role RLS read counts, non-admin denial leaving no audit row, the document and
+verification decision paths including the `needs_resubmission` reason rule and the
+granted capability role, and `admin_overview()` / `admin_daily_activity(7)`.
+
+`node supabase/tools/verify_admin_reads.mjs` closes the other half of the loop. It
+walks every `.from(...).select(...)` in `lib/admin/src` — currently 32 select
+strings across the whole dashboard — and validates each column and PostgREST embed
+against the **hosted** catalog, then checks every table those reads touch for what
+the `authenticated` role actually holds: a table privilege, RLS enabled, and at
+least one SELECT policy an administrator satisfies for someone else's rows. That
+last part matters because a read can be perfectly typed and still return an error
+(no privilege) or an empty list (no policy) in the browser. It is read-only and
+reports `ADMIN READS OK: 52 checks against the hosted database`.
+
 ## Applying to the hosted project
 
-The first 14 migrations were applied on 2026-11-06 to project
-`lrhgktxmavnhjatqzbzr`: 14/14 migrations, 26 tables, the Tandag seed (1 service
-area, 21 barangays, 115 puroks), and 3 storage buckets. The baseline hardening
-reduced security advisors from 21 WARNs to the 8 expected RLS-helper notices.
+The first 14 migrations (1-13 plus security hardening) were applied on
+2026-11-06 to project `lrhgktxmavnhjatqzbzr`: 14/14 migrations, 26 tables, the
+Tandag seed (1 service area, 21 barangays, 115 puroks), and 3 storage buckets.
+The baseline hardening reduced security advisors from 21 WARNs to the 8 expected
+RLS-helper notices. Migration 14 reached the host through a different route and
+under a different version — see
+[Admin dashboard migration sync](#admin-dashboard-migration-sync).
 
-The four financial migrations (15-18) are newer and are **not** assumed to be
+The four financial migrations (16-19) are newer and are **not** assumed to be
 on the hosted project yet. They add four tables (30 total) and six enums (24
 total), and they do not seed or activate any pricing policy. Review and push
 them as a separate change after approval.

@@ -163,6 +163,12 @@ void main() {
       expect(row('inactive').isListed, isFalse);
       expect(row('inactive').statusLabel, 'Unlisted');
       expect(row('suspended').statusLabel, 'Suspended');
+      // `rented` and `maintenance` are mock-only tokens: the database marks
+      // availability through bookings, but the seed labels each vehicle.
+      expect(row('rented').isListed, isTrue);
+      expect(row('rented').statusLabel, 'Rented');
+      expect(row('maintenance').isListed, isFalse);
+      expect(row('maintenance').statusLabel, 'Maintenance');
       expect(row('active').ownerName, isNull);
     });
 

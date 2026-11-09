@@ -85,8 +85,8 @@ class MockNotificationRepository implements NotificationRepository {
         title: item.title,
         body: item.body,
         isRead: item.read,
-        // The seed stores only a display label such as "2h ago"; there is no
-        // real timestamp to report, so none is invented.
-        createdAt: null,
+        // The seed pairs its "2h ago" label with a real ISO time, so mock mode
+        // reports the same sort key the database column gives.
+        createdAt: item.createdAt,
       );
 }

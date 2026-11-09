@@ -447,10 +447,18 @@ class VehicleRecord {
   /// listings cannot see the owner's name and no placeholder is substituted.
   final String? ownerName;
 
-  bool get isListed => status == 'active';
+  /// A listing the rental catalogue may show. `rented` is a mock-only token:
+  /// the seed marks a listed vehicle that is out on rental in this column, while
+  /// the schema leaves that to `rental_bookings`. Both are listings.
+  bool get isListed => status == 'active' || status == 'rented';
 
+  /// `rented` and `maintenance` are not `vehicle_status` values; they are the
+  /// seed's own availability words, kept label-correct so the same record reads
+  /// the same way in both modes.
   String get statusLabel => switch (status) {
         'active' => 'Listed',
+        'rented' => 'Rented',
+        'maintenance' => 'Maintenance',
         'pending_verification' => 'Pending verification',
         'inactive' => 'Unlisted',
         'suspended' => 'Suspended',

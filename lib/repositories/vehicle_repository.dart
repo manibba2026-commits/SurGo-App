@@ -106,9 +106,11 @@ class SupabaseVehicleRepository implements VehicleRepository {
 
 /// Reads the seeded `vehicles.json` slice.
 ///
-/// The seed labels a vehicle `Listed`, `Rented` or `Maintenance`; the database
-/// enum has no `Rented`, because availability is a property of the bookings, so
-/// both `Listed` and `Rented` map to `active`.
+/// The seed states availability in the status column (`Listed`, `Rented`,
+/// `Maintenance`); the database keeps only listing state there and derives
+/// occupancy from bookings. `rented` and `maintenance` are therefore mock-only
+/// tokens that [VehicleRecord] still labels correctly, so the owner fleet screen
+/// can move onto the repository without flattening three chips into one.
 class MockVehicleRepository implements VehicleRepository {
   MockVehicleRepository([DbService? database])
       : _db = database ?? DbService.instance;
@@ -142,10 +144,10 @@ class MockVehicleRepository implements VehicleRepository {
   Future<List<VehicleRecord>> fetchListedVehicles({
     String? serviceAreaId,
   }) async {
-    return [
-      for (final vehicle in _db.ownerVehicles)
-        if (_statusToken(vehicle.status) == 'active') _toRecord(vehicle),
-    ];
+    // Same row set as before the vocabulary split: a listed vehicle that is
+    // currently out on rental is still a listing, only not free right now.
+    final fleet = [for (final vehicle in _db.ownerVehicles) _toRecord(vehicle)];
+    return [for (final record in fleet) if (record.isListed) record];
   }
 
   @override
@@ -162,7 +164,7 @@ class MockVehicleRepository implements VehicleRepository {
           documentType: document.title,
           documentNumber: document.number,
           status: _documentStatus(document.status),
-          expiresAt: null,
+          expiresAt: document.expiresAt,
         ),
     ];
   }
@@ -183,8 +185,9 @@ class MockVehicleRepository implements VehicleRepository {
       );
 
   static String _statusToken(String label) => switch (label) {
-        'Listed' || 'Rented' => 'active',
-        'Maintenance' => 'inactive',
+        'Listed' => 'active',
+        'Rented' => 'rented',
+        'Maintenance' => 'maintenance',
         _ => 'pending_verification',
       };
 

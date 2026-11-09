@@ -371,6 +371,7 @@
         "title": "₱30 off your next 3 rides",
         "body": "Use code SURGO30 before it expires.",
         "time": "2 min ago",
+        "createdAt": "2026-11-06T11:58:00.000Z",
         "read": false
       },
       {
@@ -379,6 +380,7 @@
         "title": "Trip completed",
         "body": "Your trip with Junel Ramos has ended. Rate your experience.",
         "time": "1 hr ago",
+        "createdAt": "2026-11-06T11:00:00.000Z",
         "read": false
       },
       {
@@ -387,6 +389,7 @@
         "title": "Payment received",
         "body": "₱65 was deducted for your Poblacion → SM Terminal ride.",
         "time": "Yesterday",
+        "createdAt": "2026-11-05T12:00:00.000Z",
         "read": true
       },
       {
@@ -395,6 +398,7 @@
         "title": "Welcome to SurGo",
         "body": "Thanks for joining! Complete your profile to get started.",
         "time": "3 days ago",
+        "createdAt": "2026-11-03T12:00:00.000Z",
         "read": true
       },
       {
@@ -403,6 +407,7 @@
         "title": "Safety tip",
         "body": "Always confirm the plate number before boarding.",
         "time": "5 days ago",
+        "createdAt": "2026-11-01T12:00:00.000Z",
         "read": true
       }
     ],
@@ -413,6 +418,7 @@
         "title": "20% off your next rental",
         "body": "Use code RENT20 before it expires.",
         "time": "1 hr ago",
+        "createdAt": "2026-11-06T11:00:00.000Z",
         "read": false
       },
       {
@@ -421,6 +427,7 @@
         "title": "Trip completed",
         "body": "Your trip with Bebot Lim has ended. Rate your experience.",
         "time": "Yesterday",
+        "createdAt": "2026-11-05T12:00:00.000Z",
         "read": true
       }
     ],
@@ -431,6 +438,7 @@
         "title": "₱25 off errand fees",
         "body": "Use code PASUYO25 on your next Pasuyo errand.",
         "time": "3 hr ago",
+        "createdAt": "2026-11-06T09:00:00.000Z",
         "read": false
       },
       {
@@ -439,6 +447,7 @@
         "title": "Wallet topped up",
         "body": "₱200 was added to your SurGo wallet.",
         "time": "2 days ago",
+        "createdAt": "2026-11-04T12:00:00.000Z",
         "read": true
       }
     ],
@@ -449,6 +458,7 @@
         "title": "Rider on the way",
         "body": "Carlos is 3 minutes away from your pickup point.",
         "time": "10 min ago",
+        "createdAt": "2026-11-06T11:50:00.000Z",
         "read": false
       },
       {
@@ -457,6 +467,7 @@
         "title": "Safety tip",
         "body": "Share your trip with a trusted contact for late rides.",
         "time": "4 days ago",
+        "createdAt": "2026-11-02T12:00:00.000Z",
         "read": true
       }
     ],
@@ -467,6 +478,7 @@
         "title": "Weekend ride discount",
         "body": "Enjoy ₱20 off every weekend ride this month.",
         "time": "5 hr ago",
+        "createdAt": "2026-11-06T07:00:00.000Z",
         "read": false
       },
       {
@@ -475,6 +487,7 @@
         "title": "Welcome to SurGo",
         "body": "Thanks for joining! Complete your profile to get started.",
         "time": "1 week ago",
+        "createdAt": "2026-10-30T12:00:00.000Z",
         "read": true
       }
     ],
@@ -485,6 +498,7 @@
         "title": "New ride request nearby",
         "body": "A passenger 3.1 km away is looking for a tricycle.",
         "time": "5 min ago",
+        "createdAt": "2026-11-06T11:55:00.000Z",
         "read": false
       },
       {
@@ -493,6 +507,7 @@
         "title": "Payout sent",
         "body": "₱1,850 was sent to your GCash account.",
         "time": "3 hr ago",
+        "createdAt": "2026-11-06T09:00:00.000Z",
         "read": false
       },
       {
@@ -501,6 +516,7 @@
         "title": "Document reminder",
         "body": "Your OR/CR will expire in 30 days. Please renew and re-upload.",
         "time": "1 day ago",
+        "createdAt": "2026-11-05T12:00:00.000Z",
         "read": true
       },
       {
@@ -509,6 +525,7 @@
         "title": "New 5-star rating",
         "body": "Grace rated your trip 5 stars: \"Sobrang bait, ligtas magmaneho!\"",
         "time": "2 days ago",
+        "createdAt": "2026-11-04T12:00:00.000Z",
         "read": true
       }
     ],
@@ -519,6 +536,7 @@
         "title": "New ride request nearby",
         "body": "A passenger 2.4 km away is looking for a tricycle.",
         "time": "8 min ago",
+        "createdAt": "2026-11-06T11:52:00.000Z",
         "read": false
       },
       {
@@ -527,6 +545,7 @@
         "title": "Payout sent",
         "body": "₱920 was sent to your GCash account.",
         "time": "6 hr ago",
+        "createdAt": "2026-11-06T06:00:00.000Z",
         "read": true
       }
     ],
@@ -537,6 +556,7 @@
         "title": "New ride request nearby",
         "body": "A passenger 1.2 km away is looking for a motorcycle.",
         "time": "2 min ago",
+        "createdAt": "2026-11-06T11:58:00.000Z",
         "read": false
       },
       {
@@ -545,6 +565,7 @@
         "title": "New 5-star rating",
         "body": "Danilo rated your trip 5 stars: \"Mabilis at maayos!\"",
         "time": "Yesterday",
+        "createdAt": "2026-11-05T12:00:00.000Z",
         "read": true
       }
     ],
@@ -555,6 +576,7 @@
         "title": "Schedule reminder",
         "body": "You have a booked tricycle trip at 4:30 PM today.",
         "time": "1 hr ago",
+        "createdAt": "2026-11-06T11:00:00.000Z",
         "read": false
       },
       {
@@ -563,6 +585,7 @@
         "title": "Document reminder",
         "body": "Your OR/CR will expire in 21 days. Please renew and re-upload.",
         "time": "2 days ago",
+        "createdAt": "2026-11-04T12:00:00.000Z",
         "read": true
       }
     ],
@@ -573,6 +596,7 @@
         "title": "Payout sent",
         "body": "₱1,120 was sent to your Maya account.",
         "time": "4 hr ago",
+        "createdAt": "2026-11-06T08:00:00.000Z",
         "read": false
       },
       {
@@ -581,6 +605,7 @@
         "title": "New 5-star rating",
         "body": "Rosalinda rated your trip 5 stars: \"Maalaga ang rider!\"",
         "time": "3 days ago",
+        "createdAt": "2026-11-03T12:00:00.000Z",
         "read": true
       }
     ]

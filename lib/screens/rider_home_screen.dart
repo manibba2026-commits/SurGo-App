@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
@@ -28,27 +30,12 @@ class RiderHomeScreen extends StatelessWidget {
     final content = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
-        final earner = state.db.earner;
         return ListView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 90),
           children: [
             Row(
               children: [
-                SbAvatar(initials: earner.initials),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(earner.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 14)),
-                      Text('Earner ID ${earner.id}',
-                          style: const TextStyle(
-                              color: AppColors.muted, fontSize: 11)),
-                    ],
-                  ),
-                ),
+                Expanded(child: _identityBlock()),
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -215,6 +202,68 @@ class RiderHomeScreen extends StatelessWidget {
             automaticallyImplyLeading: false, title: const Text('Rider Mode')),
         body: content,
       ),
+    );
+  }
+
+  /// The earner this build is acting as, read through the repository layer.
+  ///
+  /// Only the profile record speaks here: a seeded build gets the seeded earner
+  /// row and a Supabase build gets the signed-in account's own row. The old
+  /// `Earner ID` line is deliberately gone rather than read from the record —
+  /// `profiles.id` is an auth uuid in a Supabase build, and a name from one
+  /// source with an id from another is the disagreement this layer exists to
+  /// prevent. The summary line keeps to the two fields that mean the same
+  /// thing in both: the account's rating and the year its row was created.
+  Widget _identityBlock() {
+    return RepositoryView<ProfileRecord>(
+      slot: DomainSlot.earnerProfile,
+      loading: _identityWaiting('Loading your profile…'),
+      empty: (_) => _identityWaiting('No earner profile on this account'),
+      failure: (_, failure) => _identityWaiting(failure.message),
+      data: (context, profile) {
+        final since = profile.createdAt?.year;
+        return Row(
+          children: [
+            SbAvatar(initials: initialsFor(profile.fullName)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(profile.fullName,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 14)),
+                  Text(
+                    since == null
+                        ? '⭐ ${profile.rating}'
+                        : '⭐ ${profile.rating} · Since $since',
+                    style: const TextStyle(
+                        color: AppColors.muted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The same header space while the read has no answer for it.
+  ///
+  /// The avatar stays, so the row does not move when the profile lands, and the
+  /// message takes the name's place rather than inventing one.
+  Widget _identityWaiting(String message) {
+    return Row(
+      children: [
+        const SbAvatar(initials: '?'),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(message,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w800, fontSize: 14)),
+        ),
+      ],
     );
   }
 

@@ -245,6 +245,31 @@ void main() {
       }
     });
 
+    test(
+        'labelled collections carry the ISO time the repositories sort on',
+        () {
+      // Mock and Supabase mode must give a screen the same age calculation, so
+      // every relative label ("2 min ago") needs a real timestamp beside it.
+      final allNotifications = [
+        for (final list in db.notificationsByUser.values) ...list,
+        ...db.passengerNotifications,
+        ...db.earnerNotifications,
+      ];
+      expect(allNotifications, isNotEmpty);
+      for (final item in allNotifications) {
+        expect(item.time, isNotEmpty, reason: item.id);
+        expect(item.createdAt, isNotNull,
+            reason: '${item.id} label "${item.time}" has no ISO pair');
+      }
+      expect(db.rideRequests, isNotEmpty);
+      for (final request in db.rideRequests) {
+        expect(request.requestedAtIso, isNotNull, reason: request.id);
+      }
+      for (final document in db.vehicleDocuments) {
+        expect(document.expiresAt, isNotNull, reason: document.id);
+      }
+    });
+
     test('a cancelled errand reports no step rather than step 1', () {
       final cancelled = db.pasuyoTasks.where((t) => t.isCancelled).toList();
       expect(cancelled, isNotEmpty, reason: 'seed should cover this state');

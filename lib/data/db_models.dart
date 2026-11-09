@@ -26,6 +26,9 @@ class NotificationItem {
   final String title;
   final String body;
   final String time;
+
+  /// Real creation time for sorting and age checks; [time] stays the label.
+  final DateTime? createdAt;
   bool read;
 
   NotificationItem({
@@ -35,6 +38,7 @@ class NotificationItem {
     required this.body,
     required this.time,
     required this.read,
+    this.createdAt,
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> j) => NotificationItem(
@@ -44,24 +48,8 @@ class NotificationItem {
         body: j['body'],
         time: j['time'],
         read: j['read'] ?? false,
+        createdAt: parseIsoTimestamp(j['createdAt']),
       );
-
-  IconData get icon {
-    switch (type) {
-      case 'promo':
-        return Icons.local_offer_outlined;
-      case 'ride':
-        return Icons.electric_rickshaw;
-      case 'payment':
-        return Icons.account_balance_wallet_outlined;
-      case 'safety':
-        return Icons.shield_outlined;
-      case 'rating':
-        return Icons.star_border_rounded;
-      default:
-        return Icons.notifications_none;
-    }
-  }
 }
 
 class WalletTransaction {
@@ -1138,6 +1126,10 @@ class RideRequestItem {
   final String note;
   final String requestedAt;
 
+  /// Real request time for age checks; [requestedAt] stays the label. See
+  /// [PasuyoTask.requestedAtIso], which uses the same pair convention.
+  final DateTime? requestedAtIso;
+
   /// Where the request sits in [RideStatus]. Never a free-text string: the
   /// enum owns every legal transition, so a status cannot drift out of the
   /// path it is supposed to be on.
@@ -1167,6 +1159,7 @@ class RideRequestItem {
     required this.paymentMethod,
     required this.note,
     required this.requestedAt,
+    this.requestedAtIso,
     this.status = RideStatus.searching,
   });
 
@@ -1194,6 +1187,7 @@ class RideRequestItem {
         paymentMethod: j['paymentMethod'],
         note: j['note'] ?? '',
         requestedAt: j['requestedAt'] ?? 'Just now',
+        requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
         status: RideStatus.fromJson(j['status'] ?? 'Pending'),
       );
 
@@ -1231,6 +1225,9 @@ class VehicleDocumentItem {
   final String number;
   final String status;
   final String expiry;
+
+  /// Real expiry date for "expiring soon" checks; [expiry] stays the label.
+  final DateTime? expiresAt;
   final String icon;
 
   const VehicleDocumentItem({
@@ -1240,6 +1237,7 @@ class VehicleDocumentItem {
     required this.status,
     required this.expiry,
     required this.icon,
+    this.expiresAt,
   });
 
   factory VehicleDocumentItem.fromJson(Map<String, dynamic> j) =>
@@ -1250,6 +1248,7 @@ class VehicleDocumentItem {
         status: j['status'],
         expiry: j['expiry'],
         icon: j['icon'] ?? 'file',
+        expiresAt: parseIsoTimestamp(j['expiresAt']),
       );
 
   IconData get iconData {

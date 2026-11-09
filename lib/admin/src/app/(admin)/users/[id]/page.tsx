@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { ok, type Row } from '@/lib/query';
+import { ok, okOrDenied, type Row } from '@/lib/query';
 import { dt, label, peso } from '@/lib/format';
-import { PageHeader, Panel, Badge, Table, Input } from '@/components/ui';
+import { verificationForProfile } from '@/lib/verification';
+import { PageHeader, Panel, Badge, Table, Input, Empty } from '@/components/ui';
 import { ActionForm } from '@/components/ActionForm';
+import { ApplicationCard, VehicleDocumentList } from '@/components/Verification';
 import { setAccountStatus } from '@/app/actions';
 
 export default async function UserDetail({ params }: { params: { id: string } }) {
@@ -12,19 +14,23 @@ export default async function UserDetail({ params }: { params: { id: string } })
   const { data: u, error } = await db.from('profiles').select('*').eq('id', params.id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!u) notFound();
-  const [roles, prov, veh, rides, tx, audit] = await Promise.all([
+  const [roles, prov, veh, rides, tx, audit, verification] = await Promise.all([
     db.from('user_roles').select('role,status,approved_at').eq('profile_id', u.id),
     db.from('provider_profiles').select('*').eq('profile_id', u.id).maybeSingle(),
     db.from('vehicles').select('id,name,plate_number,status,price_per_day_centavos').eq('owner_profile_id', u.id),
     db.from('ride_requests').select('id,status,pickup_address,dropoff_address,requested_at,fare_centavos').or(`passenger_id.eq.${u.id},rider_id.eq.${u.id}`).order('requested_at', { ascending: false }).limit(5),
     db.from('service_transactions').select('provider_payout_centavos,platform_revenue_centavos,status').or(`customer_id.eq.${u.id},provider_id.eq.${u.id}`),
     db.from('admin_audit_logs').select('action,created_at,after_state').eq('entity_id', u.id).order('created_at', { ascending: false }).limit(5),
+    verificationForProfile(db, u.id),
   ]);
   const R = (x: any, w: string) => ok(x, w) as Row[];
-  const roleRows = R(roles, 'Roles'), vehicles = R(veh, 'Vehicles'), rideRows = R(rides, 'Rides'), txRows = R(tx, 'Transactions'), auditRows = R(audit, 'Audit');
+  const roleRows = R(roles, 'Roles'), vehicles = R(veh, 'Vehicles'), rideRows = R(rides, 'Rides'), txRows = R(tx, 'Transactions');
+  const auditRows = okOrDenied<Row[]>(audit as any, 'Audit');
+  const applications = verification.applications;
   const p = prov.data as Row | null;
   const earned = txRows.filter((t) => t.status === 'completed').reduce((a, t) => a + Number(t.provider_payout_centavos), 0);
   const active = u.account_status === 'active';
+  const openWork = applications.filter((a) => ['submitted', 'under_review', 'needs_resubmission'].includes(a.status)).length;
   return (
     <>
       <PageHeader title={u.full_name} sub={`${u.email ?? 'no email'} · ${u.phone ?? 'no phone'}`} actions={<Badge status={u.account_status} />} />
@@ -62,11 +68,42 @@ export default async function UserDetail({ params }: { params: { id: string } })
           )}
         </Panel>
       </div>
-      {auditRows.length > 0 && (
+      <div className="mt-8">
+        <h2 className="mb-1 text-lg font-semibold">Verification</h2>
+        <p className="mb-3 text-sm text-ink-500">
+          {openWork
+            ? `${openWork} application${openWork === 1 ? '' : 's'} waiting on a decision.`
+            : applications.length
+              ? 'Every application from this account has been decided.'
+              : 'This account has never submitted a capability application.'}
+        </p>
+        <div className="space-y-4">
+          {applications.length === 0 ? (
+            <Empty title="No applications" hint="Applications appear here once the person submits documents for a capability in the app." />
+          ) : (
+            applications.map((a) => (
+              <ApplicationCard
+                key={a.id}
+                app={a}
+                files={verification.applicationFiles}
+                title={`${label(a.capability_type)} application`}
+              />
+            ))
+          )}
+          <Panel title="Documents on their vehicles">
+            <VehicleDocumentList documents={verification.vehicleDocuments} files={verification.vehicleFiles} />
+          </Panel>
+        </div>
+      </div>
+      {auditRows === null ? (
+        <Panel title="Admin actions on this account" className="mt-4">
+          <p className="text-sm text-ink-500">Not readable by this session: the &quot;authenticated&quot; role has no SELECT privilege on admin_audit_logs, so decisions are logged but only visible through the service-role channel.</p>
+        </Panel>
+      ) : auditRows.length > 0 ? (
         <Panel title="Admin actions on this account" className="mt-4">
           <ul className="space-y-1 text-sm">{auditRows.map((a, i) => <li key={i}>{a.action} <span className="text-ink-500">· {dt(a.created_at)}{a.after_state?.reason ? ` · ${a.after_state.reason}` : ''}</span></li>)}</ul>
         </Panel>
-      )}
+      ) : null}
     </>
   );
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:surgo/data/db_models.dart';
 import 'package:surgo/data/db_service.dart';
@@ -35,8 +37,24 @@ void main() {
         seedProfileKey: (_) => 'p1',
       );
 
+  /// The same cache, for a test that changes who is signed in mid-flight.
+  DomainCache supabaseCacheFor(SurgoBackend backend, String Function() key) =>
+      DomainCache(
+        registry: () => RepositoryRegistry.supabase(backend),
+        profileKey: key,
+        seedProfileKey: (_) => key(),
+      );
+
   /// Lets a test watch the microtask the cache notifies on.
   Future<void> settle() => Future<void>.delayed(Duration.zero);
+
+  /// Runs every hop a finished read chains through: the parked answer resuming,
+  /// the stale check, and the read it then starts.
+  Future<void> drain() async {
+    for (var hop = 0; hop < 5; hop++) {
+      await settle();
+    }
+  }
 
   group('one read per slot', () {
     test('ensure reads once and keeps the result', () async {
@@ -262,6 +280,202 @@ void main() {
       cache.dispose();
     });
   });
+
+  group('session changes during a parked read', () {
+    test('a read in flight when the session changes cannot land its answer',
+        () async {
+      var key = 'p-old';
+      final backend = _GatedProfileBackend(rowsById: {
+        'p-old': const {
+          'id': 'p-old',
+          'full_name': 'Marta Old',
+          'account_status': 'active'
+        },
+        'p-new': const {
+          'id': 'p-new',
+          'full_name': 'Nadia New',
+          'account_status': 'active'
+        },
+      });
+      final cache = supabaseCacheFor(backend, () => key);
+
+      unawaited(cache.ensure(DomainSlot.profile));
+      await settle();
+      expect(backend.requestedIds, ['p-old']);
+
+      key = 'p-new';
+      cache.restart();
+      await settle();
+      expect(
+        cache.stateOf<ProfileRecord>(DomainSlot.profile).isLoading,
+        isTrue,
+        reason: 'a retired slot waits on a new read, not on nothing at all',
+      );
+
+      // The answer the previous session was owed arrives now.
+      backend.release();
+      await drain();
+
+      expect(
+        cache.stateOf<ProfileRecord>(DomainSlot.profile).data,
+        isNull,
+        reason: 'the person signed in a moment ago must not reach the new '
+            'session, not even as a frame of data',
+      );
+      expect(backend.requestedIds, ['p-old', 'p-new']);
+
+      backend.release();
+      await drain();
+
+      expect(
+        cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
+        'Nadia New',
+      );
+      cache.dispose();
+    });
+
+    test('several session changes in a row leave only the last one cached',
+        () async {
+      var key = 'p-a';
+      final backend = _GatedProfileBackend(rowsById: {
+        'p-a': const {'id': 'p-a', 'full_name': 'Ann A', 'account_status': 'active'},
+        'p-b': const {'id': 'p-b', 'full_name': 'Bea B', 'account_status': 'active'},
+        'p-c': const {'id': 'p-c', 'full_name': 'Cy C', 'account_status': 'active'},
+      });
+      final cache = supabaseCacheFor(backend, () => key);
+
+      unawaited(cache.ensure(DomainSlot.profile));
+      await settle();
+
+      key = 'p-b';
+      cache.restart();
+      key = 'p-c';
+      cache.restart();
+      await settle();
+
+      // Two requests were parked behind one read; the rerun is a single read
+      // for whoever is signed in now, not one per restart.
+      backend.release();
+      await drain();
+      expect(backend.requestedIds, ['p-a', 'p-c']);
+
+      backend.release();
+      await drain();
+      expect(
+        cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
+        'Cy C',
+      );
+      cache.dispose();
+    });
+
+    test('a rerun that fails stays a failure the screen can retry', () async {
+      var key = 'p-old';
+      final backend = _GatedProfileBackend(rowsById: {
+        'p-old': const {
+          'id': 'p-old',
+          'full_name': 'Marta Old',
+          'account_status': 'active'
+        },
+        'p-new': const {
+          'id': 'p-new',
+          'full_name': 'Nadia New',
+          'account_status': 'active'
+        },
+      });
+      final cache = supabaseCacheFor(backend, () => key);
+
+      unawaited(cache.ensure(DomainSlot.profile));
+      await settle();
+      key = 'p-new';
+      cache.restart();
+      backend.release();
+      await drain();
+      expect(backend.requestedIds, ['p-old', 'p-new']);
+
+      // The read the session change parked now fails on the way back.
+      backend.release(error: RepositoryFailure.offline());
+      await drain();
+
+      final state = cache.stateOf<ProfileRecord>(DomainSlot.profile);
+      expect(state.status, RepositoryStatus.failure);
+      expect(state.failure!.kind, RepositoryFailureKind.offline);
+      expect(state.data, isNull,
+          reason: 'a failed rerun shows no one rather than the previous person');
+
+      // Retrying a settled failure reads again, exactly as the screen's button
+      // asks it to.
+      unawaited(cache.retry(DomainSlot.profile));
+      await settle();
+      expect(backend.requestedIds, hasLength(3));
+      backend.release();
+      await drain();
+      expect(
+        cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
+        'Nadia New',
+      );
+      cache.dispose();
+    });
+  });
+}
+
+/// A [SurgoBackend] whose answers the test hands out one at a time, so a read
+/// can be held in flight across a session change and released afterwards.
+class _GatedProfileBackend implements SurgoBackend {
+  _GatedProfileBackend({required this.rowsById});
+
+  final Map<String, Map<String, dynamic>> rowsById;
+
+  /// Every profile id the cache has asked for, in order.
+  final List<String> requestedIds = [];
+
+  final List<_ParkedRow> _parked = [];
+
+  /// Resolves the oldest waiting read and reports whose row it was asked for.
+  String release({Object? error}) {
+    final row = _parked.removeAt(0);
+    if (error != null) {
+      row.done.completeError(error);
+    } else {
+      row.done.complete(rowsById[row.id]);
+    }
+    return row.id;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> row({
+    required String table,
+    String columns = '*',
+    Map<String, Object> eq = const {},
+  }) async {
+    final id = '${eq['id']}';
+    requestedIds.add(id);
+    final parked = _ParkedRow(id);
+    _parked.add(parked);
+    return await parked.done.future;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> rows({
+    required String table,
+    String columns = '*',
+    Map<String, Object> eq = const {},
+    Map<String, List<Object>> whereIn = const {},
+    List<String> whereNull = const [],
+    String? orderBy,
+    bool ascending = false,
+    int? limit,
+  }) async {
+    throw RepositoryFailure.unsupported(
+      'This test only parks single-row reads.',
+    );
+  }
+}
+
+class _ParkedRow {
+  _ParkedRow(this.id);
+
+  final String id;
+  final Completer<Map<String, dynamic>?> done = Completer();
 }
 
 /// In-memory [SurgoBackend] that records which tables it was asked for.

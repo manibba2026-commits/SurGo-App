@@ -1476,17 +1476,18 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- notifications ----
-  List<NotificationItem> get passengerNotifications =>
-      db.passengerNotifications;
-  List<NotificationItem> get earnerNotifications => db.earnerNotifications;
-
-  int get unreadNotifications =>
-      db.passengerNotifications.where((n) => !n.read).length;
-  int get unreadRiderNotifications =>
-      db.earnerNotifications.where((n) => !n.read).length;
-
-  void markNotificationRead(NotificationItem n) {
-    n.read = true;
+  /// Marks the seeded notification with [id] read.
+  ///
+  /// The feed screen renders repository records now, and this stage never
+  /// writes back, so a Supabase build keeps the last read on screen; the mock
+  /// seed mutates in place and the cache re-reads the slot.
+  void markNotificationReadById(String id) {
+    for (final n in db.passengerNotifications) {
+      if (n.id == id) n.read = true;
+    }
+    for (final n in db.earnerNotifications) {
+      if (n.id == id) n.read = true;
+    }
     notifyListeners();
   }
 
@@ -1505,11 +1506,6 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- wallet ----
-  int get passengerWalletBalance => db.passengerWalletBalance;
-  List<WalletTransaction> get passengerTransactions => db.passengerTransactions;
-  int get earnerWalletBalance => db.earnerWalletBalance;
-  List<WalletTransaction> get earnerTransactions => db.earnerTransactions;
-
   void topUpPassengerWallet(int amount, String method) {
     db.passengerWalletBalance += amount;
     db.passengerTransactions.insert(
@@ -2235,14 +2231,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Tandag City locations (barangay + purok) ----
-  List<Barangay> get barangays => db.barangays;
-
-  // ---- vehicle documents ----
-  List<VehicleDocumentItem> get vehicleDocuments => db.vehicleDocuments;
-
   // ---- vehicle owner mode ----
-  List<OwnedVehicle> get ownerVehicles => db.ownerVehicles;
   List<OwnerBookingRequest> get ownerBookingRequests => db.ownerBookingRequests;
   int get ownerEarningsToday => db.ownerEarningsToday;
   int get ownerEarningsWeek => db.ownerEarningsWeek;
@@ -2269,20 +2258,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removeOwnedVehicle(OwnedVehicle vehicle) {
-    db.ownerVehicles.remove(vehicle);
+  /// Removes the seeded vehicle with [id].
+  ///
+  /// The fleet screen lists repository records now, and this stage never
+  /// writes back, so a Supabase build sees no change; in mock mode the seed
+  /// mutates in place and the cache re-reads the slot.
+  void removeOwnedVehicleById(String id) {
+    db.ownerVehicles.removeWhere((v) => v.id == id);
     notifyListeners();
   }
 
-  void setOwnedVehicleStatus(OwnedVehicle vehicle, String status) {
-    vehicle.status = status;
+  void setOwnedVehicleStatusById(String id, String status) {
+    for (final vehicle in db.ownerVehicles) {
+      if (vehicle.id == id) vehicle.status = status;
+    }
     notifyListeners();
   }
 
   // ---- vehicle owner wallet ----
-  int get ownerWalletBalance => db.ownerWalletBalance;
-  List<WalletTransaction> get ownerTransactions => db.ownerTransactions;
-
   /// Requests a payout from the vehicle owner's wallet.
   ///
   /// The owner wallet is separate from the rider's, but the guards are the

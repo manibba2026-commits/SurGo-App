@@ -16,6 +16,11 @@ abstract interface class RideRepository {
     int? limit,
   });
 
+  /// The passenger's terminal rides — completed and cancelled — newest first.
+  /// Requests still being matched are not bookings yet, so they stay out of
+  /// the history the home screen's Recent Bookings card lists.
+  Future<List<RideRecord>> fetchRideHistory(String passengerId, {int? limit});
+
   Future<List<RideRecord>> fetchRidesForRider(String riderId, {int? limit});
 
   /// Requests still waiting for a rider. Empty for anyone RLS will not show
@@ -48,6 +53,19 @@ class SupabaseRideRepository implements RideRepository {
     int? limit,
   }) =>
       _read(eq: {'passenger_id': passengerId}, limit: limit);
+
+  @override
+  Future<List<RideRecord>> fetchRideHistory(
+    String passengerId, {
+    int? limit,
+  }) =>
+      _read(
+        eq: {'passenger_id': passengerId},
+        whereIn: {
+          'status': const ['completed', 'cancelled'],
+        },
+        limit: limit,
+      );
 
   @override
   Future<List<RideRecord>> fetchRidesForRider(
@@ -143,6 +161,18 @@ class MockRideRepository implements RideRepository {
   }
 
   @override
+  Future<List<RideRecord>> fetchRideHistory(
+    String passengerId, {
+    int? limit,
+  }) async {
+    if (passengerId != _db.passenger.id) return const [];
+    final records = [
+      for (final history in _db.rideHistory) _fromHistory(history),
+    ];
+    return limit == null ? records : records.take(limit).toList();
+  }
+
+  @override
   Future<List<RideRecord>> fetchRidesForRider(
     String riderId, {
     int? limit,
@@ -210,19 +240,29 @@ class MockRideRepository implements RideRepository {
         fareCentavos: request.fare,
         paymentMethod: request.paymentMethod,
         note: request.note.isEmpty ? null : request.note,
+        requestedAt: request.requestedAtIso,
         passengerName: request.passengerName,
       );
 
-  RideRecord _fromHistory(RideHistoryItem history) => RideRecord(
-        id: history.id,
-        serviceAreaId: mockServiceAreaId,
-        status: RideStatus.fromJson(history.status),
-        pickupAddress: history.route,
-        dropoffAddress: history.route,
-        fareCentavos: history.fare,
-        completedAt: history.completedAt,
-        riderName: history.driverName,
-      );
+  RideRecord _fromHistory(RideHistoryItem history) {
+    // The seed writes one display route ("A → B"); the record keeps the two
+    // addresses apart so the presentation mapper can join them once, the same
+    // way it joins a hosted row's pickup and dropoff.
+    final separator = history.route.indexOf(' → ');
+    return RideRecord(
+      id: history.id,
+      serviceAreaId: mockServiceAreaId,
+      status: RideStatus.fromJson(history.status),
+      pickupAddress:
+          separator < 0 ? history.route : history.route.substring(0, separator),
+      dropoffAddress: separator < 0
+          ? ''
+          : history.route.substring(separator + ' → '.length),
+      fareCentavos: history.fare,
+      completedAt: history.completedAt,
+      riderName: history.driverName,
+    );
+  }
 
   RideRecord _fromTrip(RiderTripItem trip) => RideRecord(
         id: trip.id,

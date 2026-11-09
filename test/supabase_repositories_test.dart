@@ -340,6 +340,18 @@ void main() {
       });
     });
 
+    test('history asks for the passenger\'s terminal rides, newest first',
+        () async {
+      await SupabaseRideRepository(backend).fetchRideHistory('p1', limit: 3);
+      expect(backend.last.table, 'ride_requests');
+      expect(backend.last.eq, {'passenger_id': 'p1'});
+      expect(backend.last.whereIn, {
+        'status': ['completed', 'cancelled'],
+      });
+      expect(backend.last.orderBy, 'requested_at');
+      expect(backend.last.limit, 3);
+    });
+
     test('an unassignable ride row keeps its ids separate', () async {
       final subject = RecordingBackend((_) => [
             {
