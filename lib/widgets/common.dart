@@ -558,32 +558,35 @@ class SbBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 64,
-      decoration: const BoxDecoration(
-        color: Color(0xF0121513),
-        border: Border(top: BorderSide(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.bg2.withValues(alpha: 0.94),
+        border: const Border(top: BorderSide(color: AppColors.border)),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(items.length, (i) {
           final active = i == activeIndex;
           final item = items[i];
-          return InkWell(
-            onTap: () => onTap(i),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(item.icon, size: 20,
-                    color: active ? AppColors.primary : AppColors.muted2),
-                const SizedBox(height: 3),
-                Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: active ? AppColors.primary : AppColors.muted2,
+          return Expanded(
+            child: InkWell(
+              onTap: () => onTap(i),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(item.icon, size: 20,
+                      color: active ? AppColors.primary : AppColors.muted2),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: active ? AppColors.primary : AppColors.muted2,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         }),

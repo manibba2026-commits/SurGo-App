@@ -20,17 +20,19 @@ void main() {
   final db = DbService.instance;
 
   late List<_RequestState> saved;
+  late List<RideRequestItem> savedRideRequests;
   late int originalCount;
   late int wallet;
   late int today;
   late int week;
   late int month;
   late List<int> daily;
-  late int txCount;
+  late List<WalletTransaction> savedTransactions;
   late RideRequestItem? savedRequest;
   late RideMatchProposal? savedProposal;
   late RideRequestItem? savedActive;
-  late int tripCount;
+  late List<RiderTripItem> savedTrips;
+  late Map<String, int> notificationCounts;
 
   setUpAll(() async {
     await db.load();
@@ -38,28 +40,37 @@ void main() {
 
   setUp(() {
     saved = db.rideRequests.map(_RequestState.of).toList();
+    savedRideRequests = List.of(db.rideRequests);
     originalCount = db.rideRequests.length;
-    tripCount = db.riderTrips.length;
+    savedTrips = List.of(db.riderTrips);
     wallet = db.earnerWalletBalance;
     today = db.earningsToday;
     week = db.earningsWeek;
     month = db.earningsMonth;
     daily = db.dailyEarnings.map((d) => d.amount).toList();
-    txCount = db.earnerTransactions.length;
+    savedTransactions = List.of(db.earnerTransactions);
     savedRequest = state.myRideRequest;
     savedProposal = state.rideProposal;
     savedActive = state.activeRide;
+    notificationCounts = {
+      for (final entry in db.notificationsByUser.entries)
+        entry.key: entry.value.length,
+    };
   });
 
   tearDown(() {
-    // Drop anything a test added, then restore the original order and statuses.
-    if (db.rideRequests.length > originalCount) {
-      db.rideRequests.removeRange(originalCount, db.rideRequests.length);
-    }
+    // Restore the exact collections rather than trimming ranges: requests,
+    // trips and transactions are all inserted at index 0, so cutting from the
+    // tail would remove seeded rows and keep the test's.
+    db.rideRequests
+      ..clear()
+      ..addAll(savedRideRequests);
     for (var i = 0; i < saved.length; i++) {
       saved[i].applyTo(db.rideRequests[i]);
     }
-    db.riderTrips.removeRange(tripCount, db.riderTrips.length);
+    db.riderTrips
+      ..clear()
+      ..addAll(savedTrips);
     db.earnerWalletBalance = wallet;
     db.earningsToday = today;
     db.earningsWeek = week;
@@ -67,7 +78,20 @@ void main() {
     for (var i = 0; i < db.dailyEarnings.length; i++) {
       db.dailyEarnings[i].amount = daily[i];
     }
-    db.earnerTransactions.removeRange(txCount, db.earnerTransactions.length);
+    db.earnerTransactions
+      ..clear()
+      ..addAll(savedTransactions);
+    for (final entry in notificationCounts.entries) {
+      final feed = db.notificationsByUser[entry.key];
+      if (feed != null && feed.length > entry.value) {
+        feed.removeRange(entry.value, feed.length);
+      }
+    }
+    for (final key in db.notificationsByUser.keys.toList()) {
+      if (!notificationCounts.containsKey(key)) {
+        db.notificationsByUser.remove(key);
+      }
+    }
     state.myRideRequest = savedRequest;
     state.rideProposal = savedProposal;
     state.activeRide = savedActive;
@@ -131,7 +155,7 @@ void main() {
   });
 
   group('proposing a rider', () {
-    test('picks an available rider and holds them as a proposal', () {
+    test('picks an available, verified rider and holds them as a proposal', () {
       final request = newRequest();
 
       final outcome = state.proposeRider(request);
@@ -139,7 +163,7 @@ void main() {
       expect(outcome, MatchOutcome.proposed);
       final proposal = state.rideProposal!;
       expect(proposal.rider.available, isTrue);
-      expect(proposal.rider.id, isNot(request.passengerId));
+      expect(proposal.rider.verified, isTrue);
       expect(proposal.fare, request.fare);
       expect(proposal.etaMinutes, greaterThanOrEqualTo(1));
       // Still searching: proposing is not the same as being matched.
@@ -173,28 +197,56 @@ void main() {
         // the contract is then rating-then-id, which determinism already covers.
         return;
       }
+      // Only riders the search may actually offer: available, verified, and
+      // not the signed-in passenger riding on their own account.
+      final selfRiderId = state.currentAccount?.riderId;
+      final selfNames = {
+        db.passenger.name.toLowerCase(),
+        request.passengerName.trim().toLowerCase(),
+      };
       for (final r in db.mapRiders.where((r) =>
           r.available &&
-          r.vehicleType.toLowerCase() == request.vehicleId!.toLowerCase())) {
+          r.verified &&
+          r.id != selfRiderId &&
+          !selfNames.contains(r.name.toLowerCase()))) {
         final other = _distanceTo(request, r);
         if (other == null) continue;
         expect(distance, lessThanOrEqualTo(other));
       }
     });
 
-    test('matches the rider to the requested type, not just availability', () {
-      final request = newRequest(); // the booking default is Tricycle
-      request.vehicleId = 'Motorcycle';
-
-      expect(state.proposeRider(request), MatchOutcome.proposed);
-      expect(state.rideProposal!.rider.vehicleType, 'motorcycle');
-    });
-
-    test('refuses when no rider drives the requested type', () {
+    test('offers the fleet regardless of vehicle type', () {
+      // The vehicle-selection step is gone: the passenger picks a rider, so a
+      // request recorded as one type must not be starved of another type.
       final request = newRequest();
       request.vehicleId = 'Boat';
 
-      expect(state.proposeRider(request), MatchOutcome.noRidersAvailable);
+      expect(state.proposeRider(request), MatchOutcome.proposed);
+      final eligible = db.mapRiders.where((r) => r.available && r.verified);
+      if (eligible.isNotEmpty) {
+        expect(eligible.map((r) => r.id), contains(state.rideProposal!.rider.id));
+      }
+    });
+
+    test('walks down the ranking as riders are excluded', () {
+      final request = newRequest();
+      final seen = <String>{};
+
+      var outcome = state.proposeRider(request);
+      while (outcome == MatchOutcome.proposed) {
+        final id = state.rideProposal!.rider.id;
+        // Find Another must never show the same rider twice.
+        expect(seen, isNot(contains(id)));
+        seen.add(id);
+        outcome = state.proposeRider(request, excludeRiderIds: seen);
+      }
+
+      expect(outcome, MatchOutcome.noRidersAvailable);
+      final eligible = db.mapRiders.where((r) => r.available && r.verified).length;
+      expect(seen.length, lessThanOrEqualTo(eligible));
+      // Exhausting the fleet clears the last proposal rather than leaving a
+      // rider on screen who is no longer the answer to the search.
+      expect(state.rideProposal, isNull);
     });
 
     test('refuses to propose a second rider for the same request', () {
@@ -217,8 +269,14 @@ void main() {
       state.proposeRider(request);
 
       final rider = state.rideProposal!.rider;
-      expect(rider.id, isNot(request.passengerId));
-      expect(rider.id, isNot(db.passenger.id));
+      // MapRider ids (R00x) and profile ids (P00x) live in different namespaces,
+      // so the self check has to go through the account's linked rider id and
+      // the name, not by comparing ids across the two.
+      final selfRiderId = state.currentAccount?.riderId;
+      if (selfRiderId != null) expect(rider.id, isNot(selfRiderId));
+      expect(rider.name.toLowerCase(), isNot(db.passenger.name.toLowerCase()));
+      expect(rider.name.toLowerCase(),
+          isNot(request.passengerName.trim().toLowerCase()));
     });
 
     test('never proposes a rider who is marked unavailable', () {
@@ -275,6 +333,29 @@ void main() {
       expect(state.confirmRideMatch(), isFalse);
       expect(state.myRideRequest!.status, RideStatus.searching);
     });
+
+    test('sends the request to the selected rider and tells both sides', () {
+      final request = newRequest();
+      state.proposeRider(request);
+      final rider = state.rideProposal!.rider;
+      final passengerFeedBefore = db.passengerNotifications.length;
+
+      expect(state.confirmRideMatch(), isTrue);
+
+      // Addressed to the chosen rider, not broadcast, so another rider cannot
+      // answer a request they were not offered.
+      expect(request.riderId, rider.id);
+      expect(state.activeRide, isNull,
+          reason: 'selecting a rider is a request, not an accepted trip');
+
+      final riderFeed = db.notificationsByUser[rider.id];
+      expect(riderFeed, isNotNull);
+      expect(riderFeed!.first.title, 'New ride request');
+      expect(riderFeed.first.body, contains(request.pickup));
+      expect(db.passengerNotifications.length, passengerFeedBefore + 1);
+      expect(db.passengerNotifications.first.title,
+          'Request sent to ${rider.name}');
+    });
   });
 
   group('declining a proposal', () {
@@ -287,9 +368,10 @@ void main() {
 
       expect(request.status, RideStatus.searching);
       expect(request.riderId, isNull);
-      // The requested vehicle type survives: only the rejected rider is
-      // forgotten, so re-matching still respects the passenger's choice.
-      expect(request.vehicleId, state.selectedRide.name);
+      // The request returns to matching rather than being cancelled, so the
+      // passenger's pickup and destination survive for the next rider.
+      expect(request.pickup, 'SM Terminal');
+      expect(request.dropoff, 'Tandag Public Hall');
       expect(state.rideProposal, isNull);
     });
 
@@ -301,6 +383,109 @@ void main() {
 
       expect(state.proposeRider(request), MatchOutcome.proposed);
       expect(state.rideProposal, isNotNull);
+    });
+  });
+
+  group('the rider inbox', () {
+    RideRequestItem inboxRequest({
+      required String id,
+      String? passengerId,
+      String? riderId,
+    }) =>
+        RideRequestItem(
+          id: id,
+          passengerId: passengerId,
+          riderId: riderId,
+          passengerName: 'Someone Else',
+          passengerInitials: 'SE',
+          passengerRating: 4.4,
+          pickupBarangay: 'Bongtud',
+          pickupPurok: '',
+          pickup: 'Bongtud',
+          dropoffBarangay: 'Tandag',
+          dropoffPurok: '',
+          dropoff: 'Public Market',
+          distanceKm: 2.4,
+          etaMinutes: 7,
+          fare: 3000,
+          paymentMethod: 'Cash',
+          note: '',
+          requestedAt: 'Just now',
+        );
+
+    test('shows open requests and ones addressed to this rider', () {
+      final open = inboxRequest(id: 'rq-open', passengerId: 'P002');
+      final addressed = inboxRequest(
+        id: 'rq-addressed',
+        passengerId: 'P002',
+        riderId: db.earner.id,
+      );
+      final otherRiders =
+          inboxRequest(id: 'rq-other', passengerId: 'P002', riderId: 'R999');
+      db.rideRequests.addAll([open, addressed, otherRiders]);
+
+      final inbox = state.pendingRequests;
+
+      expect(inbox, contains(open));
+      expect(inbox, contains(addressed));
+      expect(inbox, isNot(contains(otherRiders)),
+          reason: 'a request sent to another rider is not this rider\'s to answer');
+    });
+
+    test('hides the account\'s own passenger request', () {
+      final own = newRequest();
+
+      // A rider cannot accept a trip they placed as a passenger.
+      expect(state.pendingRequests, isNot(contains(own)));
+    });
+
+    test('can accept a request addressed to this rider', () {
+      final request = inboxRequest(
+        id: 'rq-mine',
+        passengerId: 'P002',
+        riderId: db.earner.id,
+      )..status = RideStatus.awaitingAcceptance;
+      db.rideRequests.add(request);
+
+      state.respondToRequest(request, accepted: true);
+
+      expect(request.status, RideStatus.accepted);
+      expect(state.activeRide, same(request));
+      expect(db.rideRequests, isNot(contains(request)),
+          reason: 'an answered request leaves the incoming list');
+      expect(db.passengerNotifications.first.title, contains('accepted'));
+    });
+
+    test('can decline a request addressed to this rider', () {
+      final request = inboxRequest(
+        id: 'rq-declined',
+        passengerId: 'P002',
+        riderId: db.earner.id,
+      )..status = RideStatus.awaitingAcceptance;
+      db.rideRequests.add(request);
+
+      state.respondToRequest(request, accepted: false);
+
+      expect(request.status, RideStatus.cancelled);
+      expect(state.activeRide, isNull);
+      expect(db.rideRequests, isNot(contains(request)));
+      expect(db.passengerNotifications.first.title, contains('declined'));
+    });
+
+    test('cannot answer a request addressed to a different rider', () {
+      final request = inboxRequest(
+        id: 'rq-theirs',
+        passengerId: 'P002',
+        riderId: 'R999',
+      )..status = RideStatus.awaitingAcceptance;
+      db.rideRequests.add(request);
+
+      state.respondToRequest(request, accepted: true);
+
+      expect(request.status, RideStatus.awaitingAcceptance);
+      expect(state.activeRide, isNull,
+          reason: 'picking a rider does not let anyone else accept for them');
+      expect(db.rideRequests, contains(request));
     });
   });
 
@@ -392,7 +577,7 @@ void main() {
       expect(request.status, RideStatus.completed);
       expect(state.activeRide, isNull);
       expect(db.earnerWalletBalance, greaterThan(walletBefore));
-      expect(db.riderTrips.length, tripCount + 1);
+      expect(db.riderTrips.length, savedTrips.length + 1);
       expect(request.status.allowsChat, isFalse);
     });
 
@@ -409,7 +594,7 @@ void main() {
 
       expect(request.status, RideStatus.accepted);
       expect(db.earnerWalletBalance, walletBefore);
-      expect(db.riderTrips.length, tripCount);
+      expect(db.riderTrips.length, savedTrips.length);
       expect(state.activeRide, same(request));
     });
 
@@ -424,7 +609,7 @@ void main() {
       state.completeActiveRide();
 
       expect(db.earnerWalletBalance, walletAfter);
-      expect(db.riderTrips.length, tripCount + 1);
+      expect(db.riderTrips.length, savedTrips.length + 1);
     });
 
     test('cancelling mid-trip stops the payout', () {

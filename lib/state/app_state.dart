@@ -10,8 +10,11 @@ import '../data/models.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../data/verification_policy.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_failure.dart';
 import '../repositories/repository_registry.dart';
 import '../repositories/ride_location_repository.dart';
+import '../repositories/verification_repository.dart';
 import '../services/fee_calculator.dart';
 import '../services/location_publisher.dart';
 import '../services/money.dart';
@@ -60,6 +63,25 @@ enum VerificationSubmitResult {
         VerificationSubmitResult.alreadyInReview =>
           'This application is already under review.',
       };
+}
+
+/// Outcome of submitting a verification application for a hosted account.
+///
+/// Kept separate from [VerificationSubmitResult] because a hosted failure
+/// carries the backend's own explanation, which the demo flow has no source
+/// for.
+class HostedVerificationResult {
+  const HostedVerificationResult._(this.application, this.error);
+
+  const HostedVerificationResult.submitted(VerificationApplicationRecord record)
+      : this._(record, null);
+
+  const HostedVerificationResult.failed(String message) : this._(null, message);
+
+  final VerificationApplicationRecord? application;
+  final String? error;
+
+  bool get ok => application != null;
 }
 
 /// First element matching [test], or null.
@@ -330,6 +352,10 @@ class AppState extends ChangeNotifier {
       }
       return;
     }
+    // A demo session always passes the device PIN before the dashboard. The
+    // flag is set before the identity lands so the screen listening for
+    // isSignedIn already sees requiresPin.
+    if (demoAuthEnabled) _pinRequired = true;
     await _applyAuthUser(user);
   }
 
@@ -354,7 +380,11 @@ class AppState extends ChangeNotifier {
           identity?.userId == loaded.userId &&
           identity?.phone == loaded.phone &&
           identity?.email == loaded.email &&
-          setEquals(identity!.providers, loaded.providers);
+          identity?.needsOnboarding == loaded.needsOnboarding &&
+          setEquals(identity!.providers, loaded.providers) &&
+          // An admin approval changes roles without touching the session, so
+          // the reload must not be short-circuited on contact fields alone.
+          setEquals(identity!.capabilities, loaded.capabilities);
       if (unchanged) {
         authStatus = AuthStatus.signedIn;
         return;
@@ -363,6 +393,14 @@ class AppState extends ChangeNotifier {
       identity = loaded;
       final account = _syncLocalAccount(loaded);
       currentAccount = account;
+      if (_auth.isMock) {
+        // A demo session may keep the seeded business data; it is the point of
+        // the offline presentation build.
+        db.endIsolatedSession();
+      } else {
+        // A hosted account never inherits another person's seed rows.
+        db.beginIsolatedSession(account.id);
+      }
       db.activateAccount(account);
       // Whatever was cached belongs to the previous session's profile key.
       cache.restart();
@@ -387,8 +425,12 @@ class AppState extends ChangeNotifier {
   Account _syncLocalAccount(SurgoIdentity loaded) {
     final existing = db.findAccountForIdentity(
       authUserId: loaded.userId,
-      phone: loaded.phone,
-      email: loaded.email,
+      phone: _auth.isMock ? loaded.phone : null,
+      email: _auth.isMock ? loaded.email : null,
+      // Demo identities are seeded locally, so the mock provider may resolve a
+      // profile by contact. A hosted Supabase identity may only ever match the
+      // same auth user id.
+      allowContactMatch: _auth.isMock,
     );
     final base = existing ??
         db.registerAccount(
@@ -439,18 +481,23 @@ class AppState extends ChangeNotifier {
     required String phone,
     required String token,
   }) async {
+    // Every demo sign-in ends behind the PIN: an account without one creates
+    // it, a returning account unlocks with its own. Set before the identity
+    // lands so the navigation listener already sees requiresPin.
+    _pinRequired = demoAuthEnabled;
     final failure = await _performAuth(() async {
       final user = await _auth.verifyPhoneOtp(phone: phone, token: token);
       await _applyAuthUser(user);
     });
     if (failure != null) return failure;
-    _pinRequired = false;
+    if (!demoAuthEnabled) _pinRequired = false;
     return currentAccount == null
         ? authError ?? AuthFailure.from('Sign-in did not complete.')
         : null;
   }
 
   Future<AuthFailure?> signInWithGoogle() async {
+    _pinRequired = demoAuthEnabled;
     final failure = await _performAuth(() async {
       final launched = await _auth.signInWithGoogle();
       if (!launched) {
@@ -464,7 +511,7 @@ class AppState extends ChangeNotifier {
       final user = await _auth.restoreSession();
       if (user != null) await _applyAuthUser(user);
     });
-    if (failure == null) _pinRequired = false;
+    if (!demoAuthEnabled) _pinRequired = false;
     return failure;
   }
 
@@ -541,6 +588,41 @@ class AppState extends ChangeNotifier {
   /// A restored demo session must be unlocked before the dashboard is shown.
   bool get requiresPin => demoAuthEnabled && isSignedIn && _pinRequired;
 
+  /// A hosted Google account that has not completed registration yet. Demo
+  /// accounts are seeded and never pass through onboarding.
+  bool get requiresOnboarding =>
+      isSignedIn && !_auth.isMock && (identity?.needsOnboarding ?? false);
+
+  /// True for a real Supabase session. Screens use this to avoid presenting
+  /// seeded business rows as if they belonged to the signed-in account.
+  bool get usesHostedIdentity => !_auth.isMock;
+
+  /// Persists the first-run details and reloads the identity. Returns the
+  /// failure to show, or null when the account is ready for its dashboard.
+  Future<AuthFailure?> completeOnboarding({
+    required String fullName,
+    required String phone,
+  }) async {
+    final failure = await _performAuth(() async {
+      await _auth.completeOnboarding(fullName: fullName, phone: phone);
+      final user = await _auth.restoreSession();
+      if (user == null) {
+        throw const AuthFailure(
+          AuthFailureCode.unknown,
+          'Your account could not be reloaded. Sign in again.',
+        );
+      }
+      await _applyAuthUser(user);
+    });
+    if (failure == null && requiresOnboarding) {
+      return const AuthFailure(
+        AuthFailureCode.unknown,
+        'Your account details did not save. Please try again.',
+      );
+    }
+    return failure;
+  }
+
   /// The four prepared identities, in presentation order. Only the account ids
   /// are hardcoded; names, phones and roles come from the existing seed rows.
   List<Account> get demoLoginAccounts {
@@ -560,10 +642,33 @@ class AppState extends ChangeNotifier {
         : null;
   }
 
-  /// Verifies the device PIN and releases the restored session.
+  /// Whether the signed-in demo account already has a PIN on this device.
+  ///
+  /// False for a new account (or one whose PIN was forgotten), which is what
+  /// makes the PIN screen open in creation mode instead of asking for a code
+  /// nobody ever chose.
+  Future<bool> pinConfiguredForCurrentAccount() async {
+    final account = currentAccount;
+    if (!demoAuthEnabled || account == null) return false;
+    return pinStore.hasPin(account.id);
+  }
+
+  /// Saves the first PIN for the signed-in demo account.
+  Future<bool> setPin(String pin) async {
+    final account = currentAccount;
+    if (!demoAuthEnabled || account == null || !isDemoPin(pin)) return false;
+    await pinStore.setPin(account.id, pin);
+    return true;
+  }
+
+  /// Verifies the PIN of the account currently signed in, then releases the
+  /// session. A PIN belonging to a different account never unlocks this one.
   Future<PinUnlockResult> unlockWithPin(String pin) async {
-    if (!demoAuthEnabled || !isSignedIn) return PinUnlockResult.success;
-    if (!await pinStore.verify(pin)) return PinUnlockResult.incorrect;
+    final account = currentAccount;
+    if (!demoAuthEnabled || account == null) return PinUnlockResult.success;
+    if (!await pinStore.verify(account.id, pin)) {
+      return PinUnlockResult.incorrect;
+    }
     _pinRequired = false;
     notifyListeners();
     return PinUnlockResult.success;
@@ -573,22 +678,24 @@ class AppState extends ChangeNotifier {
     required String currentPin,
     required String newPin,
   }) async {
-    if (!demoAuthEnabled) return PinChangeResult.invalidNew;
+    final account = currentAccount;
+    if (!demoAuthEnabled || account == null) return PinChangeResult.invalidNew;
     if (!isDemoPin(newPin)) return PinChangeResult.invalidNew;
     if (currentPin == newPin) return PinChangeResult.sameAsCurrent;
-    if (!await pinStore.verify(currentPin)) {
+    if (!await pinStore.verify(account.id, currentPin)) {
       return PinChangeResult.incorrectCurrent;
     }
-    await pinStore.setPin(newPin);
+    await pinStore.setPin(account.id, newPin);
     return PinChangeResult.success;
   }
 
-  /// Forgot PIN returns to authentication. The PIN resets to the demo default
-  /// so the next OTP sign-in is not immediately locked behind a PIN the user
-  /// cannot remember.
+  /// Forgot PIN returns to authentication. Only this account's PIN is removed,
+  /// so signing back in asks for a new one without touching another demo
+  /// identity's lock on the same device.
   Future<void> forgotPin() async {
+    final account = currentAccount;
     _pinRequired = false;
-    await pinStore.reset();
+    if (account != null) await pinStore.reset(account.id);
     await logout();
   }
 
@@ -654,6 +761,9 @@ class AppState extends ChangeNotifier {
     currentAccount = null;
     identity = null;
     _pinRequired = false;
+    // The hosted session's empty slices must not survive into the signed-out
+    // demo, and the seed must not survive into the next hosted session.
+    db.endIsolatedSession();
     db.activatePrimary();
     // Nothing cached under the old key may survive into the signed-out demo.
     cache.restart();
@@ -738,6 +848,86 @@ class AppState extends ChangeNotifier {
         a.status == VerificationStatus.underReview);
     if (inFlight) return 'In progress';
     return '${open.length} ${open.length == 1 ? 'step' : 'steps'} to go';
+  }
+
+  // ---- hosted verification ----
+  //
+  // A Supabase account's applications live in `verification_applications`,
+  // which only the admin dashboard may decide. These methods read and submit
+  // through the repositories; the demo's simulated review below never runs for
+  // such an account.
+
+  /// The signed-in hosted account's applications, newest first. Empty until
+  /// the slot has been read, and empty for a demo account.
+  List<VerificationApplicationRecord> get hostedVerificationApplications =>
+      cache.dataOf<List<VerificationApplicationRecord>>(
+          DomainSlot.verificationApplications) ??
+      const [];
+
+  /// True once the backend has answered for this account, including the empty
+  /// answer; the screen uses it to tell "no application yet" from "loading".
+  bool get hostedVerificationLoaded =>
+      cache.stateOf<List<VerificationApplicationRecord>>(
+              DomainSlot.verificationApplications)
+          .isSettled;
+
+  /// Makes sure the hosted application list has been read at least once.
+  Future<void> ensureHostedVerification() async {
+    if (!usesHostedIdentity || !isSignedIn) return;
+    await cache.ensure(DomainSlot.verificationApplications);
+  }
+
+  /// Re-reads the profile, roles and applications.
+  ///
+  /// This is what makes an admin decision visible: the approval grants a role
+  /// in the database, and only a fresh identity read turns it into an unlocked
+  /// mode in the app.
+  Future<void> refreshHostedVerification() async {
+    if (!usesHostedIdentity || !isSignedIn) return;
+    await refreshIdentity();
+    await cache.ensure(DomainSlot.verificationApplications);
+  }
+
+  /// Reloads the session identity without signing out.
+  Future<void> refreshIdentity() async {
+    if (!usesHostedIdentity || !isSignedIn) return;
+    final user = await _auth.restoreSession();
+    if (user == null) return;
+    await _applyAuthUser(user);
+  }
+
+  /// Uploads the picked files and submits one hosted verification application.
+  Future<HostedVerificationResult> submitHostedVerification({
+    required CapabilityType capability,
+    required List<VerificationUpload> documents,
+  }) async {
+    if (!usesHostedIdentity) {
+      return const HostedVerificationResult.failed(
+        'Hosted verification is only available for a signed-in Supabase account.',
+      );
+    }
+    final userId = identity?.userId;
+    if (userId == null || !isSignedIn) {
+      return const HostedVerificationResult.failed(
+        'Sign in again before submitting verification.',
+      );
+    }
+    try {
+      final record = await repositories.verifications.submitApplication(
+        profileId: userId,
+        capability: verificationCapabilityToken(capability),
+        documents: documents,
+      );
+      await cache.retry(DomainSlot.verificationApplications);
+      await refreshIdentity();
+      return HostedVerificationResult.submitted(record);
+    } on RepositoryFailure catch (failure) {
+      return HostedVerificationResult.failed(failure.message);
+    } catch (_) {
+      return const HostedVerificationResult.failed(
+        'Verification could not be submitted. Please try again.',
+      );
+    }
   }
 
   /// Opens (or reopens) the signed-in account's application for [capability].
@@ -998,25 +1188,49 @@ class AppState extends ChangeNotifier {
 
   /// Picks a rider for [request] and holds them as a proposal.
   ///
-  /// Returns [MatchOutcome.noRidersAvailable] when nothing suitable is free.
-  /// Matching is deterministic: candidates are ranked, not picked at random, so
-  /// the same request always proposes the same rider and the flow is testable.
-  MatchOutcome proposeRider(RideRequestItem request) {
+  /// [excludeRiderIds] carries the riders the passenger already turned down, so
+  /// "Find Another" walks down the ranking instead of offering the same person
+  /// twice. Returns [MatchOutcome.noRidersAvailable] when nothing suitable is
+  /// free. Matching is deterministic: candidates are ranked, not picked at
+  /// random, so the same request and exclusion set always propose the same
+  /// rider and the flow is testable.
+  MatchOutcome proposeRider(
+    RideRequestItem request, {
+    Set<String> excludeRiderIds = const {},
+  }) {
     if (request.status != RideStatus.searching) {
       // Already matched or finished; a second proposal would strand the first.
       return MatchOutcome.noRidersAvailable;
     }
 
+    // Riders on their own account must not be offered their own request, and
+    // the seeded fleet has no account column, so the id and the name are both
+    // checked rather than trusting either alone.
+    final selfRiderId = currentAccount?.riderId;
+    final selfNames = {
+      passenger.name.toLowerCase(),
+      if (request.passengerName.trim().isNotEmpty)
+        request.passengerName.trim().toLowerCase(),
+    };
+
     final candidates = db.mapRiders.where((r) {
-      // Never propose the passenger as their own rider, and never someone who
-      // is already committed to another trip.
       return r.available &&
-          r.id != request.passengerId &&
+          r.verified &&
+          r.id != selfRiderId &&
+          !selfNames.contains(r.name.toLowerCase()) &&
           activeRide?.riderId != r.id &&
-          _vehicleMatches(r, request.vehicleId);
+          !excludeRiderIds.contains(r.id);
     }).toList();
 
-    if (candidates.isEmpty) return MatchOutcome.noRidersAvailable;
+    if (candidates.isEmpty) {
+      // A rider offered a moment ago must not stay on screen as if they were
+      // still the answer to this search.
+      if (rideProposal != null) {
+        rideProposal = null;
+        notifyListeners();
+      }
+      return MatchOutcome.noRidersAvailable;
+    }
 
     // Nearest first, so the passenger is shown the rider who can actually get
     // there soonest. Riders whose distance is unknown sort last rather than
@@ -1055,7 +1269,9 @@ class AppState extends ChangeNotifier {
   /// The passenger accepts the proposed rider: the request becomes pending.
   ///
   /// This is the point the request stops being open, and it is deliberately not
-  /// the point the trip starts: the rider has not agreed yet.
+  /// the point the trip starts: the rider has not agreed yet. Selecting also
+  /// files the request under the chosen rider so only they see it, and tells
+  /// the passenger's notification feed where it went.
   bool confirmRideMatch() {
     final request = myRideRequest;
     final proposal = rideProposal;
@@ -1063,8 +1279,67 @@ class AppState extends ChangeNotifier {
     if (!request.advanceTo(RideStatus.awaitingAcceptance)) return false;
     request.riderId = proposal.rider.id;
     rideProposal = null;
+    _notifyRideRequestSent(request, proposal.rider);
     notifyListeners();
     return true;
+  }
+
+  /// Records the dispatch in both inboxes.
+  ///
+  /// Mock builds only: a Supabase build has no INSERT grant on `notifications`,
+  /// so a row written here would never reach the database and would present a
+  /// local fabrication as a real notification.
+  void _notifyRideRequestSent(RideRequestItem request, MapRider rider) {
+    if (usesHostedIdentity) return;
+    final now = DateTime.now();
+    final stamp = now.microsecondsSinceEpoch;
+    _notificationFeed(db.passenger.id).insert(
+      0,
+      NotificationItem(
+        id: 'n${stamp}_p',
+        type: 'ride',
+        title: 'Request sent to ${rider.name}',
+        body: '${request.pickup} → ${request.dropoff}. '
+            'The trip starts once ${rider.name} accepts.',
+        time: 'Just now',
+        read: false,
+        createdAt: now,
+      ),
+    );
+    _notificationFeed(rider.id).insert(
+      0,
+      NotificationItem(
+        id: 'n${stamp}_r',
+        type: 'ride',
+        title: 'New ride request',
+        body: '${request.passengerName} wants a ride: '
+            '${request.pickup} → ${request.dropoff}.',
+        time: 'Just now',
+        read: false,
+        createdAt: now,
+      ),
+    );
+  }
+
+  /// The editable list behind one profile's notification feed.
+  ///
+  /// The seed keeps the signed-in passenger and earner slices as fields as well
+  /// as map entries, so those two must mutate the field list rather than a
+  /// detached copy. Any other profile gets a list of its own: falling back to
+  /// the passenger's would put the rider's copy in the passenger's feed.
+  List<NotificationItem> _notificationFeed(String profileId) {
+    final existing = db.notificationsByUser[profileId];
+    if (existing != null) return existing;
+    final List<NotificationItem> list;
+    if (profileId == db.passenger.id) {
+      list = db.passengerNotifications;
+    } else if (profileId == db.earner.id) {
+      list = db.earnerNotifications;
+    } else {
+      list = <NotificationItem>[];
+    }
+    db.notificationsByUser[profileId] = list;
+    return list;
   }
 
   /// The passenger declines the proposal, putting the request back to matching.
@@ -1242,22 +1517,6 @@ class AppState extends ChangeNotifier {
     return id;
   }
 
-  /// Whether [rider] drives the vehicle type the passenger asked for.
-  ///
-  /// [requestedType] is the booking screen's option name (e.g. "Tricycle"),
-  /// stored on the request as `RideRequestItem.vehicleId`. It is compared to
-  /// the rider's `MapRider.vehicleType` case-insensitively, because the seed
-  /// lowercases the type while the option capitalises it.
-  ///
-  /// A null or blank type means the caller did not pick one, so every free
-  /// rider qualifies. That keeps hand-built requests matching on availability
-  /// alone rather than refusing for a choice nobody made.
-  bool _vehicleMatches(MapRider rider, String? requestedType) {
-    final wanted = requestedType?.trim().toLowerCase();
-    if (wanted == null || wanted.isEmpty) return true;
-    return rider.vehicleType.trim().toLowerCase() == wanted;
-  }
-
   /// Resolves a free-text place label to a point, or null when it is not one of
   /// the city's seeded places.
   ///
@@ -1360,7 +1619,20 @@ class AppState extends ChangeNotifier {
 
   // ---- rider / driver mode ----
   bool riderOnline = true;
-  List<RideRequestItem> get pendingRequests => db.rideRequests;
+
+  /// Requests this rider can answer: everything still open, plus the ones the
+  /// passenger addressed to them by selecting them. A request that went to a
+  /// different rider stays out of this inbox, and so does one this account
+  /// placed as a passenger — a rider cannot accept their own trip.
+  List<RideRequestItem> get pendingRequests {
+    final myRiderId = db.earner.id;
+    final myPassengerId = db.passenger.id;
+    return db.rideRequests.where((r) {
+      if (r.passengerId != null && r.passengerId == myPassengerId) return false;
+      final assigned = r.riderId;
+      return assigned == null || assigned == myRiderId;
+    }).toList();
+  }
 
   /// The request the rider currently has accepted, shown as a banner above
   /// the incoming-requests list until the trip is completed or cancelled.
@@ -1392,6 +1664,16 @@ class AppState extends ChangeNotifier {
   }
 
   void respondToRequest(RideRequestItem request, {required bool accepted}) {
+    // The incoming list already filters to this rider, but the decision itself
+    // must hold too: a request sent to someone else must not be answerable
+    // from here. The demo account acts as both passenger and rider, which is
+    // why the passenger side is not refused here but filtered out of the list.
+    final assigned = request.riderId;
+    if (assigned != null && assigned != db.earner.id) return;
+    if (request.status != RideStatus.searching &&
+        request.status != RideStatus.awaitingAcceptance) {
+      return;
+    }
     db.rideRequests.remove(request);
     if (accepted) {
       // Route through the same path the simulated acceptance uses, so a request
@@ -1399,11 +1681,38 @@ class AppState extends ChangeNotifier {
       // like any other accepted trip. Assigning activeRide here alone would
       // leave the request in `searching` and make the trip's state unreadable.
       request.status = RideStatus.awaitingAcceptance;
+      request.riderId ??= db.earner.id;
       riderAccepts(request);
     } else {
       request.cancel();
     }
+    _notifyRiderResponse(request, accepted: accepted);
     notifyListeners();
+  }
+
+  /// Tells the passenger how the rider answered, so a request that ends after
+  /// the passenger went home is not a dead end. Mock builds only, for the same
+  /// reason as [_notifyRideRequestSent].
+  void _notifyRiderResponse(RideRequestItem request, {required bool accepted}) {
+    if (usesHostedIdentity) return;
+    final rider = _firstWhereOrNull(db.mapRiders, (r) => r.id == request.riderId);
+    final name = rider?.name ?? 'Your rider';
+    final now = DateTime.now();
+    final route = '${request.pickup} → ${request.dropoff}';
+    _notificationFeed(db.passenger.id).insert(
+      0,
+      NotificationItem(
+        id: 'n${now.microsecondsSinceEpoch}_a',
+        type: 'ride',
+        title: accepted ? '$name accepted your ride' : '$name declined your ride',
+        body: accepted
+            ? '$route is confirmed. Follow the trip from your activity.'
+            : '$route was declined. Book again to find another rider.',
+        time: 'Just now',
+        read: false,
+        createdAt: now,
+      ),
+    );
   }
 
   /// The fee split for the trip just completed. Set by [completeActiveRide] so

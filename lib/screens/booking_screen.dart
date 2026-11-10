@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
-import '../services/money.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -8,6 +7,7 @@ import '../widgets/common.dart';
 import '../widgets/location_picker.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_map.dart';
+import '../widgets/surgo_notice.dart';
 
 class BookingScreen extends StatelessWidget {
   const BookingScreen({super.key});
@@ -68,20 +68,28 @@ class BookingScreen extends StatelessWidget {
                       },
                     ),
                     const SizedBox(height: 20),
-                    const Text('Choose a vehicle',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.muted)),
-                    const SizedBox(height: 10),
-                    ..._buildRideOptions(state),
-                    const SizedBox(height: 18),
                     _priceBreakdown(state),
                     const SizedBox(height: 14),
                     SbPrimaryButton(
-                      label: 'Find Ride · ${state.bookingPrice.customerTotalLabel}',
+                      label: 'Find a Ride',
                       icon: Icons.electric_rickshaw_rounded,
                       // Creates the request first, then matches it. Navigating on
                       // its own would leave the matching screen with nothing to
                       // match against, and no trace of the trip afterwards.
                       onPressed: () {
+                        if (state.usesHostedIdentity) {
+                          // There is no rider presence or dispatch service for
+                          // a real account yet, so a request created here would
+                          // be a local row presented as a booking.
+                          SurgoNotice.show(
+                            context,
+                            'Live ride requests are not connected to this '
+                            'account yet, so nothing was sent.',
+                            tone: SbNoticeTone.warning,
+                            title: 'Matching unavailable',
+                          );
+                          return;
+                        }
                         state.createRideRequest();
                         Navigator.pushNamed(context, '/matching');
                       },
@@ -126,10 +134,6 @@ class BookingScreen extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
               ),
-              Text(
-                '${state.selectedRide.etaMinutes} min away',
-                style: const TextStyle(color: AppColors.muted, fontSize: 11),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -154,52 +158,6 @@ class BookingScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  List<Widget> _buildRideOptions(AppState state) {
-    return state.rideOptions.map((option) {
-      final selected = option.name == state.selectedRide.name;
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: SbTintedCard(
-          tone: selected ? SbTone.ride : SbTone.neutral,
-          wash: selected,
-          borderColor: selected ? null : AppColors.border,
-          onTap: () => state.selectRide(option),
-          child: Row(
-            children: [
-              if (selected)
-                const SbToneIcon(
-                  tone: SbTone.ride,
-                  icon: Icons.electric_rickshaw_rounded,
-                  size: 34,
-                  iconSize: 17,
-                )
-              else
-                SizedBox(
-                  width: 34,
-                  height: 34,
-                  child: Icon(option.icon,
-                      size: 24, color: AppColors.muted),
-                ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(option.name,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                    Text('${option.etaLabel} · ${option.capacityLabel}',
-                        style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                  ],
-                ),
-              ),
-              Text(Money.format(option.fare), style: const TextStyle(fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-      );
-    }).toList();
   }
 }
 

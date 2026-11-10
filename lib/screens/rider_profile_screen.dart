@@ -40,9 +40,15 @@ class EarnerProfileScreen extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(earner.name,
+                        Flexible(
+                          child: Text(
+                            earner.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 16)),
+                                fontWeight: FontWeight.w800, fontSize: 16),
+                          ),
+                        ),
                         if (earner.verified) ...[
                           const SizedBox(width: 6),
                           const Icon(Icons.verified,

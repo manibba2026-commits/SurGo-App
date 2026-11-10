@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { allDocsApproved, documentFileState, fileStates, isReviewable, verificationForProfile } from './verification.ts';
+import { allDocsApproved, approvalBlockReason, documentFileState, fileStates, isReviewable, OPEN_STATUSES, verificationForProfile } from './verification.ts';
 
 /**
  * Storage-shaped stub: `files` lists the object paths that actually exist in
@@ -144,6 +144,32 @@ test('reviewability follows the RPC rules', () => {
   assert.equal(allDocsApproved([{ status: 'approved' }]), true);
   assert.equal(allDocsApproved([{ status: 'approved' }, { status: 'pending' }]), false);
   assert.equal(allDocsApproved([]), false, 'an empty file set is not an approved set');
+  assert.deepEqual(
+    [...OPEN_STATUSES],
+    ['submitted', 'under_review', 'needs_resubmission'],
+    'resubmissions belong in the default open queue',
+  );
+});
+
+test('approval is blocked by every unreviewed document state', () => {
+  assert.equal(approvalBlockReason([{ status: 'approved' }]), null);
+  assert.match(
+    approvalBlockReason([{ status: 'approved' }, { status: 'pending' }]) ?? '',
+    /1 pending/,
+  );
+  assert.match(
+    approvalBlockReason([{ status: 'approved' }, { status: 'rejected' }]) ?? '',
+    /1 rejected/,
+  );
+  assert.match(
+    approvalBlockReason([{ status: 'approved' }, { status: 'expired' }]) ?? '',
+    /1 expired/,
+  );
+  assert.match(
+    approvalBlockReason([{ status: 'pending' }, { status: 'rejected' }, { status: 'expired' }]) ?? '',
+    /1 pending, 1 rejected, 1 expired/,
+  );
+  assert.match(approvalBlockReason([]) ?? '', /no documents/);
 });
 
 test('the four file states a document row can be in', () => {

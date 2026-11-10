@@ -117,7 +117,7 @@ void main() {
     await _drainSnackBars(tester);
   });
 
-  testWidgets('matching names the rider instead of the internal id',
+  testWidgets('matching names the rider and sends the request home',
       (tester) async {
     final request = _request();
     state.myRideRequest = request;
@@ -134,23 +134,67 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     final proposal = state.rideProposal;
     expect(proposal, isNotNull);
-    expect(find.text('Confirm rider'), findsOneWidget);
+    expect(find.text('Select Rider'), findsOneWidget);
+    expect(find.text('Find Another'), findsOneWidget);
+    expect(find.text(proposal!.riderName), findsOneWidget);
+    expect(find.textContaining(proposal.rider.id), findsNothing,
+        reason: 'the card must show the rider, not the raw id');
 
-    await tester.tap(find.text('Confirm rider'));
+    await tester.tap(find.text('Select Rider'));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.textContaining(proposal!.riderName), findsOneWidget);
-    expect(find.textContaining(request.riderId!), findsNothing,
-        reason: 'the waiting state must not show the raw rider id');
-
-    // The simulated rider accepts after two seconds and the trip opens.
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(request.status, RideStatus.accepted);
-    expect(find.text('live trip route'), findsOneWidget);
+    expect(request.status, RideStatus.awaitingAcceptance);
+    expect(request.riderId, proposal.rider.id);
+    expect(state.activeRide, isNull,
+        reason: 'selecting a rider is a request, not an accepted trip');
+    expect(find.text('home route'), findsOneWidget,
+        reason: 'the passenger returns home after sending');
+    expect(find.text('live trip route'), findsNothing);
 
     await _drainSnackBars(tester);
+  });
+
+  testWidgets('Find Another offers a different rider', (tester) async {
+    state.myRideRequest = _request();
+
+    await tester.pumpWidget(MaterialApp(
+      home: const MatchingScreen(),
+      routes: {'/home': (_) => const Scaffold(body: Text('home route'))},
+    ));
+
+    await tester.pump(const Duration(seconds: 1));
+    final first = state.rideProposal!.rider.id;
+
+    await tester.tap(find.text('Find Another'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(state.rideProposal!.rider.id, isNot(first));
+    expect(find.text('Select Rider'), findsOneWidget);
+  });
+
+  testWidgets('a proposal alone never starts the trip', (tester) async {
+    final request = _request();
+    state.myRideRequest = request;
+
+    await tester.pumpWidget(MaterialApp(
+      home: const MatchingScreen(),
+      routes: {
+        '/livetrip': (_) => const Scaffold(body: Text('live trip route')),
+        '/home': (_) => const Scaffold(body: Text('home route')),
+      },
+    ));
+
+    await tester.pump(const Duration(seconds: 1));
+    expect(state.rideProposal, isNotNull);
+
+    // Waiting longer must not accept on the rider's behalf or open a trip.
+    await tester.pump(const Duration(seconds: 5));
+
+    expect(request.status, RideStatus.searching);
+    expect(state.activeRide, isNull);
+    expect(find.text('live trip route'), findsNothing);
+    expect(find.text('Select Rider'), findsOneWidget);
   });
 }
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
+import '../auth/phone_input.dart';
 import '../state/app_state.dart';
-import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
 import '../widgets/common.dart';
 
@@ -23,6 +23,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _googleLoading = false;
   bool _navigated = false;
   String? _error;
+  String? _nameError;
+  String? _phoneError;
 
   AppState get state => AppState.instance;
 
@@ -48,7 +50,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _finishSignedIn() {
     if (_navigated) return;
     _navigated = true;
-    Navigator.pushNamedAndRemoveUntil(context, state.homeRoute, (r) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      state.requiresOnboarding
+          ? '/onboarding'
+          : state.requiresPin
+              ? '/pin'
+              : state.homeRoute,
+      (r) => false,
+    );
   }
 
   Future<void> _submit() async {
@@ -56,19 +66,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     FocusScope.of(context).unfocus();
 
     final name = nameCtrl.text.trim();
-    if (name.isEmpty) {
-      setState(() => _error = 'Please enter your full name.');
+    final nameError = name.isEmpty ? 'Please enter your full name.' : null;
+    final phoneError = phoneFieldError(phoneCtrl.text);
+    if (nameError != null || phoneError != null) {
+      setState(() {
+        _nameError = nameError;
+        _phoneError = phoneError;
+        _error = null;
+      });
       return;
     }
-    final phone = normalizePhoneNumber(phoneCtrl.text);
-    if (phone == null) {
-      setState(() => _error =
-          'Enter a valid phone number, for example 0917 512 4809.');
-      return;
-    }
+    final phone = normalizePhoneNumber(phoneCtrl.text)!;
 
     setState(() {
       _submitting = true;
+      _nameError = null;
+      _phoneError = null;
       _error = null;
     });
 
@@ -128,24 +141,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
           subtitle: 'Sign up with your phone number. We will text a code.',
         ),
         const SizedBox(height: 24),
-        SbEditableField(
+        SbAuthField(
           label: 'Full name',
           controller: nameCtrl,
-          leading:
-              const Icon(Icons.badge_outlined, size: 18, color: AppColors.text),
+          icon: Icons.badge_outlined,
+          errorText: _nameError,
           keyboardType: TextInputType.name,
           textInputAction: TextInputAction.next,
-          hintText: 'Juan Dela Cruz',
+          autofillHints: const [AutofillHints.name],
+          enabled: !busy,
+          onChanged: (_) {
+            if (_nameError != null) setState(() => _nameError = null);
+          },
         ),
         const SizedBox(height: 14),
-        SbEditableField(
+        SbAuthField(
           label: 'Phone number',
           controller: phoneCtrl,
-          leading: const Icon(Icons.phone, size: 18, color: AppColors.text),
+          icon: Icons.phone_outlined,
+          errorText: _phoneError,
           keyboardType: TextInputType.phone,
+          inputFormatters: [phPhoneInputFormatter],
+          autofillHints: const [AutofillHints.telephoneNumber],
           textInputAction: TextInputAction.done,
+          enabled: !busy,
+          onChanged: (_) {
+            if (_phoneError != null) setState(() => _phoneError = null);
+          },
           onSubmitted: (_) => _submit(),
-          hintText: '+63 9XX XXX XXXX',
         ),
         const SizedBox(height: 18),
         if (!state.authAvailable)

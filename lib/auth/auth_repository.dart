@@ -44,6 +44,14 @@ abstract class AuthRepository {
   /// Loads the SurGo profile and approved roles for [user].
   Future<SurgoIdentity> loadIdentity(AuthUser user);
 
+  /// Completes first-run registration for a provider account that has no phone
+  /// identity yet. The marker is written to the provider's user metadata, so it
+  /// survives restarts without a database migration.
+  Future<void> completeOnboarding({
+    required String fullName,
+    required String phone,
+  });
+
   /// Links a Google identity to the signed-in account.
   Future<bool> linkGoogleIdentity();
 

@@ -38,9 +38,15 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(owner.name,
+                        Flexible(
+                          child: Text(
+                            owner.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 16)),
+                                fontWeight: FontWeight.w800, fontSize: 16),
+                          ),
+                        ),
                         if (owner.verified) ...[
                           const SizedBox(width: 6),
                           const Icon(Icons.verified,

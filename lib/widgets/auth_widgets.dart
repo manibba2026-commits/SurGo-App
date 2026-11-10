@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 
@@ -154,14 +155,19 @@ class SbAuthScaffold extends StatelessWidget {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) => SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              padding: EdgeInsets.fromLTRB(
+                constraints.maxWidth < 380 ? 18 : 24,
+                24,
+                constraints.maxWidth < 380 ? 18 : 24,
+                32,
+              ),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   minHeight: constraints.maxHeight - 56,
                 ),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
+                    constraints: const BoxConstraints(maxWidth: 460),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -357,6 +363,200 @@ class SbAuthError extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The auth-form text field: a full-width 64 px control whose label starts as
+/// the placeholder and floats upward when the field is focused or filled.
+///
+/// Focus and error states animate over 200 ms, which is slow enough to read and
+/// fast enough not to feel laggy. The field never rewrites its own text; phone
+/// formatting happens on submit through `normalizePhoneNumber`.
+class SbAuthField extends StatefulWidget {
+  final String label;
+  final TextEditingController controller;
+  final IconData? icon;
+  final String? errorText;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final List<TextInputFormatter>? inputFormatters;
+  final Iterable<String>? autofillHints;
+  final bool obscureText;
+  final bool enabled;
+  final Widget? suffix;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+
+  const SbAuthField({
+    super.key,
+    required this.label,
+    required this.controller,
+    this.icon,
+    this.errorText,
+    this.keyboardType,
+    this.textInputAction,
+    this.inputFormatters,
+    this.autofillHints,
+    this.obscureText = false,
+    this.enabled = true,
+    this.suffix,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  @override
+  State<SbAuthField> createState() => _SbAuthFieldState();
+}
+
+class _SbAuthFieldState extends State<SbAuthField> {
+  static const _duration = Duration(milliseconds: 200);
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_refresh);
+    widget.controller.addListener(_refresh);
+  }
+
+  @override
+  void didUpdateWidget(covariant SbAuthField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_refresh);
+      widget.controller.addListener(_refresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_refresh);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = _focus.hasFocus;
+    final hasError = widget.errorText != null && widget.errorText!.isNotEmpty;
+    final accent =
+        hasError ? AppColors.danger : focused ? AppColors.primary : AppColors.borderLight;
+    const radius = BorderRadius.all(Radius.circular(14));
+
+    OutlineInputBorder outline(Color color, double width) => OutlineInputBorder(
+          borderRadius: radius,
+          borderSide: BorderSide(color: color, width: width),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AnimatedContainer(
+          duration: _duration,
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            boxShadow: focused
+                ? [
+                    BoxShadow(
+                      color: (hasError ? AppColors.danger : AppColors.primary)
+                          .withValues(alpha: 0.24),
+                      blurRadius: 18,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          // Material's notched outline keeps the label centered inside the
+          // field until focus or content lifts it onto the top border.
+          child: TextFormField(
+            controller: widget.controller,
+            focusNode: _focus,
+            enabled: widget.enabled,
+            keyboardType: widget.keyboardType,
+            textInputAction: widget.textInputAction,
+            inputFormatters: widget.inputFormatters,
+            autofillHints: widget.autofillHints,
+            obscureText: widget.obscureText,
+            onChanged: widget.onChanged,
+            onFieldSubmitted: widget.onSubmitted,
+            cursorColor: AppColors.primaryLight,
+            textAlignVertical: TextAlignVertical.center,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.text,
+            ),
+            decoration: InputDecoration(
+              labelText: widget.label,
+              floatingLabelBehavior: FloatingLabelBehavior.auto,
+              labelStyle: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: hasError ? AppColors.danger : AppColors.muted,
+              ),
+              floatingLabelStyle: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+                color: hasError
+                    ? AppColors.danger
+                    : focused
+                        ? AppColors.primaryLight
+                        : AppColors.muted,
+              ),
+              prefixIcon: widget.icon == null
+                  ? null
+                  : Icon(
+                      widget.icon,
+                      size: 20,
+                      color: focused ? AppColors.primaryLight : AppColors.muted,
+                    ),
+              suffixIcon: widget.suffix,
+              suffixIconColor: AppColors.muted,
+              filled: true,
+              fillColor: widget.enabled ? AppColors.panel : AppColors.panel2,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 20,
+              ),
+              border: outline(AppColors.borderLight, 1),
+              enabledBorder: outline(accent, focused || hasError ? 1.6 : 1),
+              focusedBorder: outline(
+                hasError ? AppColors.danger : AppColors.primary,
+                1.6,
+              ),
+              disabledBorder: outline(AppColors.border, 1),
+              errorBorder: outline(AppColors.danger, 1.4),
+              focusedErrorBorder: outline(AppColors.danger, 1.6),
+            ),
+          ),
+        ),
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline,
+                    size: 13, color: AppColors.danger),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    widget.errorText!,
+                    style: const TextStyle(
+                        color: AppColors.danger, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

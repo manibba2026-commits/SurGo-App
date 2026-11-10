@@ -1,6 +1,6 @@
 import { d, dt, label } from '@/lib/format';
 import type { Row } from '@/lib/query';
-import { allDocsApproved, documentFileState, isReviewable, type FileState } from '@/lib/verification';
+import { approvalBlockReason, documentFileState, isReviewable, type FileState } from '@/lib/verification';
 import { reviewApplication, reviewDocument } from '@/app/actions';
 import { ActionForm } from '@/components/ActionForm';
 import { Badge, Input, Panel } from '@/components/ui';
@@ -92,6 +92,14 @@ export function ApplicationCard({
   contact?: string | null;
 }) {
   const reviewable = isReviewable(app.status);
+  const documents = app.documents as Row[];
+  // The database refuses approval until every document is approved; the panel
+  // shows the same rule instead of offering a button that would only error.
+  const approvalBlocked = reviewable ? approvalBlockReason(documents) : null;
+  const approvedCount = documents.filter((x) => x.status === 'approved').length;
+  const pendingCount = documents.filter((x) => x.status === 'pending').length;
+  const rejectedCount = documents.filter((x) => x.status === 'rejected').length;
+  const expiredCount = documents.filter((x) => x.status === 'expired').length;
   return (
     <Panel title={title} aside={<Badge status={app.status} />}>
       <dl className="grid gap-x-6 gap-y-1 text-xs text-ink-500 sm:grid-cols-2">
@@ -121,27 +129,36 @@ export function ApplicationCard({
         </p>
       )}
       <div className="mt-3">
-        {app.documents.length === 0 ? (
+        {documents.length === 0 ? (
           <p className="text-sm text-ink-500">No documents attached.</p>
         ) : (
-          <ul className="space-y-2">
-            {app.documents.map((doc: Row) => (
-              <DocumentRow key={doc.id} doc={doc} kind="verification" file={files.get(doc.storage_path)} />
-            ))}
-          </ul>
+          <>
+            <p className="mb-2 text-xs text-ink-500">
+              Documents: {approvedCount} approved
+              {pendingCount ? ` · ${pendingCount} awaiting review` : ''}
+              {rejectedCount ? ` · ${rejectedCount} rejected` : ''}
+              {expiredCount ? ` · ${expiredCount} expired` : ''}
+            </p>
+            <ul className="space-y-2">
+              {documents.map((doc: Row) => (
+                <DocumentRow key={doc.id} doc={doc} kind="verification" file={files.get(doc.storage_path)} />
+              ))}
+            </ul>
+          </>
         )}
       </div>
+      {approvalBlocked && (
+        <p className="mt-3 rounded-md border border-line bg-paper px-3 py-2 text-xs text-coral" role="status">
+          {approvalBlocked} Approve or reject each file above; approval becomes available when all of them are approved.
+        </p>
+      )}
       {reviewable && (
         <div className="mt-4 flex flex-wrap items-start gap-6 border-t border-line pt-3">
           <ActionForm
             action={reviewApplication}
             hidden={{ id: app.id, decision: 'approved' }}
             label="Approve application"
-            confirm={
-              allDocsApproved(app.documents)
-                ? undefined
-                : 'Not every document is approved yet. Approve the application anyway?'
-            }
+            disabledReason={approvalBlocked}
           />
           <ActionForm
             action={reviewApplication}

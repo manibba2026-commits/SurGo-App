@@ -616,6 +616,14 @@ void main() {
         RepositoryFailureKind.permissionDenied,
       );
       expect(
+        mapBackendError(const PostgrestException(
+          message: 'invalid input syntax for type date: "2027-02-31"',
+          code: '22007',
+        )).kind,
+        RepositoryFailureKind.invalidData,
+        reason: 'a malformed date is user-fixable validation, not an outage',
+      );
+      expect(
         mapBackendError(TimeoutException('slow')).kind,
         RepositoryFailureKind.offline,
       );
@@ -702,6 +710,77 @@ void main() {
       expect(identity.capabilities, {CapabilityType.passenger});
       expect(identity.fullName, isNull);
       expect(identity.email, 'fallback@example.com');
+      expect(identity.needsOnboarding, isFalse);
+    });
+
+    test('a successful read with no profile waits for onboarding', () async {
+      final auth = buildAuth(FakeProfileRepository());
+
+      final identity = await auth.loadIdentity(
+        const AuthUser(id: 'u3', providers: {'phone'}),
+      );
+
+      expect(identity.profileExists, isFalse);
+      expect(identity.needsOnboarding, isTrue);
+      // No silent passenger grant: the trigger, not the client, owns the role.
+      expect(identity.capabilities, isEmpty);
+    });
+
+    test('a new Google account without a phone must finish onboarding',
+        () async {
+      final auth = buildAuth(
+        FakeProfileRepository(
+          profile: const ProfileRecord(
+            id: 'g1',
+            fullName: 'Google User',
+            email: 'google@example.com',
+          ),
+          roles: const ['passenger'],
+        ),
+      );
+
+      final identity = await auth.loadIdentity(
+        const AuthUser(
+          id: 'g1',
+          email: 'google@example.com',
+          providers: {'google'},
+        ),
+      );
+
+      expect(identity.capabilities, {CapabilityType.passenger});
+      expect(identity.needsOnboarding, isTrue);
+    });
+
+    test('phone and marked-Google identities are registered accounts',
+        () async {
+      final repo = FakeProfileRepository(
+        profile: const ProfileRecord(
+          id: 'u4',
+          fullName: 'Registered User',
+          email: 'registered@example.com',
+        ),
+        roles: const ['passenger'],
+      );
+      final auth = buildAuth(repo);
+
+      final byPhone = await auth.loadIdentity(
+        const AuthUser(
+          id: 'u4',
+          phone: '+639170000001',
+          providers: {'phone'},
+        ),
+      );
+      expect(byPhone.needsOnboarding, isFalse);
+
+      final markedGoogle = await auth.loadIdentity(
+        const AuthUser(
+          id: 'u4',
+          email: 'registered@example.com',
+          providers: {'google'},
+          metadata: {'surgo_onboarded': true},
+        ),
+      );
+      expect(markedGoogle.needsOnboarding, isFalse);
     });
   });
 }

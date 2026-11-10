@@ -45,7 +45,14 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void initState() {
     super.initState();
+    for (final node in focusNodes) {
+      node.addListener(_onFocusChanged);
+    }
     _startTimer();
+  }
+
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   void _startTimer() {
@@ -113,7 +120,9 @@ class _OtpScreenState extends State<OtpScreen> {
     if (value.isEmpty && index > 0) {
       focusNodes[index - 1].requestFocus();
     }
-    setState(() {});
+    setState(() {
+      if (_error != null) _error = null;
+    });
     if (_isComplete) {
       // Let the last digit paint before verifying.
       Future.delayed(const Duration(milliseconds: 150), _verify);
@@ -150,7 +159,15 @@ class _OtpScreenState extends State<OtpScreen> {
       Navigator.pop(context, true);
       return;
     }
-    Navigator.pushNamedAndRemoveUntil(context, state.homeRoute, (r) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      state.requiresOnboarding
+          ? '/onboarding'
+          : state.requiresPin
+              ? '/pin'
+              : state.homeRoute,
+      (r) => false,
+    );
   }
 
   void _clearCode() {
@@ -192,157 +209,167 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   Widget build(BuildContext context) {
     final phoneLabel = _phone ?? 'your phone';
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 32, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return SbAuthScaffold(
+      leading: IconButton(
+        onPressed: _submitting ? null : () => Navigator.maybePop(context),
+        icon: const Icon(Icons.arrow_back, color: AppColors.text),
+        tooltip: 'Back',
+      ),
+      children: [
+        const SizedBox(height: 8),
+        const Text(
+          'Verify your number',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        Text.rich(
+          TextSpan(
+            style: const TextStyle(color: AppColors.muted, fontSize: 13.5),
             children: [
-              IconButton(
-                onPressed: _submitting ? null : () => Navigator.maybePop(context),
-                icon: const Icon(Icons.arrow_back, color: AppColors.text),
-                tooltip: 'Back',
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerLeft,
-              ),
-              const SizedBox(height: 18),
-              const Text(
-                'Verify your number',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 6),
-              Text.rich(
-                TextSpan(
-                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
-                  children: [
-                    const TextSpan(text: 'Enter the 6-digit code sent to '),
-                    TextSpan(
-                      text: phoneLabel,
-                      style: const TextStyle(
-                        color: AppColors.text,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+              const TextSpan(text: 'Enter the 6-digit code sent to '),
+              TextSpan(
+                text: phoneLabel,
+                style: const TextStyle(
+                  color: AppColors.text,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 26),
-              Row(
-                children: List.generate(_length, (index) {
-                  final filled = controllers[index].text.isNotEmpty;
-                  return Expanded(
-                    child: Padding(
-                      padding:
-                          EdgeInsets.only(right: index == _length - 1 ? 0 : 8),
-                      child: AspectRatio(
-                        aspectRatio: 0.82,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.panel,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: filled
-                                  ? AppColors.primary
-                                  : AppColors.borderLight,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: TextField(
-                            controller: controllers[index],
-                            focusNode: focusNodes[index],
-                            enabled: !_submitting,
-                            textAlign: TextAlign.center,
-                            keyboardType: TextInputType.number,
-                            autofillHints: index == 0
-                                ? const [AutofillHints.oneTimeCode]
-                                : null,
-                            maxLength: 1,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                            decoration: const InputDecoration(
-                              counterText: '',
-                              border: InputBorder.none,
-                            ),
-                            onChanged: (value) => _onChanged(index, value),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  const Text(
-                    "Didn't get a code? ",
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
-                  ),
-                  if (_resending)
-                    const Text(
-                      'Sending…',
-                      style: TextStyle(
-                        color: AppColors.primaryLight,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    )
-                  else if (secondsLeft > 0)
-                    Text(
-                      'Resend in 0:${secondsLeft.toString().padLeft(2, '0')}',
-                      style: const TextStyle(
-                        color: AppColors.muted2,
-                        fontSize: 12,
-                      ),
-                    )
-                  else
-                    InkWell(
-                      onTap: _submitting ? null : _resend,
-                      borderRadius: BorderRadius.circular(4),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          'Resend code',
-                          style: TextStyle(
-                            color: AppColors.primaryLight,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              if (state.isMockAuth) ...[
-                const SizedBox(height: 10),
-                Text(
-                  'Preview code: ${MockAuthRepository.defaultOtpCode}',
-                  style: const TextStyle(color: AppColors.muted2, fontSize: 11),
-                ),
-              ],
-              const SizedBox(height: 24),
-              SbAuthError(message: _error),
-              const SizedBox(height: 6),
-              SbPrimaryButton(
-                label: _submitting ? 'Verifying…' : 'Verify code',
-                onPressed: _isComplete && !_submitting ? _verify : null,
-              ),
-              if (_mode == _OtpMode.linkPhone) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  'We will add this number to the account you are already signed into.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.muted, fontSize: 11.5),
-                ),
-              ],
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 28),
+        Row(
+          children: List.generate(_length, (index) {
+            final filled = controllers[index].text.isNotEmpty;
+            final focused = focusNodes[index].hasFocus;
+            return Expanded(
+              child: Padding(
+                padding:
+                    EdgeInsets.only(right: index == _length - 1 ? 0 : 8),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: AppColors.panel,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _error != null
+                          ? AppColors.danger
+                          : focused
+                              ? AppColors.primary
+                              : filled
+                                  ? AppColors.primary.withValues(alpha: 0.55)
+                                  : AppColors.borderLight,
+                      width: focused ? 1.8 : 1.2,
+                    ),
+                    boxShadow: focused
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.24),
+                              blurRadius: 16,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: TextField(
+                    controller: controllers[index],
+                    focusNode: focusNodes[index],
+                    enabled: !_submitting,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    autofillHints: index == 0
+                        ? const [AutofillHints.oneTimeCode]
+                        : null,
+                    maxLength: 1,
+                    cursorColor: AppColors.primaryLight,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      filled: false,
+                    ),
+                    onChanged: (value) => _onChanged(index, value),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            const Text(
+              "Didn't get a code? ",
+              style: TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+            if (_resending)
+              const Text(
+                'Sending…',
+                style: TextStyle(
+                  color: AppColors.primaryLight,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              )
+            else if (secondsLeft > 0)
+              Text(
+                'Resend in 0:${secondsLeft.toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                  color: AppColors.muted2,
+                  fontSize: 12,
+                ),
+              )
+            else
+              InkWell(
+                onTap: _submitting ? null : _resend,
+                borderRadius: BorderRadius.circular(4),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    'Resend code',
+                    style: TextStyle(
+                      color: AppColors.primaryLight,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (state.isMockAuth) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Preview code: ${MockAuthRepository.defaultOtpCode}',
+            style: const TextStyle(color: AppColors.muted2, fontSize: 11),
+          ),
+        ],
+        const SizedBox(height: 24),
+        SbAuthError(message: _error),
+        const SizedBox(height: 6),
+        SbPrimaryButton(
+          label: _submitting ? 'Verifying…' : 'Verify code',
+          onPressed: _isComplete && !_submitting ? _verify : null,
+        ),
+        if (_mode == _OtpMode.linkPhone) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'We will add this number to the account you are already signed into.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.muted, fontSize: 11.5),
+          ),
+        ],
+      ],
     );
   }
 }

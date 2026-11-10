@@ -160,46 +160,85 @@ class SharedPreferencesDemoSessionStore implements DemoSessionStore {
   }
 }
 
-/// Device-level demo PIN. It is salted and SHA-256 hashed on the device; until
-/// somebody changes it, [DemoAuthConfig.defaultPin] is the accepted value.
+/// Device-level demo PIN, salted and SHA-256 hashed on the device.
+///
+/// Every PIN is stored under the account it belongs to, so two demo identities
+/// on one device never share a lock. A PIN set before this scoping existed was
+/// stored under [legacySaltKey]/[legacyHashKey]; the first account that asks
+/// about its PIN adopts that record once, which keeps an existing PIN working
+/// across the upgrade without handing it to a different account afterwards.
 class DemoPinStore {
   DemoPinStore({Future<SharedPreferences> Function()? preferences})
       : _preferences = preferences ?? SharedPreferences.getInstance;
 
-  static const String saltKey = 'surgo.demo.pin.salt';
-  static const String hashKey = 'surgo.demo.pin.hash';
+  static const String legacySaltKey = 'surgo.demo.pin.salt';
+  static const String legacyHashKey = 'surgo.demo.pin.hash';
 
   final Future<SharedPreferences> Function() _preferences;
 
-  Future<bool> get hasCustomPin async {
+  static String saltKeyFor(String accountId) =>
+      'surgo.demo.pin.$accountId.salt';
+  static String hashKeyFor(String accountId) =>
+      'surgo.demo.pin.$accountId.hash';
+
+  /// Whether [accountId] has a PIN on this device. A legacy device-wide PIN is
+  /// adopted for the first account that asks, then removed from general use.
+  Future<bool> hasPin(String accountId) async {
     final preferences = await _preferences();
-    return preferences.getString(saltKey) != null &&
-        preferences.getString(hashKey) != null;
+    if (_storedHash(preferences, accountId) != null) return true;
+    return _adoptLegacy(preferences, accountId);
   }
 
-  Future<bool> verify(String pin) async {
+  Future<bool> verify(String accountId, String pin) async {
     final preferences = await _preferences();
-    final salt = preferences.getString(saltKey);
-    final stored = preferences.getString(hashKey);
-    if (salt == null || stored == null) {
-      return pin == DemoAuthConfig.defaultPin;
-    }
+    await hasPin(accountId);
+    final salt = preferences.getString(saltKeyFor(accountId));
+    final stored = preferences.getString(hashKeyFor(accountId));
+    if (salt == null || stored == null) return false;
     return _digest(pin, salt) == stored;
   }
 
-  Future<void> setPin(String pin) async {
+  Future<void> setPin(String accountId, String pin) async {
     final preferences = await _preferences();
     final salt = _newSalt();
-    await preferences.setString(saltKey, salt);
-    await preferences.setString(hashKey, _digest(pin, salt));
+    await preferences.setString(saltKeyFor(accountId), salt);
+    await preferences.setString(hashKeyFor(accountId), _digest(pin, salt));
+    // Once this account owns a real PIN, the old device-wide record must not
+    // later be adopted by somebody else.
+    await _clearLegacy(preferences);
   }
 
-  /// Returns the device to the default demo PIN so a forgotten PIN can be
-  /// replaced by signing in again.
-  Future<void> reset() async {
+  /// Forgets [accountId]'s PIN. The next sign-in asks for a new one, and no
+  /// other account can inherit the forgotten value.
+  Future<void> reset(String accountId) async {
     final preferences = await _preferences();
-    await preferences.remove(saltKey);
-    await preferences.remove(hashKey);
+    await preferences.remove(saltKeyFor(accountId));
+    await preferences.remove(hashKeyFor(accountId));
+    await _clearLegacy(preferences);
+  }
+
+  String? _storedHash(SharedPreferences preferences, String accountId) {
+    final salt = preferences.getString(saltKeyFor(accountId));
+    final hash = preferences.getString(hashKeyFor(accountId));
+    return salt == null || hash == null ? null : hash;
+  }
+
+  Future<bool> _adoptLegacy(
+    SharedPreferences preferences,
+    String accountId,
+  ) async {
+    final salt = preferences.getString(legacySaltKey);
+    final hash = preferences.getString(legacyHashKey);
+    if (salt == null || hash == null) return false;
+    await preferences.setString(saltKeyFor(accountId), salt);
+    await preferences.setString(hashKeyFor(accountId), hash);
+    await _clearLegacy(preferences);
+    return true;
+  }
+
+  Future<void> _clearLegacy(SharedPreferences preferences) async {
+    await preferences.remove(legacySaltKey);
+    await preferences.remove(legacyHashKey);
   }
 
   static String _newSalt() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
 import '../auth/demo_auth.dart';
+import '../auth/phone_input.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -213,6 +214,7 @@ class AccountSettingsScreen extends StatelessWidget {
             content: TextField(
               controller: controller,
               keyboardType: TextInputType.phone,
+              inputFormatters: [phPhoneInputFormatter],
               autofocus: true,
               decoration: InputDecoration(
                 hintText: '+63 9XX XXX XXXX',
@@ -228,8 +230,8 @@ class AccountSettingsScreen extends StatelessWidget {
                 onPressed: () {
                   final normalized = normalizePhoneNumber(controller.text);
                   if (normalized == null) {
-                    setDialogState(() =>
-                        error = 'Enter a valid number with the country code.');
+                    setDialogState(() => error =
+                        'Enter a PH mobile number, for example 0917 123 4567.');
                     return;
                   }
                   Navigator.pop(dialogContext, normalized);

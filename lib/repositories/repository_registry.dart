@@ -47,6 +47,11 @@ class RepositoryRegistry {
   }
 
   factory RepositoryRegistry.supabase(SurgoBackend backend) {
+    // Only a backend that can write is allowed to submit; a read-only test
+    // double keeps the read surface and refuses submissions.
+    final writer = backend is SurgoWriteBackend
+        ? backend as SurgoWriteBackend
+        : null;
     return RepositoryRegistry(
       isSupabaseBacked: true,
       profiles: SupabaseProfileRepository(backend),
@@ -57,7 +62,10 @@ class RepositoryRegistry {
       pasuyo: SupabasePasuyoRepository(backend),
       notifications: SupabaseNotificationRepository(backend),
       wallet: SupabaseWalletRepository(backend),
-      verifications: SupabaseVerificationRepository(backend),
+      verifications: SupabaseVerificationRepository(
+        backend,
+        writer: writer,
+      ),
     );
   }
 

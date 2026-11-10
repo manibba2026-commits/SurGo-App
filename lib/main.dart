@@ -21,6 +21,7 @@ import 'screens/active_rental_screen.dart';
 import 'screens/pasuyo_screen.dart';
 import 'screens/pasuyo_post_screen.dart';
 import 'screens/pin_lock_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'auth/demo_auth.dart';
 import 'auth/mock_auth_repository.dart';
 import 'auth/supabase_auth_repository.dart';
@@ -96,6 +97,7 @@ class SurGoApp extends StatelessWidget {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/pin': (context) => const PinLockScreen(),
+        '/onboarding': (context) => const OnboardingScreen(),
         '/register': (context) => const RegisterScreen(),
         '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/otp': (context) => const OtpScreen(),

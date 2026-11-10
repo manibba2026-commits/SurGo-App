@@ -37,7 +37,7 @@ class RateTripScreen extends StatelessWidget {
 
               final isFavorite = state.isFavoriteRiderName(driver.name);
               return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -46,9 +46,10 @@ class RateTripScreen extends StatelessWidget {
                       children: [
                         SbAvatar(initials: driver.initials, size: 60),
                         Positioned(
-                          right: -6,
-                          bottom: -6,
+                          right: -13,
+                          bottom: -13,
                           child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
                             onTap: () => state.toggleFavoriteRiderByDriver(
                               name: driver.name,
                               initials: driver.initials,
@@ -57,19 +58,30 @@ class RateTripScreen extends StatelessWidget {
                               vehicleType: driver.vehicleType,
                               plate: driver.plate,
                             ),
-                            child: Container(
-                              width: 26,
-                              height: 26,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: AppColors.panel,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: AppColors.border, width: 1.5),
-                              ),
-                              child: Icon(
-                                isFavorite ? Icons.favorite : Icons.favorite_border,
-                                size: 14,
-                                color: isFavorite ? AppColors.primary : AppColors.muted,
+                            child: SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: Center(
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.panel,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: AppColors.border, width: 1.5),
+                                  ),
+                                  child: Icon(
+                                    isFavorite
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    size: 14,
+                                    color: isFavorite
+                                        ? AppColors.primary
+                                        : AppColors.muted,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -105,7 +117,7 @@ class RateTripScreen extends StatelessWidget {
                       children: List.generate(5, (i) {
                         final filled = i < state.tripRating;
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                           child: GestureDetector(
                             onTap: () => state.setTripRating(i + 1),
                             child: Icon(

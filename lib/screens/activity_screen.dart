@@ -117,9 +117,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
               const SizedBox(width: 9),
               Expanded(
                 child: Text(r.route,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 13)),
               ),
+              const SizedBox(width: 8),
               SbTag(r.status, secondary: !cancelled),
             ],
           ),
@@ -134,10 +137,17 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: AppColors.primaryLight)),
-              if (!cancelled)
-                Text('${r.driverName} · ★ ${r.rating}',
-                    style:
-                        const TextStyle(color: AppColors.muted, fontSize: 11)),
+              if (!cancelled) ...[
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text('${r.driverName} · ★ ${r.rating}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(
+                          color: AppColors.muted, fontSize: 11)),
+                ),
+              ],
             ],
           ),
         ],
@@ -264,7 +274,7 @@ class _LiveRideCard extends StatelessWidget {
       tone: SbTone.ride,
       onTap: () => Navigator.pushNamed(
         context,
-        request.status.isOpen ? '/matching' : '/livetrip',
+        request.status.isCommitted ? '/livetrip' : '/matching',
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

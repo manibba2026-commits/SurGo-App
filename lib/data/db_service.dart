@@ -109,6 +109,132 @@ class DbService {
   /// `payouts.minWithdrawal` rule.
   static const int defaultPayoutMinWithdrawal = 30000;
 
+  // ---- hosted-session isolation ----
+
+  /// The Supabase account whose empty, session-owned slices are installed, or
+  /// null while the seed is visible. The seed's history and request models do
+  /// not carry an owner id yet, so the only safe value for an authenticated
+  /// account is its own (empty) slice - never another person's seed rows.
+  String? _isolatedAccountId;
+  bool _seedSlicesSaved = false;
+
+  List<RideRequestItem>? _seedRideRequests;
+  List<RideHistoryItem>? _seedRideHistory;
+  List<RentalHistoryItem>? _seedRentalHistory;
+  List<RiderTripItem>? _seedRiderTrips;
+  List<OwnedVehicle>? _seedOwnerVehicles;
+  List<VehicleDocumentItem>? _seedVehicleDocuments;
+  List<OwnerBookingRequest>? _seedOwnerBookingRequests;
+  List<PasuyoTask>? _seedPasuyoTasks;
+  List<PaymentMethodItem>? _seedPaymentMethods;
+  List<SavedPlace>? _seedSavedPlaces;
+  List<FavoriteRider>? _seedFavoriteRiders;
+  List<FavoriteVehicle>? _seedFavoriteVehicles;
+  List<EmergencyContactItem>? _seedEmergencyContacts;
+  List<DailyEarning>? _seedDailyEarnings;
+  List<PayoutItem>? _seedPayoutHistory;
+  List<MapPassenger>? _seedMapPassengers;
+  List<MapRideRequest>? _seedMapRideRequests;
+  int? _seedEarningsToday;
+  int? _seedEarningsWeek;
+  int? _seedEarningsMonth;
+  int? _seedOwnerEarningsToday;
+  int? _seedOwnerEarningsWeek;
+  int? _seedOwnerEarningsMonth;
+
+  bool get hasIsolatedSession => _isolatedAccountId != null;
+
+  /// Replaces every shared business collection with one owned by the hosted
+  /// account. Repositories (Supabase-backed in a `SURGO_DATA_SOURCE=supabase`
+  /// build) remain the source of truth; this keeps screens that still read
+  /// [AppState] from falling back to demo records.
+  void beginIsolatedSession(String accountId) {
+    if (_isolatedAccountId == accountId) return;
+    if (!_seedSlicesSaved) {
+      _seedRideRequests = rideRequests;
+      _seedRideHistory = rideHistory;
+      _seedRentalHistory = rentalHistory;
+      _seedRiderTrips = riderTrips;
+      _seedOwnerVehicles = ownerVehicles;
+      _seedVehicleDocuments = vehicleDocuments;
+      _seedOwnerBookingRequests = ownerBookingRequests;
+      _seedPasuyoTasks = pasuyoTasks;
+      _seedPaymentMethods = paymentMethods;
+      _seedSavedPlaces = savedPlaces;
+      _seedFavoriteRiders = favoriteRiders;
+      _seedFavoriteVehicles = favoriteVehicles;
+      _seedEmergencyContacts = emergencyContacts;
+      _seedDailyEarnings = dailyEarnings;
+      _seedPayoutHistory = payoutHistory;
+      _seedMapPassengers = mapPassengers;
+      _seedMapRideRequests = mapRideRequests;
+      _seedEarningsToday = earningsToday;
+      _seedEarningsWeek = earningsWeek;
+      _seedEarningsMonth = earningsMonth;
+      _seedOwnerEarningsToday = ownerEarningsToday;
+      _seedOwnerEarningsWeek = ownerEarningsWeek;
+      _seedOwnerEarningsMonth = ownerEarningsMonth;
+      _seedSlicesSaved = true;
+    }
+
+    _isolatedAccountId = accountId;
+    rideRequests = <RideRequestItem>[];
+    rideHistory = <RideHistoryItem>[];
+    rentalHistory = <RentalHistoryItem>[];
+    riderTrips = <RiderTripItem>[];
+    ownerVehicles = <OwnedVehicle>[];
+    vehicleDocuments = <VehicleDocumentItem>[];
+    ownerBookingRequests = <OwnerBookingRequest>[];
+    pasuyoTasks = <PasuyoTask>[];
+    paymentMethods = <PaymentMethodItem>[];
+    savedPlaces = <SavedPlace>[];
+    favoriteRiders = <FavoriteRider>[];
+    favoriteVehicles = <FavoriteVehicle>[];
+    emergencyContacts = <EmergencyContactItem>[];
+    dailyEarnings = <DailyEarning>[];
+    payoutHistory = <PayoutItem>[];
+    mapPassengers = <MapPassenger>[];
+    mapRideRequests = <MapRideRequest>[];
+    earningsToday = 0;
+    earningsWeek = 0;
+    earningsMonth = 0;
+    ownerEarningsToday = 0;
+    ownerEarningsWeek = 0;
+    ownerEarningsMonth = 0;
+  }
+
+  /// Puts the seed collections back when the hosted session ends.
+  void endIsolatedSession() {
+    if (_isolatedAccountId == null) return;
+    _isolatedAccountId = null;
+    if (!_seedSlicesSaved) return;
+
+    rideRequests = _seedRideRequests!;
+    rideHistory = _seedRideHistory!;
+    rentalHistory = _seedRentalHistory!;
+    riderTrips = _seedRiderTrips!;
+    ownerVehicles = _seedOwnerVehicles!;
+    vehicleDocuments = _seedVehicleDocuments!;
+    ownerBookingRequests = _seedOwnerBookingRequests!;
+    pasuyoTasks = _seedPasuyoTasks!;
+    paymentMethods = _seedPaymentMethods!;
+    savedPlaces = _seedSavedPlaces!;
+    favoriteRiders = _seedFavoriteRiders!;
+    favoriteVehicles = _seedFavoriteVehicles!;
+    emergencyContacts = _seedEmergencyContacts!;
+    dailyEarnings = _seedDailyEarnings!;
+    payoutHistory = _seedPayoutHistory!;
+    mapPassengers = _seedMapPassengers!;
+    mapRideRequests = _seedMapRideRequests!;
+    earningsToday = _seedEarningsToday!;
+    earningsWeek = _seedEarningsWeek!;
+    earningsMonth = _seedEarningsMonth!;
+    ownerEarningsToday = _seedOwnerEarningsToday!;
+    ownerEarningsWeek = _seedOwnerEarningsWeek!;
+    ownerEarningsMonth = _seedOwnerEarningsMonth!;
+    _seedSlicesSaved = false;
+  }
+
   /// Smallest payout `config.json` allows, in centavos. Enforced by
   /// [AppState.requestPayout] and [AppState.requestOwnerPayout] rather than
   /// only by the screens, so a payout cannot slip below the rule from another
@@ -393,15 +519,21 @@ class DbService {
   }
 
   /// The demo account belonging to [authUserId], or one whose phone or email
-  /// matches. Used to bridge a Supabase session onto the seeded business data.
+  /// matches. Used to bridge a demo session onto the seeded business data.
+  ///
+  /// A hosted Supabase session must pass [allowContactMatch] = false: matching
+  /// a Google user to a seeded row by phone or email is how one person's
+  /// dashboard could open under another person's identity.
   Account? findAccountForIdentity({
     required String authUserId,
     String? phone,
     String? email,
+    bool allowContactMatch = true,
   }) {
     for (final account in accounts) {
       if (account.authUserId == authUserId) return account;
     }
+    if (!allowContactMatch) return null;
 
     final phoneDigits = phone == null ? '' : _phoneDigits(phone);
     if (phoneDigits.isNotEmpty) {

@@ -1,8 +1,13 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../data/db_models.dart';
+import '../data/verification_policy.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_failure.dart';
+import '../repositories/verification_repository.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -11,8 +16,11 @@ import '../widgets/surfaces.dart';
 import '../widgets/surgo_notice.dart';
 
 /// The account-level verification centre: which capabilities are approved,
-/// which still need documents, and the simulated review that auto-approves
-/// once the documents land.
+/// which still need documents, and the state of the review.
+///
+/// A Supabase account submits to the real pipeline and waits for an admin
+/// decision. The offline demo keeps its own simulated review, which is the only
+/// place an application is approved without a person deciding.
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key});
 
@@ -23,17 +31,31 @@ class VerificationScreen extends StatefulWidget {
 class _VerificationScreenState extends State<VerificationScreen> {
   Timer? _ticker;
 
+  /// Files picked in this screen but not submitted yet, per capability and
+  /// document. Held here rather than in the store because an unsubmitted
+  /// document must not exist anywhere the backend could see it.
+  final Map<CapabilityType, Map<String, VerificationUpload>> _picked = {};
+  bool _busy = false;
+
+  AppState get state => AppState.instance;
+
   @override
   void initState() {
     super.initState();
-    // Drive the simulated review while this screen is open, so a submitted
-    // application visibly moves Submitted -> Under review -> Approved without
-    // the user doing anything else. Cancelled in dispose, like the existing
-    // screen-owned timers in the app.
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      AppState.instance.processDueVerifications();
-      if (mounted) setState(() {});
-    });
+    if (state.usesHostedIdentity) {
+      // The real queue is read once on open; "Check again" re-reads it.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) state.ensureHostedVerification();
+      });
+    } else {
+      // Drive the simulated review while this screen is open, so a submitted
+      // demo application visibly moves Submitted -> Under review -> Approved
+      // without the user doing anything else.
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        state.processDueVerifications();
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -44,7 +66,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = AppState.instance;
     return Scaffold(
       appBar: AppBar(title: const Text('Verification')),
       body: ListenableBuilder(
@@ -57,24 +78,54 @@ class _VerificationScreenState extends State<VerificationScreen> {
                   style: TextStyle(color: AppColors.muted)),
             );
           }
-          return ListView(
+          final hosted = state.usesHostedIdentity;
+          final list = ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
+            physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              _introCard(account, state),
+              _introCard(account),
               const SizedBox(height: 16),
+              if (hosted) ...[
+                _hostedNotice(),
+                const SizedBox(height: 12),
+              ],
               for (final capability in CapabilityType.values) ...[
-                _capabilityCard(context, state, capability),
+                _capabilityCard(context, account, capability, hosted),
                 const SizedBox(height: 10),
               ],
-              _simulatedNotice(),
+              if (!hosted) _simulatedNotice(),
             ],
           );
+          // Pull-to-refresh is what brings an admin decision onto this screen.
+          return hosted
+              ? RefreshIndicator(
+                  onRefresh: () => _refresh(showNotice: true),
+                  child: list,
+                )
+              : list;
         },
       ),
     );
   }
 
-  Widget _introCard(Account account, AppState state) {
+  Future<void> _refresh({bool showNotice = false}) async {
+    await state.refreshHostedVerification();
+    if (!mounted) return;
+    if (showNotice) {
+      SurgoNotice.show(
+        context,
+        state.hostedVerificationLoaded
+            ? 'Verification status refreshed.'
+            : 'Could not refresh verification. Check your connection.',
+        tone: state.hostedVerificationLoaded
+            ? SbNoticeTone.success
+            : SbNoticeTone.warning,
+      );
+    }
+    setState(() {});
+  }
+
+  Widget _introCard(Account account) {
     return SbTintedCard(
       tone: SbTone.info,
       child: Column(
@@ -90,7 +141,12 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     style:
                         TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
               ),
-              SbTag(state.verificationSummaryLabel, secondary: true),
+              SbTag(
+                state.usesHostedIdentity
+                    ? _hostedSummaryLabel()
+                    : state.verificationSummaryLabel,
+                secondary: true,
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -106,9 +162,9 @@ class _VerificationScreenState extends State<VerificationScreen> {
     );
   }
 
-  Widget _capabilityCard(
-      BuildContext context, AppState state, CapabilityType capability) {
-    final account = state.currentAccount!;
+  Widget _capabilityCard(BuildContext context, Account account,
+      CapabilityType capability, bool hosted) {
+    if (hosted) return _hostedCapabilityCard(account, capability);
     // verificationFor also advances due simulated reviews.
     final app = state.verificationFor(capability);
     final status = app?.status ??
@@ -144,6 +200,326 @@ class _VerificationScreenState extends State<VerificationScreen> {
       ),
     );
   }
+
+  // ---- hosted (Supabase-backed) verification ----
+
+  String _hostedSummaryLabel() {
+    if (!state.hostedVerificationLoaded) return 'Loading';
+    final apps = state.hostedVerificationApplications;
+    if (apps.any((a) => a.status == 'needs_resubmission')) return 'Action needed';
+    if (apps.any((a) => a.status == 'submitted' || a.status == 'under_review')) {
+      return 'In review';
+    }
+    final pending = [CapabilityType.rider, CapabilityType.vehicleOwner]
+        .where((c) => !state.authorizedFor(c))
+        .length;
+    return pending == 0 ? 'Fully verified' : '$pending to go';
+  }
+
+  /// The newest real application for [capability], or null when this account
+  /// has never submitted one. History rows are filtered out: a rejected
+  /// application from last month must not hide a newer submission.
+  VerificationApplicationRecord? _hostedApplicationFor(
+      CapabilityType capability) {
+    final token = verificationCapabilityToken(capability);
+    for (final application in state.hostedVerificationApplications) {
+      if (application.capabilityType != token) continue;
+      if (application.status == 'approved' ||
+          application.status == 'rejected') {
+        continue;
+      }
+      return application;
+    }
+    return null;
+  }
+
+  Widget _hostedCapabilityCard(Account account, CapabilityType capability) {
+    final approved = account.authorizedFor(capability);
+    final application = _hostedApplicationFor(capability);
+    final status = approved ? 'approved' : application?.status;
+    return SbTintedCard(
+      tone: _hostedTone(status),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SbToneIcon(
+                tone: _hostedTone(status),
+                icon: _capabilityIcon(capability),
+                size: 34,
+                iconSize: 17,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(capability.label,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 13)),
+              ),
+              SbTag(_hostedStatusLabel(status), secondary: status != null),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ..._hostedCapabilityBody(capability, approved, application, status),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _hostedCapabilityBody(
+    CapabilityType capability,
+    bool approved,
+    VerificationApplicationRecord? application,
+    String? status,
+  ) {
+    if (capability == CapabilityType.passenger) {
+      return const [
+        Text('Always available. No documents needed.',
+            style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+      ];
+    }
+
+    if (approved) {
+      return const [
+        Text('Approved — this capability is unlocked for your account.',
+            style: TextStyle(color: AppColors.success, fontSize: 11.5)),
+      ];
+    }
+
+    if (status == 'submitted' || status == 'under_review') {
+      return [
+        Text(
+          application?.submittedAt == null
+              ? 'Submitted. A SurGo reviewer will check your documents.'
+              : 'Submitted ${_dateLabel(application!.submittedAt!)}. '
+                  'A SurGo reviewer will check your documents.',
+          style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'You will see the decision here. Approving grants the role; a '
+          'rejection or resubmission request shows the reviewer\'s reason.',
+          style: TextStyle(
+              color: AppColors.muted2, fontSize: 10.5, height: 1.4),
+        ),
+        const SizedBox(height: 10),
+        SbOutlineButton(
+          label: 'Check again',
+          block: false,
+          onPressed: _busy ? null : () => _refresh(showNotice: true),
+        ),
+      ];
+    }
+
+    final rejected = status == 'needs_resubmission' || status == 'rejected';
+    final specs = VerificationPolicy.requirementsFor(capability);
+    final picked = _picked[capability] ?? const <String, VerificationUpload>{};
+    final complete = specs.every((spec) => picked[spec.id] != null);
+    return [
+      if (rejected) ...[
+        Text(
+          application?.rejectionReason ??
+              'A reviewer asked for different documents.',
+          style: const TextStyle(
+              color: AppColors.danger, fontSize: 11.5, height: 1.4),
+        ),
+        const SizedBox(height: 10),
+      ] else ...[
+        const Text(
+          'Choose every document below and submit. A SurGo admin reviews '
+          'them; nothing is approved automatically.',
+          style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
+        ),
+        const SizedBox(height: 10),
+      ],
+      for (var i = 0; i < specs.length; i++) ...[
+        _hostedDocumentRow(capability, specs[i], picked[specs[i].id]),
+        if (i != specs.length - 1)
+          const Divider(height: 16, color: AppColors.border),
+      ],
+      const SizedBox(height: 6),
+      Text(
+        '${specs.where((spec) => picked[spec.id] != null).length} of '
+        '${specs.length} chosen',
+        style: const TextStyle(
+            color: AppColors.muted2,
+            fontSize: 11,
+            fontWeight: FontWeight.w600),
+      ),
+      const SizedBox(height: 10),
+      SbPrimaryButton(
+        label: _busy
+            ? 'Submitting…'
+            : rejected
+                ? 'Resubmit for review'
+                : 'Submit for review',
+        icon: Icons.send_rounded,
+        onPressed: complete && !_busy
+            ? () => _submitHosted(capability, specs)
+            : null,
+      ),
+    ];
+  }
+
+  Widget _hostedDocumentRow(
+      CapabilityType capability, VerificationDocSpec spec, VerificationUpload? picked) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          picked != null
+              ? Icons.check_circle_rounded
+              : Icons.radio_button_unchecked,
+          size: 17,
+          color: picked != null ? AppColors.success : AppColors.muted2,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(spec.label,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 12)),
+              const SizedBox(height: 1),
+              Text(
+                picked?.fileName ?? spec.hint,
+                style: TextStyle(
+                    color: picked != null ? AppColors.success : AppColors.muted,
+                    fontSize: 10.5,
+                    height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: _busy ? null : () => _pickDocument(capability, spec),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primaryLight,
+            textStyle:
+                const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+          ),
+          child: Text(picked == null ? 'Choose' : 'Replace'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickDocument(
+      CapabilityType capability, VerificationDocSpec spec) async {
+    try {
+      final file = await FilePicker.pickFile(
+        dialogTitle: spec.label,
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+      if (file == null) return;
+      final size = await file.length();
+      if (size != null && size > 10 * 1024 * 1024) {
+        if (!mounted) return;
+        SurgoNotice.show(
+          context,
+          'Files must be 10 MB or smaller.',
+          tone: SbNoticeTone.warning,
+        );
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      final upload = VerificationUpload(
+        documentType: spec.id,
+        label: spec.label,
+        fileName: file.name,
+        bytes: bytes,
+      );
+      // Throws for an extension the bucket will not accept.
+      upload.contentType;
+      if (!mounted) return;
+      setState(() {
+        (_picked[capability] ??= {})[spec.id] = upload;
+      });
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      SurgoNotice.show(
+        context,
+        failure.message,
+        tone: SbNoticeTone.warning,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      SurgoNotice.show(
+        context,
+        'That file could not be read. Choose it again.',
+        tone: SbNoticeTone.warning,
+      );
+    }
+  }
+
+  Future<void> _submitHosted(
+      CapabilityType capability, List<VerificationDocSpec> specs) async {
+    final picked = _picked[capability] ?? const <String, VerificationUpload>{};
+    final uploads = [
+      for (final spec in specs)
+        if (picked[spec.id] != null) picked[spec.id]!,
+    ];
+    if (uploads.length != specs.length) return;
+
+    setState(() => _busy = true);
+    final result = await state.submitHostedVerification(
+      capability: capability,
+      documents: uploads,
+    );
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (result.ok) _picked.remove(capability);
+    });
+    SurgoNotice.show(
+      context,
+      result.ok
+          ? 'Submitted. A SurGo reviewer will check your documents.'
+          : result.error ?? 'Verification could not be submitted.',
+      tone: result.ok ? SbNoticeTone.success : SbNoticeTone.warning,
+    );
+  }
+
+  Widget _hostedNotice() {
+    return const SbStatusBanner(
+      tone: SbTone.info,
+      icon: Icons.verified_outlined,
+      title: 'Reviewed by SurGo staff',
+      message:
+          'Applications go to the admin dashboard. Your documents stay '
+          'private; only you and the reviewers can open them. Nothing is '
+          'approved automatically.',
+    );
+  }
+
+  static String _dateLabel(DateTime value) {
+    final local = value.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  static SbTone _hostedTone(String? status) => switch (status) {
+        'approved' => SbTone.success,
+        'needs_resubmission' => SbTone.warning,
+        'rejected' => SbTone.danger,
+        'submitted' || 'under_review' => SbTone.info,
+        null => SbTone.neutral,
+        _ => SbTone.brand,
+      };
+
+  static String _hostedStatusLabel(String? status) => switch (status) {
+        null => 'Eligible',
+        'approved' => 'Approved',
+        'submitted' => 'Submitted',
+        'under_review' => 'Under review',
+        'draft' => 'In progress',
+        'rejected' => 'Rejected',
+        'needs_resubmission' => 'Action needed',
+        _ => status,
+      };
 
   List<Widget> _capabilityBody(
     BuildContext context,

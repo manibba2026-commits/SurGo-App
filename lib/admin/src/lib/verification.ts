@@ -80,8 +80,34 @@ const APPLICATION_SELECT =
 
 const REVIEWABLE = ['submitted', 'under_review', 'needs_resubmission'];
 export const isReviewable = (status: string) => REVIEWABLE.includes(status);
+
+/** The default queue: everything an admin can still act on. Resubmissions are
+ *  waiting just as much as first submissions, so they belong in this view. */
+export const OPEN_STATUSES = REVIEWABLE;
+export const OPEN_FILTER_LABEL = 'Open (awaiting review or resubmission)';
+
+/**
+ * Why approval is unavailable, or null when every document is approved.
+ * Mirrors the database gate in admin_review_verification(): a document that is
+ * pending, rejected or expired blocks approval until it is approved.
+ */
+export function approvalBlockReason(documents: Row[]): string | null {
+  if (!documents.length) return 'Approval is blocked: the application has no documents.';
+  const count = (status: string) => documents.filter((x) => x.status === status).length;
+  const pending = count('pending');
+  const rejected = count('rejected');
+  const expired = count('expired');
+  if (!pending && !rejected && !expired) return null;
+  const parts = [
+    pending ? `${pending} pending` : null,
+    rejected ? `${rejected} rejected` : null,
+    expired ? `${expired} expired` : null,
+  ].filter((x): x is string => x !== null);
+  return `Approval is blocked until every document is approved (${parts.join(', ')}).`;
+}
+
 export const allDocsApproved = (documents: Row[]) =>
-  documents.length > 0 && documents.every((x) => x.status === 'approved');
+  documents.length > 0 && approvalBlockReason(documents) === null;
 
 export type VerificationBundle = {
   applications: Row[];
@@ -124,7 +150,7 @@ export async function verificationQueue(
     .limit(limit);
   query =
     filter === 'open'
-      ? query.in('status', ['submitted', 'under_review'])
+      ? query.in('status', OPEN_STATUSES)
       : filter === 'all'
         ? query
         : query.eq('status', filter);

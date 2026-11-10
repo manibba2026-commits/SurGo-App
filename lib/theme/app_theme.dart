@@ -65,8 +65,9 @@ class AppTheme {
             return null;
           }),
           elevation: const WidgetStatePropertyAll(0),
-          padding:
-              const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 16)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          ),
           minimumSize: const WidgetStatePropertyAll(Size(0, 50)),
           textStyle: const WidgetStatePropertyAll(
             TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
@@ -94,8 +95,9 @@ class AppTheme {
             }
             return const BorderSide(color: AppColors.borderLight, width: 1.4);
           }),
-          padding:
-              const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 15)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          ),
           minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
           textStyle: const WidgetStatePropertyAll(
             TextStyle(fontWeight: FontWeight.w800, fontSize: 14),

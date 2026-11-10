@@ -1101,10 +1101,10 @@ class RideRequestItem {
   /// this, and declining clears it again.
   String? riderId;
 
-  /// The vehicle *type* the passenger chose on the booking screen, stored as
-  /// the option's name (e.g. "Tricycle"). Set once when the request is created
-  /// and left alone afterwards: matching compares it to a rider's
-  /// `MapRider.vehicleType`, while the assigned rider lives in [riderId].
+  /// The vehicle type recorded when the request was created. Kept on the record
+  /// so a trip can be traced back to what was booked, but matching no longer
+  /// filters on it: the passenger picks from the verified fleet, and
+  /// [riderId] is the rider who was actually chosen.
   String? vehicleId;
   final String passengerName;
   final String passengerInitials;

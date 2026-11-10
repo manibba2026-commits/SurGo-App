@@ -175,6 +175,16 @@ class SurgoIdentity {
   final Set<String> roles;
   final Set<String> providers;
 
+  /// Whether the provider returned a SurGo profile row for this auth user.
+  /// A missing row on a successful read is different from a failed read.
+  final bool profileExists;
+
+  /// Whether this Google account still has to finish registration. A returned
+  /// profile is not enough: the auth trigger creates a passenger placeholder
+  /// for every new provider user, so onboarding is keyed on the missing phone
+  /// identity and the `surgo_onboarded` metadata marker instead.
+  final bool needsOnboarding;
+
   const SurgoIdentity({
     required this.userId,
     required this.capabilities,
@@ -184,6 +194,8 @@ class SurgoIdentity {
     this.phone,
     this.email,
     this.fullName,
+    this.profileExists = false,
+    this.needsOnboarding = false,
   });
 
   bool get hasPhoneIdentity => providers.contains('phone');
@@ -201,8 +213,14 @@ class SurgoIdentity {
   }
 }
 
-/// Supabase requires E.164. Accept the shapes people type in the pilot:
-/// `+63 917 512 4809`, `0917 512 4809`, `9175124809`, `639175124809`.
+/// Supabase requires E.164, and the pilot only accepts Philippine mobiles.
+///
+/// Accept the shapes people type in: `09171234567`, `+639171234567`,
+/// `9171234567`, `639171234567` and `00639171234567`. Separators are tolerated
+/// because this runs at submit time; the input formatter never inserts them.
+/// A country code that is not `63`, a landline, a duplicated `63`/`0` prefix or
+/// a wrong length returns null so the caller can show an error without editing
+/// the number the user sees.
 String? normalizePhoneNumber(String raw) {
   var cleaned = raw.trim().replaceAll(RegExp(r'[\s\-().]'), '');
   if (cleaned.isEmpty) return null;
@@ -210,28 +228,27 @@ String? normalizePhoneNumber(String raw) {
   if (cleaned.startsWith('00')) {
     cleaned = '+${cleaned.substring(2)}';
   }
+
+  late final String national;
   if (cleaned.startsWith('+')) {
     final digits = cleaned.substring(1);
-    if (!RegExp(r'^\d{8,15}$').hasMatch(digits)) return null;
-    return '+$digits';
+    if (!RegExp(r'^\d+$').hasMatch(digits)) return null;
+    if (!digits.startsWith('63')) return null;
+    national = digits.substring(2);
+  } else {
+    if (!RegExp(r'^\d+$').hasMatch(cleaned)) return null;
+    if (cleaned.startsWith('63') && cleaned.length > 10) {
+      national = cleaned.substring(2);
+    } else if (cleaned.length == 11 && cleaned.startsWith('0')) {
+      national = cleaned.substring(1);
+    } else {
+      national = cleaned;
+    }
   }
 
-  final digits = cleaned.replaceAll(RegExp(r'\D'), '');
-  if (digits.length == 11 && digits.startsWith('0')) {
-    return '+63${digits.substring(1)}';
-  }
-  if (digits.length == 12 && digits.startsWith('63')) {
-    return '+$digits';
-  }
-  if (digits.length == 10 && digits.startsWith('9')) {
-    return '+63$digits';
-  }
-  if (digits.length >= 8 &&
-      digits.length <= 15 &&
-      digits == cleaned) {
-    return '+$digits';
-  }
-  return null;
+  // PH mobile: 9 + 9 digits (0917 123 4567 / +63 917 123 4567).
+  if (!RegExp(r'^9\d{9}$').hasMatch(national)) return null;
+  return '+63$national';
 }
 
 /// Maps approved `user_roles.role` values to the app's capability gates.

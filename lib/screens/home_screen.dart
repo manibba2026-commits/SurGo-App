@@ -405,14 +405,15 @@ class _HomeContent extends StatelessWidget {
   }
 
   /// The passenger's live ride request, tappable to whichever screen owns its
-  /// next step. Rendered by the home tab so a request just created is visible
-  /// without opening Activity.
+  /// next step. A request that is searching or waiting for the chosen rider
+  /// opens the matching screen, which shows who it went to; only a ride the
+  /// rider accepted has a trip to open.
   Widget _liveRideCard(BuildContext context, RideRequestItem request) {
     return SbTintedCard(
       tone: SbTone.ride,
       onTap: () => Navigator.pushNamed(
         context,
-        request.status.isOpen ? '/matching' : '/livetrip',
+        request.status.isCommitted ? '/livetrip' : '/matching',
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

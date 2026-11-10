@@ -49,9 +49,11 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       context,
       state.requiresPin
           ? '/pin'
-          : state.isSignedIn
-              ? state.homeRoute
-              : '/login',
+          : state.requiresOnboarding
+              ? '/onboarding'
+              : state.isSignedIn
+                  ? state.homeRoute
+                  : '/login',
     );
   }
 

@@ -8,15 +8,19 @@ import '../state/app_state.dart';
 import '../state/ride_match.dart';
 import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/surfaces.dart';
+import '../widgets/surgo_notice.dart';
 
-/// Finds a rider for the passenger's request, then asks the passenger to accept
-/// the one that was found.
+/// Finds nearby riders for the passenger's request and offers them one at a
+/// time, closest first.
 ///
-/// The two are separate screens because they are separate commitments. A match
-/// is a proposal; it becomes a booking when the passenger confirms, and a trip
-/// only when the rider accepts too. This screen shows the first step and waits
-/// for a decision rather than deciding for the passenger.
+/// A proposal is not a booking: selecting a rider sends them the request and
+/// returns the passenger to Home. The rider still answers, and the passenger
+/// follows the answer from Home, Activity or the notification feed. This screen
+/// deliberately has no path to the Live Trip; a trip only exists once a rider
+/// accepts.
 class MatchingScreen extends StatefulWidget {
   const MatchingScreen({super.key});
 
@@ -28,24 +32,19 @@ class _MatchingScreenState extends State<MatchingScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _spinner;
 
-  /// The result of the search. Null while still searching; the two terminal
-  /// values let "nobody was free" be told apart from "here is a rider", which a
-  /// single "finished" flag could not do without showing a confirm button that
-  /// could never work.
-  MatchOutcome? _outcome;
+  /// Riders already shown in this visit. "Find Another" keeps walking down the
+  /// ranking, so the same person is never proposed twice.
+  final Set<String> _seen = {};
 
-  /// Set once the passenger confirms, so the screen can show "waiting for the
-  /// rider" rather than the proposal they already accepted.
-  bool _confirmed = false;
+  /// True between asking for a match and the answer landing. Separate from
+  /// [AppState.rideProposal] because the previous proposal stays in the store
+  /// until the next one replaces it.
+  bool _searching = true;
 
-  /// The rider the proposal named, kept after the proposal itself is cleared
-  /// on confirm so the waiting state can name them instead of an internal id.
-  String? _riderName;
+  /// True once the search came back with nobody left to offering.
+  bool _exhausted = false;
 
-  /// Fires the simulated rider acceptance after a pause, so the
-  /// awaiting-acceptance state is actually visible. Guarded by [_confirmed]
-  /// because it must not run for a request the passenger declined.
-  Timer? _acceptTimer;
+  AppState get state => AppState.instance;
 
   @override
   void initState() {
@@ -54,116 +53,160 @@ class _MatchingScreenState extends State<MatchingScreen>
       vsync: this,
       duration: const Duration(seconds: 1),
     )..repeat();
-
-    // The search delay simulates a real dispatch round-trip. Nothing depends on
-    // it: the state lives in AppState, not in this timer, so if it never fires
-    // the screen still shows the proposal.
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (!mounted) return;
-      final request = AppState.instance.myRideRequest;
-      if (request == null) return;
-      final outcome = AppState.instance.proposeRider(request);
-      if (mounted) setState(() => _outcome = outcome);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_dispatch());
     });
   }
 
   @override
   void dispose() {
-    _acceptTimer?.cancel();
     _spinner.dispose();
     super.dispose();
   }
 
-  void _confirm() {
-    _riderName = AppState.instance.rideProposal?.riderName;
-    if (!AppState.instance.confirmRideMatch()) return;
-    setState(() => _confirmed = true);
-
-    // The rider's acceptance is somebody else's action, simulated on a delay so
-    // the passenger sees the trip move on its own rather than jumping straight
-    // to "accepted".
-    _acceptTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      final request = AppState.instance.myRideRequest;
-      if (request == null) return;
-      AppState.instance.riderAccepts(request);
-      // The accepted trip is now live, so move on rather than leaving the
-      // passenger on a waiting screen that has nothing left to wait for.
-      if (mounted) _goToTrip();
+  /// Runs one dispatch round.
+  ///
+  /// The pause simulates a real round-trip; nothing depends on it, because the
+  /// candidate list lives in [AppState]. [nextCandidate] adds the current
+  /// proposal to the exclusion set first, which is what makes "Find Another"
+  /// advance instead of repeating.
+  Future<void> _dispatch({bool nextCandidate = false}) async {
+    if (nextCandidate) {
+      final proposal = state.rideProposal;
+      if (proposal != null) _seen.add(proposal.rider.id);
+    }
+    if (mounted) {
+      setState(() {
+        _searching = true;
+        _exhausted = false;
+      });
+    }
+    await Future.delayed(
+      Duration(milliseconds: nextCandidate ? 250 : 900),
+    );
+    if (!mounted) return;
+    final request = state.myRideRequest;
+    if (request == null) {
+      setState(() => _searching = false);
+      return;
+    }
+    final outcome = state.proposeRider(request, excludeRiderIds: _seen);
+    if (!mounted) return;
+    setState(() {
+      _searching = false;
+      _exhausted = outcome == MatchOutcome.noRidersAvailable;
     });
   }
 
-  void _decline() {
-    _acceptTimer?.cancel();
-    AppState.instance.declineRideMatch();
-    Navigator.pop(context);
-  }
-
-  void _cancelRequest() {
-    _acceptTimer?.cancel();
-    AppState.instance.cancelRideRequest();
+  /// Sends the request to the proposed rider and goes home.
+  ///
+  /// Nothing here accepts on the rider's behalf: the request becomes
+  /// [RideStatus.awaitingAcceptance] and waits for their answer.
+  void _select(RideMatchProposal proposal) {
+    final riderName = proposal.riderName;
+    if (!state.confirmRideMatch()) return;
+    SurgoNotice.show(
+      context,
+      'Request sent to $riderName. The trip starts once they accept.',
+      tone: SbNoticeTone.success,
+      title: 'Request sent',
+    );
     Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
   }
 
-  void _goToTrip() {
-    Navigator.pushReplacementNamed(context, '/livetrip');
+  /// Closes the screen, putting the request back to open so it can be matched
+  /// again later instead of pointing at a rider nobody chose.
+  void _close() {
+    state.declineRideMatch();
+    Navigator.pop(context);
+  }
+
+  void _backHome() {
+    Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+  }
+
+  void _cancelRequest() {
+    state.cancelRideRequest();
+    _backHome();
+  }
+
+  MapRider? _riderFor(String? id) {
+    if (id == null) return null;
+    for (final rider in state.db.mapRiders) {
+      if (rider.id == id) return rider;
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = AppState.instance;
     final request = state.myRideRequest;
-    final proposal = state.rideProposal;
 
-    // Nothing to match: the request was cancelled or never created. Say so
-    // instead of showing an eternal spinner.
-    if (request == null) {
-      return _noRequest();
-    }
-
-    // The passenger confirmed and the rider has not answered yet.
-    if (_confirmed) {
-      return _waiting(request);
-    }
-
-    // Searching finished with nobody to offer: say that instead of rendering a
-    // proposal that does not exist, and drop the confirm action entirely.
-    final empty = _outcome == MatchOutcome.noRidersAvailable;
-
-    if (empty) {
-      return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          title: const Text('No riders yet'),
-          leading: SbIconButton(icon: Icons.close, onTap: _decline),
-        ),
-        body: _noRiders(),
+    // A Supabase account has no live rider presence or dispatch service in this
+    // build, so the seeded fleet must not be presented as a real match.
+    if (state.usesHostedIdentity) {
+      return _shell(
+        title: 'Find a ride',
+        body: _hostedUnavailable(),
+        leading: SbIconButton(icon: Icons.close, onTap: _backHome),
       );
     }
 
-    if (proposal == null) {
-      return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          title: const Text('Finding a ride'),
-          leading: SbIconButton(icon: Icons.close, onTap: _decline),
-        ),
-        body: _searching(request),
+    if (request == null) return _noRequest();
+
+    // The passenger is returning to a request already sent to a rider.
+    if (request.status == RideStatus.awaitingAcceptance) {
+      return _shell(
+        title: 'Request sent',
+        body: _sent(request),
+        leading: SbIconButton(icon: Icons.close, onTap: _backHome),
+      );
+    }
+
+    final proposal = state.rideProposal;
+    if (_searching || (proposal == null && !_exhausted)) {
+      return _shell(
+        title: 'Finding a ride',
+        body: _searchingBody(request),
+        leading: SbIconButton(icon: Icons.close, onTap: _close),
+      );
+    }
+
+    if (_exhausted || proposal == null) {
+      return _shell(
+        title: 'No riders nearby',
+        body: _noRiders(),
+        leading: SbIconButton(icon: Icons.close, onTap: _close),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: const Text('Ride found'),
-        leading: SbIconButton(icon: Icons.close, onTap: _decline),
+        title: const Text('Rider found'),
+        leading: SbIconButton(icon: Icons.close, onTap: _close),
       ),
-      body: _proposal(context, request, proposal),
-      bottomNavigationBar: _searchActions(context),
+      body: _proposal(request, proposal),
+      bottomNavigationBar: _proposalActions(proposal),
     );
   }
 
-  Widget _searching(RideRequestItem request) {
+  Widget _shell({
+    required String title,
+    required Widget body,
+    required Widget leading,
+  }) {
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: Text(title),
+        leading: leading,
+      ),
+      body: body,
+    );
+  }
+
+  Widget _searchingBody(RideRequestItem request) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -187,8 +230,7 @@ class _MatchingScreenState extends State<MatchingScreen>
                     height: 110,
                     child: CircularProgressIndicator(
                       strokeWidth: 3,
-                      valueColor:
-                          AlwaysStoppedAnimation(AppColors.primary),
+                      valueColor: AlwaysStoppedAnimation(AppColors.primary),
                       backgroundColor: Colors.transparent,
                       value: 0.25,
                     ),
@@ -200,10 +242,11 @@ class _MatchingScreenState extends State<MatchingScreen>
             ),
           ),
           const SizedBox(height: 22),
-          const Text('Finding you a ride…',
+          const Text('Finding you a rider…',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 6),
-          Text('Looking for a ${AppState.instance.rideOptionName} nearby',
+          Text('Looking for available, verified riders near ${request.pickup}',
+              textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
           const SizedBox(height: 6),
           Text('${request.pickup} → ${request.dropoff}',
@@ -221,9 +264,8 @@ class _MatchingScreenState extends State<MatchingScreen>
     );
   }
 
-  /// Shown when the search finished but produced no rider: either the proposal
-  /// was declined, or nobody was free. Both need the same recovery, which is to
-  /// change the request and try again.
+  /// Shown when the search came back empty, either because nobody is free or
+  /// because every candidate was already offered and turned down.
   Widget _noRiders() {
     return Center(
       child: Padding(
@@ -238,17 +280,25 @@ class _MatchingScreenState extends State<MatchingScreen>
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
             const SizedBox(height: 6),
             const Text(
-              'Nobody free is nearby right now. Try again in a moment, or '
-              'pick a different vehicle type.',
+              'No other verified rider is free near your pickup right now. '
+              'Search again in a moment, or go back and change your route.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.muted, fontSize: 12.5),
             ),
             const SizedBox(height: 20),
             SbOutlineButton(
-              label: 'Back to Home',
+              label: 'Search again',
               block: false,
-              onPressed: () => Navigator.of(context)
-                  .pushNamedAndRemoveUntil('/home', (route) => false),
+              onPressed: () {
+                _seen.clear();
+                unawaited(_dispatch());
+              },
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _cancelRequest,
+              style: TextButton.styleFrom(foregroundColor: AppColors.muted),
+              child: const Text('Cancel this request'),
             ),
           ],
         ),
@@ -256,98 +306,22 @@ class _MatchingScreenState extends State<MatchingScreen>
     );
   }
 
-  /// Names the rider the request went to. The proposal is cleared on confirm,
-  /// so the id it carried would be the only thing left to show otherwise.
-  String get _confirmedRiderLine {
-    final rider = _riderName;
-    return rider == null
-        ? 'Your request went to the nearest rider. '
-            'The trip starts once they accept.'
-        : 'Your request went to $rider. '
-            'The trip starts once they accept.';
-  }
-
-  /// Between the passenger confirming and the rider accepting.
-  Widget _waiting(RideRequestItem request) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Request sent'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 72,
-                height: 72,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    RotationTransition(
-                      turns: _spinner,
-                      child: const SizedBox(
-                        width: 72,
-                        height: 72,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          valueColor:
-                              AlwaysStoppedAnimation(AppColors.primary),
-                          backgroundColor: Colors.transparent,
-                        ),
-                      ),
-                    ),
-                    const Icon(Icons.send_rounded,
-                        size: 26, color: AppColors.primaryLight),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text('Waiting for your rider',
-                  style:
-                      TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-              const SizedBox(height: 8),
-              Text(
-                _confirmedRiderLine,
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(color: AppColors.muted, fontSize: 12.5),
-              ),
-              const SizedBox(height: 14),
-              SbCard(
-                child: Column(
-                  children: [
-                    _tripRow('Status', RideStatus.awaitingAcceptance.label),
-                    const Divider(height: 18, color: AppColors.border),
-                    _tripRow('Fare', Money.format(request.fare)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              SbOutlineButton(
-                label: 'Cancel request',
-                onPressed: _cancelRequest,
-              ),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: _waitingActions(),
-    );
-  }
-
-  /// The proposal: who is driving, what they drive, how far, and what it costs.
-  ///
-  /// Everything the passenger needs to decide is here, because once they confirm
-  /// the rider is dispatched and this screen is gone.
-  Widget _proposal(BuildContext context, RideRequestItem request,
-      RideMatchProposal proposal) {
+  /// The rider's card: who they are, what they drive, how far away they are,
+  /// and what the trip costs before the passenger selects them.
+  Widget _proposal(RideRequestItem request, RideMatchProposal proposal) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
       children: [
-        const Text('Your rider',
+        const SbStatusBanner(
+          tone: SbTone.info,
+          icon: Icons.science_outlined,
+          title: 'Simulated rider fleet',
+          message:
+              'Rider positions and ETAs come from the demo fleet in this '
+              'build. They are not live riders and not a real dispatch.',
+        ),
+        const SizedBox(height: 14),
+        const Text('Closest rider first',
             style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
         const SizedBox(height: 10),
         SbCard(
@@ -367,7 +341,10 @@ class _MatchingScreenState extends State<MatchingScreen>
                                 fontWeight: FontWeight.w800, fontSize: 15)),
                         const SizedBox(height: 2),
                         Text(
-                          '${proposal.vehicleLabel} · ${proposal.plateLabel}',
+                          proposal.rider.vehiclePlate.trim().isEmpty
+                              ? proposal.vehicleLabel
+                              : '${proposal.vehicleLabel} · '
+                                  '${proposal.rider.vehiclePlate}',
                           style: const TextStyle(
                               color: AppColors.muted, fontSize: 12),
                         ),
@@ -404,8 +381,8 @@ class _MatchingScreenState extends State<MatchingScreen>
           ),
         ),
         const SizedBox(height: 14),
-        // Say what happens next before it happens. The passenger is being asked
-        // to commit, so they get to know the rider has not agreed yet.
+        // Say what happens next before it happens. Selecting is not accepting,
+        // and the passenger is about to leave this screen.
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -421,8 +398,9 @@ class _MatchingScreenState extends State<MatchingScreen>
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  'Confirming sends your request to ${proposal.riderName}. '
-                  'The trip starts when they accept.',
+                  'Selecting sends your request to ${proposal.riderName}. '
+                  'The trip only starts when they accept, and you can follow '
+                  'the request from Home or Activity.',
                   style: const TextStyle(
                       color: AppColors.muted, fontSize: 11.5, height: 1.5),
                 ),
@@ -451,11 +429,11 @@ class _MatchingScreenState extends State<MatchingScreen>
     );
   }
 
-  Widget _searchActions(BuildContext context) {
+  Widget _proposalActions(RideMatchProposal proposal) {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
         decoration: const BoxDecoration(
           color: AppColors.bg,
           border: Border(top: BorderSide(color: AppColors.border)),
@@ -464,17 +442,17 @@ class _MatchingScreenState extends State<MatchingScreen>
           children: [
             Expanded(
               child: SbOutlineButton(
-                label: 'Not this one',
-                onPressed: _decline,
+                label: 'Find Another',
+                onPressed: () => unawaited(_dispatch(nextCandidate: true)),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               flex: 2,
               child: SbPrimaryButton(
-                label: 'Confirm rider',
+                label: 'Select Rider',
                 icon: Icons.check_rounded,
-                onPressed: _confirm,
+                onPressed: () => _select(proposal),
               ),
             ),
           ],
@@ -483,19 +461,87 @@ class _MatchingScreenState extends State<MatchingScreen>
     );
   }
 
-  Widget _waitingActions() {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-        decoration: const BoxDecoration(
-          color: AppColors.bg,
-          border: Border(top: BorderSide(color: AppColors.border)),
+  /// The state a passenger comes back to after a request was sent: who has it
+  /// and that nobody has accepted yet.
+  Widget _sent(RideRequestItem request) {
+    final rider = _riderFor(request.riderId);
+    final name = rider?.name;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.send_rounded,
+                size: 40, color: AppColors.primaryLight),
+            const SizedBox(height: 14),
+            const Text('Request sent',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 8),
+            Text(
+              name == null
+                  ? 'Your request is waiting for the rider to accept.'
+                  : 'Your request went to $name and is waiting for them to '
+                      'accept.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
+            const SizedBox(height: 16),
+            SbCard(
+              child: Column(
+                children: [
+                  _tripRow('Pick-up', request.pickup),
+                  const Divider(height: 18, color: AppColors.border),
+                  _tripRow('Destination', request.dropoff),
+                  const Divider(height: 18, color: AppColors.border),
+                  _tripRow('Status', RideStatus.awaitingAcceptance.label),
+                  const Divider(height: 18, color: AppColors.border),
+                  _tripRow('Fare', Money.format(request.fare)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SbOutlineButton(label: 'Back to Home', onPressed: _backHome),
+            const SizedBox(height: 6),
+            TextButton(
+              onPressed: _cancelRequest,
+              style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+              child: const Text('Cancel request'),
+            ),
+          ],
         ),
-        child: SbPrimaryButton(
-          label: 'View trip',
-          icon: Icons.map_outlined,
-          onPressed: _goToTrip,
+      ),
+    );
+  }
+
+  Widget _hostedUnavailable() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_outlined,
+                size: 40, color: AppColors.muted2),
+            const SizedBox(height: 14),
+            const Text('Live matching is not connected',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            const SizedBox(height: 6),
+            const Text(
+              'Your SurGo account needs the live rider presence and dispatch '
+              'services before it can request a ride. The seeded demo fleet is '
+              'not shown here because those riders are not real accounts.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
+            const SizedBox(height: 20),
+            SbOutlineButton(
+              label: 'Back to Home',
+              block: false,
+              onPressed: _backHome,
+            ),
+          ],
         ),
       ),
     );
@@ -537,8 +583,7 @@ class _MatchingScreenState extends State<MatchingScreen>
             SbOutlineButton(
               label: 'Back to Home',
               block: false,
-              onPressed: () => Navigator.of(context)
-                  .pushNamedAndRemoveUntil('/home', (route) => false),
+              onPressed: _backHome,
             ),
           ],
         ),

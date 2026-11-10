@@ -70,7 +70,7 @@ class ActiveRentalScreen extends StatelessWidget {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 18, 0),
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
                   child: Row(
                     children: [
                       SbIconButton(
@@ -173,13 +173,19 @@ class ActiveRentalScreen extends StatelessWidget {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   SbTag(status.shortLabel, secondary: !isPending),
-                                  Text(
-                                      isOwnerMode
-                                          ? 'Vehicle'
-                                          : passengerBooking!.vehicleType,
-                                      style: const TextStyle(
-                                          color: AppColors.muted,
-                                          fontSize: 11.5)),
+                                  const SizedBox(width: 10),
+                                  Flexible(
+                                    child: Text(
+                                        isOwnerMode
+                                            ? 'Vehicle'
+                                            : passengerBooking!.vehicleType,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.end,
+                                        style: const TextStyle(
+                                            color: AppColors.muted,
+                                            fontSize: 11.5)),
+                                  ),
                                 ],
                               ),
                               const SizedBox(height: 14),

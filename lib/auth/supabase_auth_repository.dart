@@ -133,11 +133,13 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<SurgoIdentity> loadIdentity(AuthUser user) async {
     ProfileRecord? profile;
+    var profileLoaded = false;
     var rolesLoaded = true;
     final roles = <String>{};
 
     try {
       profile = await _profiles.fetchProfile(user.id).timeout(_timeout);
+      profileLoaded = true;
     } catch (error) {
       debugPrint('Could not load SurGo profile: $error');
     }
@@ -149,13 +151,28 @@ class SupabaseAuthRepository implements AuthRepository {
       debugPrint('Could not load SurGo roles: $error');
     }
 
+    final profileExists = profileLoaded && profile != null;
     var capabilities = capabilitiesFromRoles(roles);
-    if (capabilities.isEmpty && (!rolesLoaded || profile == null)) {
-      // A missing profile or a degraded read must not lock a valid Supabase
-      // session out of the app; the auth trigger guarantees passenger for a
-      // newly created user, so this only fills the gap for a failed read.
+    if (capabilities.isEmpty && (!rolesLoaded || !profileLoaded)) {
+      // A degraded read must not lock a valid Supabase session out of the app.
+      // This is only the network-failure path; a successful read that returns
+      // no profile is handled as first-run onboarding instead of a silent
+      // passenger grant.
       capabilities = const {CapabilityType.passenger};
     }
+
+    // The auth trigger gives every new provider user a passenger profile, so a
+    // "registered" account is one with a phone identity or an explicit marker.
+    // A Google-only account is walked through onboarding instead of being
+    // dropped into a dashboard it never finished creating.
+    final onboarded = user.metadata['surgo_onboarded'] == true;
+    final needsOnboarding = profileLoaded &&
+        rolesLoaded &&
+        ((!profileExists && capabilities.isEmpty) ||
+            (profileExists &&
+                capabilities.isNotEmpty &&
+                !user.hasPhoneIdentity &&
+                !onboarded));
 
     return SurgoIdentity(
       userId: user.id,
@@ -170,7 +187,23 @@ class SupabaseAuthRepository implements AuthRepository {
       eligibleCapabilities: eligibleCapabilitiesFor(capabilities),
       roles: roles,
       providers: user.providers,
+      profileExists: profileExists,
+      needsOnboarding: needsOnboarding,
     );
+  }
+
+  @override
+  Future<void> completeOnboarding({
+    required String fullName,
+    required String phone,
+  }) {
+    return _guard(() async {
+      await _client.auth.updateUser(UserAttributes(data: {
+        'full_name': fullName.trim(),
+        'surgo_phone': phone,
+        'surgo_onboarded': true,
+      }));
+    });
   }
 
   @override
@@ -291,6 +324,14 @@ class DisabledAuthRepository implements AuthRepository {
 
   @override
   Future<SurgoIdentity> loadIdentity(AuthUser user) async => throw _offline;
+
+  @override
+  Future<void> completeOnboarding({
+    required String fullName,
+    required String phone,
+  }) async {
+    throw _offline;
+  }
 
   @override
   Future<bool> linkGoogleIdentity() async => throw _offline;

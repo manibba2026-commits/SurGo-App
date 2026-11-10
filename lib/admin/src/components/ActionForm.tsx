@@ -16,15 +16,33 @@ function Submit({ label, tone }: { label: string; tone: 'primary' | 'danger' | '
   );
 }
 
-/** Small inline form wired to a server action; shows the server's result next to the button. */
+/** Small inline form wired to a server action; shows the server's result next to the button.
+ *  `disabledReason` renders the action as unavailable with the reason beside it,
+ *  for decisions the database would refuse anyway. */
 export function ActionForm({
-  action, label, tone = 'primary', hidden, children, confirm, className = '',
+  action, label, tone = 'primary', hidden, children, confirm, disabledReason, className = '',
 }: {
   action: (s: ActionState, f: FormData) => Promise<ActionState>;
   label: string; tone?: 'primary' | 'danger' | 'quiet';
-  hidden: Record<string, string>; children?: React.ReactNode; confirm?: string; className?: string;
+  hidden: Record<string, string>; children?: React.ReactNode; confirm?: string;
+  disabledReason?: string | null; className?: string;
 }) {
   const [state, formAction] = useFormState(action, null);
+  if (disabledReason) {
+    return (
+      <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+        <button
+          type="button"
+          disabled
+          title={disabledReason}
+          className="cursor-not-allowed rounded-md border border-line bg-paper px-3 py-1.5 text-sm font-medium text-ink-300"
+        >
+          {label}
+        </button>
+        <span className="text-xs text-coral">{disabledReason}</span>
+      </div>
+    );
+  }
   return (
     <form action={formAction} className={`flex flex-wrap items-center gap-2 ${className}`}
       onSubmit={(e) => { if (confirm && !window.confirm(confirm)) e.preventDefault(); }}>

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
 import '../auth/demo_auth.dart';
+import '../auth/phone_input.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
@@ -24,6 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _googleLoading = false;
   bool _navigated = false;
   String? _error;
+  String? _phoneError;
 
   AppState get state => AppState.instance;
 
@@ -48,7 +50,15 @@ class _LoginScreenState extends State<LoginScreen> {
   void _finishSignedIn() {
     if (_navigated) return;
     _navigated = true;
-    Navigator.pushNamedAndRemoveUntil(context, state.homeRoute, (r) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      state.requiresOnboarding
+          ? '/onboarding'
+          : state.requiresPin
+              ? '/pin'
+              : state.homeRoute,
+      (r) => false,
+    );
   }
 
   Future<void> _submit() async {
@@ -62,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (state.demoAuthEnabled) {
       final account = state.demoAccountFor(raw);
       if (account == null) {
-        setState(() => _error =
+        setState(() => _phoneError =
             'Enter a demo account number (for example ACC003) or a registered phone number.');
         return;
       }
@@ -70,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       final normalized = normalizePhoneNumber(raw);
       if (normalized == null) {
-        setState(() => _error =
+        setState(() => _phoneError =
             'Enter a valid phone number, for example 0917 512 4809.');
         return;
       }
@@ -79,6 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _submitting = true;
+      _phoneError = null;
       _error = null;
     });
 
@@ -134,6 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     : () => setState(() {
                           phoneCtrl.text = account.id;
                           _error = null;
+                          _phoneError = null;
                         }),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 7),
@@ -208,15 +220,26 @@ class _LoginScreenState extends State<LoginScreen> {
           subtitle: 'We will text you a one-time code. No password needed.',
         ),
         const SizedBox(height: 26),
-        SbEditableField(
-          label: state.demoAuthEnabled ? 'Phone or account number' : 'Phone number',
+        SbAuthField(
+          label:
+              state.demoAuthEnabled ? 'Phone or account number' : 'Phone number',
           controller: phoneCtrl,
-          leading: const Icon(Icons.phone, size: 18, color: AppColors.text),
-          keyboardType: TextInputType.text,
+          icon: Icons.phone_outlined,
+          errorText: _phoneError,
+          keyboardType: state.demoAuthEnabled
+              ? TextInputType.text
+              : TextInputType.phone,
+          inputFormatters:
+              state.demoAuthEnabled ? null : [phPhoneInputFormatter],
+          autofillHints: state.demoAuthEnabled
+              ? null
+              : const [AutofillHints.telephoneNumber],
           textInputAction: TextInputAction.done,
+          enabled: !busy,
+          onChanged: (_) {
+            if (_phoneError != null) setState(() => _phoneError = null);
+          },
           onSubmitted: (_) => _submit(),
-          hintText:
-              state.demoAuthEnabled ? 'ACC003 or 0917 512 4809' : '+63 9XX XXX XXXX',
         ),
         if (state.demoAuthEnabled) _demoAccountsCard(),
         Align(

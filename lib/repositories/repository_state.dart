@@ -30,4 +30,8 @@ class RepositoryState<T> {
   bool get isEmpty => status == RepositoryStatus.empty;
   bool get hasData => status == RepositoryStatus.data;
   bool get hasFailure => status == RepositoryStatus.failure;
+
+  /// True once a read has an answer, including an empty or failed one. A
+  /// screen can use this to tell "nothing there" from "not read yet".
+  bool get isSettled => !isIdle && !isLoading;
 }

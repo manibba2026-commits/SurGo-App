@@ -29,11 +29,35 @@ abstract interface class SurgoBackend {
   });
 }
 
+/// The write surface a repository needs when the user creates a record.
+///
+/// Kept separate from [SurgoBackend] because most repositories are read-only
+/// and their test doubles should not have to stub writes. A writer is only
+/// handed to repositories that submit something on the user's behalf, and the
+/// database still decides what is allowed: the only write path is a
+/// server-side function with an `auth.uid()` check.
+abstract interface class SurgoWriteBackend {
+  /// Calls a Postgres function. The function, not the client, owns validation
+  /// and ownership; this method only carries the parameters.
+  Future<dynamic> rpc({
+    required String function,
+    Map<String, dynamic> params = const {},
+  });
+
+  /// Uploads [bytes] to a private bucket under [path].
+  Future<void> uploadObject({
+    required String bucket,
+    required String path,
+    required Uint8List bytes,
+    required String contentType,
+  });
+}
+
 /// Talks to PostgREST through the app's single [SupabaseClient].
 ///
 /// Only the publishable key is ever used here; the service-role key cannot
 /// reach this code path because it is not in the client build.
-class SupabaseBackend implements SurgoBackend {
+class SupabaseBackend implements SurgoBackend, SurgoWriteBackend {
   SupabaseBackend({SupabaseClient? client, this.requestTimeout = _timeout})
       : _client = client ?? Supabase.instance.client;
 
@@ -96,6 +120,34 @@ class SupabaseBackend implements SurgoBackend {
     });
   }
 
+  @override
+  Future<dynamic> rpc({
+    required String function,
+    Map<String, dynamic> params = const {},
+  }) {
+    return _guard(
+      () => _client.rpc(function, params: params).timeout(requestTimeout),
+    );
+  }
+
+  @override
+  Future<void> uploadObject({
+    required String bucket,
+    required String path,
+    required Uint8List bytes,
+    required String contentType,
+  }) {
+    return _guard(() async {
+      // Upsert on a fresh, timestamped path: a resubmission replaces the file
+      // it names rather than failing because the object already exists.
+      await _client.storage.from(bucket).uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: contentType, upsert: true),
+          ).timeout(requestTimeout);
+    });
+  }
+
   Future<T> _guard<T>(Future<T> Function() read) async {
     try {
       return await read();
@@ -127,6 +179,15 @@ RepositoryFailure mapBackendError(Object error) {
     if (code == 'PGRST116') return RepositoryFailure.notFound(error);
     if (code == '42501' || code == 'PGRST301' || code == '401') {
       return RepositoryFailure.permissionDenied(error);
+    }
+    // Server-side validation (invalid parameter, constraint, uniqueness,
+    // malformed date input). The function's own wording names what to fix.
+    if (code == '22007' ||
+        code == '22008' ||
+        code == '22023' ||
+        code == '23505' ||
+        code == '23514') {
+      return RepositoryFailure.invalidData(error.message, error);
     }
     // Undefined relation or column: the query does not match the deployed
     // schema. Surfacing the database message is the fastest way to see it.
@@ -176,8 +237,26 @@ bool isNetworkWording(String lowerMessage) =>
 /// A build asked for the database, so every read says the database is
 /// unreachable. Substituting the seed here would present fake data as the real
 /// balance of an account.
-class UnreachableBackend implements SurgoBackend {
+class UnreachableBackend implements SurgoBackend, SurgoWriteBackend {
   const UnreachableBackend();
+
+  @override
+  Future<dynamic> rpc({
+    required String function,
+    Map<String, dynamic> params = const {},
+  }) async {
+    throw RepositoryFailure.unavailable();
+  }
+
+  @override
+  Future<void> uploadObject({
+    required String bucket,
+    required String path,
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
+    throw RepositoryFailure.unavailable();
+  }
 
   @override
   Future<List<Map<String, dynamic>>> rows({

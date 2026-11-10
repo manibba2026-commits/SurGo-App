@@ -55,6 +55,11 @@ enum DomainSlot {
   /// The compliance paperwork behind the fleet, read through the vehicles it
   /// belongs to because `vehicle_documents` has no owner column.
   ownerVehicleDocuments,
+
+  /// The signed-in user's verification applications, including the status and
+  /// rejection reason an admin decision produced. The screen re-reads this slot
+  /// rather than the seed once the account is hosted.
+  verificationApplications,
 }
 
 /// Repository reads held for the screens, each in an explicit state.
@@ -271,6 +276,8 @@ class DomainCache extends ChangeNotifier {
       DomainSlot.ownerFleet =>
         registry.vehicles.fetchVehiclesOwnedBy(_keyFor(ActorRole.vehicleOwner)),
       DomainSlot.ownerVehicleDocuments => _readOwnerDocuments(registry),
+      DomainSlot.verificationApplications =>
+        registry.verifications.fetchApplications(profileId),
     };
   }
 

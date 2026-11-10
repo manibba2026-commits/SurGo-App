@@ -184,6 +184,19 @@ void main() {
     expect(normalizePhoneNumber('nope'), isNull);
   });
 
+  test('rejects non-PH, duplicated or wrong-length numbers', () {
+    // Only the PH country code is accepted.
+    expect(normalizePhoneNumber('+1 415 555 0100'), isNull);
+    // Landlines and duplicated code/zero prefixes must not slip through.
+    expect(normalizePhoneNumber('+63 02 8123 4567'), isNull);
+    expect(normalizePhoneNumber('+63 0917 123 4567'), isNull);
+    expect(normalizePhoneNumber('0063 63 917 123 4567'), isNull);
+    // 10-digit local and 11-digit national numbers are both short.
+    expect(normalizePhoneNumber('0917 123 456'), isNull);
+    expect(normalizePhoneNumber('+63 917 123 45678'), isNull);
+    expect(normalizePhoneNumber(''), isNull);
+  });
+
   test('maps provider errors to user-facing failures', () {
     final expired = AuthFailure.from(
       const AuthException('Token has expired or is invalid'),

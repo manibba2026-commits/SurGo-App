@@ -229,7 +229,7 @@ class LiveTripScreen extends StatelessWidget {
                           onTap: () => _showSosDialog(context),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 7),
+                                horizontal: 14, vertical: 9),
                             decoration: BoxDecoration(
                               color: AppColors.dangerSoft,
                               borderRadius: BorderRadius.circular(999),
@@ -274,10 +274,16 @@ class LiveTripScreen extends StatelessWidget {
                               '${activeRide.status.shortLabel} · ${activeRide.etaMinutes} min',
                               secondary: true,
                             ),
-                            Text(
-                              driverVehicleLabel,
-                              style: const TextStyle(
-                                  color: AppColors.muted, fontSize: 11.5),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                driverVehicleLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.end,
+                                style: const TextStyle(
+                                    color: AppColors.muted, fontSize: 11.5),
+                              ),
                             ),
                           ],
                         ),

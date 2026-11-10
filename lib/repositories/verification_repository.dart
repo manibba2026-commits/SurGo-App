@@ -1,7 +1,56 @@
+import 'dart:typed_data';
+
 import '../data/db_models.dart';
 import '../data/db_service.dart';
 import 'backend.dart';
 import 'backend_rows.dart';
+import 'repository_failure.dart';
+
+/// The database token for a capability. `verification_applications` only
+/// accepts the three provider roles, so passenger is deliberately absent.
+String verificationCapabilityToken(CapabilityType capability) =>
+    switch (capability) {
+      CapabilityType.passenger => 'passenger',
+      CapabilityType.earner => 'earner',
+      CapabilityType.rider => 'rider',
+      CapabilityType.vehicleOwner => 'vehicle_owner',
+    };
+
+/// One file a user picked for a verification document, still in memory.
+///
+/// The repository uploads it and records the storage path; the screen never
+/// writes a path itself, so a document cannot point outside the user's folder.
+class VerificationUpload {
+  const VerificationUpload({
+    required this.documentType,
+    required this.label,
+    required this.fileName,
+    required this.bytes,
+    this.documentNumber,
+    this.expiresAt,
+  });
+
+  final String documentType;
+  final String label;
+  final String fileName;
+  final Uint8List bytes;
+  final String? documentNumber;
+  final DateTime? expiresAt;
+
+  /// MIME type from the file name. The bucket only accepts these three types,
+  /// so an unknown extension is refused before a doomed upload is started.
+  String get contentType {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    throw RepositoryFailure.invalidData(
+      'Choose a PDF, PNG or JPEG file for ${label.isEmpty ? documentType : label}.',
+    );
+  }
+}
 
 /// Verification applications and their documents.
 ///
@@ -19,6 +68,16 @@ abstract interface class VerificationRepository {
   Future<List<VerificationDocumentRecord>> fetchDocuments(
     String applicationId,
   );
+
+  /// Uploads [documents] and submits one application for [capability].
+  ///
+  /// The auth server checks ownership and sets the status; this method cannot
+  /// submit an approved role or write for another profile.
+  Future<VerificationApplicationRecord> submitApplication({
+    required String profileId,
+    required String capability,
+    required List<VerificationUpload> documents,
+  });
 }
 
 const String _applicationColumns =
@@ -29,9 +88,16 @@ const String _applicationColumns =
     'rejection_reason)';
 
 class SupabaseVerificationRepository implements VerificationRepository {
-  SupabaseVerificationRepository(SurgoBackend backend) : _backend = backend;
+  SupabaseVerificationRepository(SurgoBackend backend, {SurgoWriteBackend? writer})
+      : _backend = backend,
+        _writer = writer;
+
+  /// Private bucket; object paths must start with the owner's auth uuid for the
+  /// storage policies to accept them.
+  static const String bucket = 'verification-documents';
 
   final SurgoBackend _backend;
+  final SurgoWriteBackend? _writer;
 
   @override
   Future<List<VerificationApplicationRecord>> fetchApplications(
@@ -71,6 +137,78 @@ class SupabaseVerificationRepository implements VerificationRepository {
       ascending: true,
     );
     return [for (final row in rows) VerificationDocumentRecord.fromRow(row)];
+  }
+
+  @override
+  Future<VerificationApplicationRecord> submitApplication({
+    required String profileId,
+    required String capability,
+    required List<VerificationUpload> documents,
+  }) async {
+    final writer = _writer;
+    if (writer == null) {
+      throw RepositoryFailure.unsupported(
+        'This build cannot submit verification documents.',
+      );
+    }
+    if (documents.isEmpty) {
+      throw RepositoryFailure.invalidData(
+        'Attach every required document before submitting.',
+      );
+    }
+
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final payload = <Map<String, dynamic>>[];
+    // Uploads happen before the RPC, so a refusal leaves these objects behind.
+    // Deleting them here on failure would be unsafe: a timeout can hide a
+    // submission the server already committed, and deleting its files would
+    // leave a valid application pointing at nothing. Orphan cleanup belongs to
+    // a service-role maintenance job, not the applicant's client.
+    for (var index = 0; index < documents.length; index++) {
+      final document = documents[index];
+      // Throws for an extension the bucket will not accept, before any upload.
+      final contentType = document.contentType;
+      final extension = switch (contentType) {
+        'application/pdf' => 'pdf',
+        'image/png' => 'png',
+        _ => 'jpg',
+      };
+      final type = document.documentType.replaceAll(
+        RegExp(r'[^A-Za-z0-9_-]'),
+        '',
+      );
+      // `<uid>/...` is required by the bucket policy; the server repeats the
+      // check so a tampered path cannot file a document under another person.
+      final path = '$profileId/$capability/$type-$stamp-$index.$extension';
+      await writer.uploadObject(
+        bucket: bucket,
+        path: path,
+        bytes: document.bytes,
+        contentType: contentType,
+      );
+      payload.add({
+        'document_type': document.documentType,
+        'label': document.label,
+        'document_number': document.documentNumber,
+        'expires_at': document.expiresAt
+            ?.toIso8601String()
+            .substring(0, 10),
+        'storage_path': path,
+      });
+    }
+
+    final result = await writer.rpc(
+      function: 'submit_verification_application',
+      params: {'p_capability': capability, 'p_documents': payload},
+    );
+    final applicationId = result is String ? result : '$result';
+    final record = await fetchApplication(applicationId);
+    if (record == null) {
+      throw RepositoryFailure.invalidData(
+        'The application was submitted but could not be read back.',
+      );
+    }
+    return record;
   }
 }
 
@@ -113,6 +251,19 @@ class MockVerificationRepository implements VerificationRepository {
   ) async {
     final application = await fetchApplication(applicationId);
     return application?.documents ?? const [];
+  }
+
+  @override
+  Future<VerificationApplicationRecord> submitApplication({
+    required String profileId,
+    required String capability,
+    required List<VerificationUpload> documents,
+  }) {
+    // The offline demo keeps its own flow in AppState; writing a real
+    // application from a seed account would put a fake row in a real pipeline.
+    throw RepositoryFailure.unsupported(
+      'Verification submission is simulated in the offline demo.',
+    );
   }
 
   Account? _accountFor(String profileId) {

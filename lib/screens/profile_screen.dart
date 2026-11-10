@@ -140,9 +140,15 @@ class ProfileScreen extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(profile.fullName,
+              Flexible(
+                child: Text(
+                  profile.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 16)),
+                      fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
               const _VerifiedMark(),
             ],
           ),

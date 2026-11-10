@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
+import '../auth/phone_input.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
@@ -21,6 +22,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final phoneCtrl = TextEditingController();
   bool _submitting = false;
   String? _error;
+  String? _phoneError;
 
   @override
   void dispose() {
@@ -32,15 +34,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (_submitting) return;
     FocusScope.of(context).unfocus();
 
-    final phone = normalizePhoneNumber(phoneCtrl.text);
-    if (phone == null) {
-      setState(() => _error =
-          'Enter a valid phone number, for example 0917 512 4809.');
+    final phoneError = phoneFieldError(phoneCtrl.text);
+    if (phoneError != null) {
+      setState(() {
+        _phoneError = phoneError;
+        _error = null;
+      });
       return;
     }
+    final phone = normalizePhoneNumber(phoneCtrl.text)!;
 
     setState(() {
       _submitting = true;
+      _phoneError = null;
       _error = null;
     });
 
@@ -83,14 +89,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               'Enter the phone number on your account and we will text you a code to sign in.',
         ),
         const SizedBox(height: 24),
-        SbEditableField(
+        SbAuthField(
           label: 'Phone number',
           controller: phoneCtrl,
-          leading: const Icon(Icons.phone, size: 18, color: AppColors.text),
+          icon: Icons.phone_outlined,
+          errorText: _phoneError,
           keyboardType: TextInputType.phone,
+          inputFormatters: [phPhoneInputFormatter],
+          autofillHints: const [AutofillHints.telephoneNumber],
           textInputAction: TextInputAction.done,
+          enabled: !_submitting,
+          onChanged: (_) {
+            if (_phoneError != null) setState(() => _phoneError = null);
+          },
           onSubmitted: (_) => _submit(),
-          hintText: '+63 9XX XXX XXXX',
         ),
         const SizedBox(height: 18),
         SbAuthError(message: _error),

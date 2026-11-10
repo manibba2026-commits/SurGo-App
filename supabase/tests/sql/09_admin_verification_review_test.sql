@@ -352,6 +352,52 @@ begin
   exception when raise_exception then null;
   end;
 
+  -- App 2's only document is still pending: approval must be refused.
+  begin
+    perform public.admin_review_verification(
+      'a2000000-0000-0000-0000-000000000002', 'approved'
+    );
+    raise exception 'approval with a pending document must fail';
+  exception when sqlstate '22023' then null;
+  end;
+  perform public.test_assert(
+    (select status from public.verification_applications
+      where id = 'a2000000-0000-0000-0000-000000000002')::text
+      = 'under_review',
+    'a blocked approval leaves the application in review'
+  );
+  perform public.test_assert(
+    not exists (
+      select 1 from public.user_roles
+       where profile_id = 'a1000000-0000-0000-0000-000000000002'
+         and role = 'earner'
+    ),
+    'a pending document blocks the role grant'
+  );
+
+  -- App 1 has one approved and one rejected document: approval must be refused.
+  begin
+    perform public.admin_review_verification(
+      'a2000000-0000-0000-0000-000000000001', 'approved'
+    );
+    raise exception 'approval with a rejected document must fail';
+  exception when sqlstate '22023' then null;
+  end;
+  perform public.test_assert(
+    (select status from public.verification_applications
+      where id = 'a2000000-0000-0000-0000-000000000001')::text
+      = 'submitted',
+    'a blocked approval leaves the application undecided'
+  );
+  perform public.test_assert(
+    not exists (
+      select 1 from public.user_roles
+       where profile_id = 'a1000000-0000-0000-0000-000000000002'
+         and role = 'rider'
+    ),
+    'a rejected document blocks the role grant'
+  );
+
   perform public.admin_review_verification(
     'a2000000-0000-0000-0000-000000000002', 'needs_resubmission',
     'Add the LTFRB franchise'
@@ -371,12 +417,37 @@ begin
     'a resubmission request grants no role'
   );
 
+  -- Documents may still be reviewed while the application is open, so both
+  -- blocked applications can be made approvable.
+  perform public.admin_review_document(
+    'verification', 'a3000000-0000-0000-0000-000000000003', 'approved'
+  );
+  perform public.admin_review_document(
+    'verification', 'a3000000-0000-0000-0000-000000000002', 'approved'
+  );
+
   -- A resubmission request stays reviewable, so the approve path is still open.
   perform public.admin_review_verification(
     'a2000000-0000-0000-0000-000000000002', 'approved'
   );
   perform public.admin_review_verification(
     'a2000000-0000-0000-0000-000000000001', 'approved'
+  );
+
+  -- An approved application locks its documents: a late rejection would leave
+  -- an approved role pointing at a rejected file.
+  begin
+    perform public.admin_review_document(
+      'verification', 'a3000000-0000-0000-0000-000000000001', 'rejected',
+      'Late correction'
+    );
+    raise exception 'documents of an approved application must stay locked';
+  exception when sqlstate '22023' then null;
+  end;
+  perform public.test_assert(
+    (select status from public.verification_documents
+      where id = 'a3000000-0000-0000-0000-000000000001') = 'approved',
+    'the locked document keeps its approved status'
   );
 
   begin
@@ -432,6 +503,15 @@ begin
     (select count(*) from public.admin_audit_logs
       where action = 'verification.approved') = 2,
     'each application approval writes one audit row'
+  );
+  perform public.test_assert(
+    (select after_state ->> 'documents' from public.admin_audit_logs
+      where action = 'verification.approved'
+        and entity_id = 'a2000000-0000-0000-0000-000000000001') = '2'
+      and (select after_state ->> 'pending' from public.admin_audit_logs
+        where action = 'verification.approved'
+          and entity_id = 'a2000000-0000-0000-0000-000000000001') = '0',
+    'the approval audit records the document gate it passed'
   );
   perform public.test_assert(
     (select count(*) from public.admin_audit_logs

@@ -179,7 +179,36 @@ class MockAuthRepository implements AuthRepository {
       eligibleCapabilities: eligible,
       roles: _rolesFromCapabilities(capabilities),
       providers: user.providers,
+      profileExists: true,
     );
+  }
+
+  @override
+  Future<void> completeOnboarding({
+    required String fullName,
+    required String phone,
+  }) async {
+    final user = _user;
+    if (user == null) {
+      throw const AuthFailure(
+        AuthFailureCode.noAccount,
+        'Sign in before completing your account.',
+      );
+    }
+    final updated = user.copyWith(
+      phone: phone,
+      fullName: fullName.trim(),
+      metadata: {
+        ...user.metadata,
+        'full_name': fullName.trim(),
+        'surgo_phone': phone,
+        'surgo_onboarded': true,
+      },
+      providers: {...user.providers, 'phone'},
+    );
+    _user = updated;
+    await _persist(updated);
+    _emit(updated);
   }
 
   @override
