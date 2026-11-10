@@ -73,7 +73,17 @@ class SupabaseAuthRepository implements AuthRepository {
 
   @override
   Future<AuthUser?> restoreSession() async {
-    return _authUser(_client.auth.currentUser);
+    try {
+      // getSession() refreshes an expired access token before returning, so a
+      // restored session is valid rather than a stale stored token. A revoked
+      // refresh token throws and is treated as signed out: the next screen is
+      // sign-in, never a dashboard held open by an expired session.
+      final session = await _client.auth.getSession();
+      if (session == null || session.isExpired) return null;
+      return _authUser(session.user);
+    } on AuthException {
+      return null;
+    }
   }
 
   @override

@@ -7,15 +7,16 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
 
-/// The device PIN screen. It carries the whole demo PIN lifecycle:
+/// The device PIN screen. It carries the whole PIN lifecycle for both the
+/// offline demo and a hosted Supabase session:
 ///
 /// * a new account creates a 6-digit PIN and confirms it,
 /// * a returning account unlocks with its own PIN,
 /// * the resumed session stays locked on relaunch,
 /// * repeated failures lock the keypad for a short cooling-off period.
 ///
-/// A PIN is stored per account (see `DemoPinStore`), so switching demo
-/// identities can never unlock the new account with the old account's PIN.
+/// A PIN is stored per account (see `DemoPinStore`), so switching identities
+/// can never unlock the new account with the old account's PIN.
 class PinLockScreen extends StatefulWidget {
   const PinLockScreen({super.key});
 
@@ -170,7 +171,7 @@ class _PinLockScreenState extends State<PinLockScreen> {
       _lockTimer?.cancel();
       Navigator.pushNamedAndRemoveUntil(
         context,
-        state.homeRoute,
+        state.requiresOnboarding ? '/onboarding' : state.homeRoute,
         (r) => false,
       );
       return;

@@ -289,9 +289,9 @@ class AppState extends ChangeNotifier {
         authStatus = AuthStatus.signedOut;
         notifyListeners();
       } else {
-        // A restored demo session starts locked: the PIN replaces the OTP on
-        // every relaunch, while a fresh sign-in in this run does not.
-        if (demoAuthEnabled) _pinRequired = true;
+        // A restored session starts locked: the device PIN replaces the OTP on
+        // every relaunch, for the demo and a hosted Supabase session alike.
+        if (devicePinEnabled) _pinRequired = true;
         await _applyAuthUser(user);
       }
     } on AuthFailure catch (failure) {
@@ -343,7 +343,11 @@ class AppState extends ChangeNotifier {
 
   Future<void> _handleAuthEvent(AuthUser? user) async {
     if (!ready) await init();
-    if (user == null) {
+    // Trust the provider's current session rather than the event payload: an
+    // initialSession emitted before a failed refresh must not resurrect a
+    // revoked session. restoreSession() validates (and refreshes) it first.
+    final current = user == null ? null : await _auth.restoreSession();
+    if (current == null) {
       if (currentAccount != null || identity != null) {
         _clearSession();
       } else {
@@ -352,11 +356,12 @@ class AppState extends ChangeNotifier {
       }
       return;
     }
-    // A demo session always passes the device PIN before the dashboard. The
-    // flag is set before the identity lands so the screen listening for
-    // isSignedIn already sees requiresPin.
-    if (demoAuthEnabled) _pinRequired = true;
-    await _applyAuthUser(user);
+    // A new account passes the device PIN before the dashboard. The flag is
+    // set before the identity lands so a screen listening for isSignedIn
+    // already sees requiresPin. The same account refreshing its token keeps
+    // the unlock it already earned instead of being relocked.
+    if (devicePinEnabled && identity?.userId != current.id) _pinRequired = true;
+    await _applyAuthUser(current);
   }
 
   /// Serially applies identity loads. The auth listener and the explicit
@@ -481,23 +486,23 @@ class AppState extends ChangeNotifier {
     required String phone,
     required String token,
   }) async {
-    // Every demo sign-in ends behind the PIN: an account without one creates
-    // it, a returning account unlocks with its own. Set before the identity
-    // lands so the navigation listener already sees requiresPin.
-    _pinRequired = demoAuthEnabled;
+    // Every sign-in ends behind the PIN: an account without one creates it, a
+    // returning account unlocks with its own. Set before the identity lands so
+    // the navigation listener already sees requiresPin.
+    _pinRequired = devicePinEnabled;
     final failure = await _performAuth(() async {
       final user = await _auth.verifyPhoneOtp(phone: phone, token: token);
       await _applyAuthUser(user);
     });
     if (failure != null) return failure;
-    if (!demoAuthEnabled) _pinRequired = false;
+    if (!devicePinEnabled) _pinRequired = false;
     return currentAccount == null
         ? authError ?? AuthFailure.from('Sign-in did not complete.')
         : null;
   }
 
   Future<AuthFailure?> signInWithGoogle() async {
-    _pinRequired = demoAuthEnabled;
+    _pinRequired = devicePinEnabled;
     final failure = await _performAuth(() async {
       final launched = await _auth.signInWithGoogle();
       if (!launched) {
@@ -511,7 +516,7 @@ class AppState extends ChangeNotifier {
       final user = await _auth.restoreSession();
       if (user != null) await _applyAuthUser(user);
     });
-    if (!demoAuthEnabled) _pinRequired = false;
+    if (!devicePinEnabled) _pinRequired = false;
     return failure;
   }
 
@@ -580,13 +585,29 @@ class AppState extends ChangeNotifier {
   /// True when the presentation build opted into the local demo provider.
   bool get demoAuthEnabled => DemoAuthConfig.enabled && _auth.isMock;
 
-  /// The demo PIN is device-level, like a phone's lock screen.
+  /// The device PIN guards a session in the offline demo and in a hosted
+  /// Supabase build alike. Plain mock tests (no demo flag) keep no PIN, and a
+  /// provider that could not initialize has nothing to lock.
+  bool get devicePinEnabled =>
+      _auth.isAvailable && (demoAuthEnabled || !_auth.isMock);
+
+  /// The PIN is device-level, like a phone's lock screen.
   final DemoPinStore pinStore = DemoPinStore();
 
   bool _pinRequired = false;
 
-  /// A restored demo session must be unlocked before the dashboard is shown.
-  bool get requiresPin => demoAuthEnabled && isSignedIn && _pinRequired;
+  /// A restored session must be unlocked before the dashboard is shown.
+  bool get requiresPin => devicePinEnabled && isSignedIn && _pinRequired;
+
+  /// The device-local key the signed-in account's PIN is stored under.
+  ///
+  /// A demo account keeps its stable seed id. A hosted account is keyed by the
+  /// Supabase auth uuid: the local ACC id is regenerated each launch, so keying
+  /// by it would lose the PIN on the next browser restart.
+  String? get _pinAccountKey {
+    if (!devicePinEnabled) return null;
+    return demoAuthEnabled ? currentAccount?.id : identity?.userId;
+  }
 
   /// A hosted Google account that has not completed registration yet. Demo
   /// accounts are seeded and never pass through onboarding.
@@ -642,31 +663,32 @@ class AppState extends ChangeNotifier {
         : null;
   }
 
-  /// Whether the signed-in demo account already has a PIN on this device.
+  /// Whether the signed-in account already has a PIN on this device.
   ///
   /// False for a new account (or one whose PIN was forgotten), which is what
   /// makes the PIN screen open in creation mode instead of asking for a code
   /// nobody ever chose.
   Future<bool> pinConfiguredForCurrentAccount() async {
-    final account = currentAccount;
-    if (!demoAuthEnabled || account == null) return false;
-    return pinStore.hasPin(account.id);
+    final key = _pinAccountKey;
+    if (key == null) return false;
+    return pinStore.hasPin(key);
   }
 
-  /// Saves the first PIN for the signed-in demo account.
+  /// Saves the first PIN for the signed-in account.
   Future<bool> setPin(String pin) async {
-    final account = currentAccount;
-    if (!demoAuthEnabled || account == null || !isDemoPin(pin)) return false;
-    await pinStore.setPin(account.id, pin);
+    final key = _pinAccountKey;
+    if (key == null || !isDemoPin(pin)) return false;
+    await pinStore.setPin(key, pin);
     return true;
   }
 
   /// Verifies the PIN of the account currently signed in, then releases the
   /// session. A PIN belonging to a different account never unlocks this one.
   Future<PinUnlockResult> unlockWithPin(String pin) async {
-    final account = currentAccount;
-    if (!demoAuthEnabled || account == null) return PinUnlockResult.success;
-    if (!await pinStore.verify(account.id, pin)) {
+    if (!devicePinEnabled) return PinUnlockResult.success;
+    final key = _pinAccountKey;
+    if (key == null) return PinUnlockResult.incorrect;
+    if (!await pinStore.verify(key, pin)) {
       return PinUnlockResult.incorrect;
     }
     _pinRequired = false;
@@ -678,24 +700,24 @@ class AppState extends ChangeNotifier {
     required String currentPin,
     required String newPin,
   }) async {
-    final account = currentAccount;
-    if (!demoAuthEnabled || account == null) return PinChangeResult.invalidNew;
+    final key = _pinAccountKey;
+    if (key == null) return PinChangeResult.invalidNew;
     if (!isDemoPin(newPin)) return PinChangeResult.invalidNew;
     if (currentPin == newPin) return PinChangeResult.sameAsCurrent;
-    if (!await pinStore.verify(account.id, currentPin)) {
+    if (!await pinStore.verify(key, currentPin)) {
       return PinChangeResult.incorrectCurrent;
     }
-    await pinStore.setPin(account.id, newPin);
+    await pinStore.setPin(key, newPin);
     return PinChangeResult.success;
   }
 
   /// Forgot PIN returns to authentication. Only this account's PIN is removed,
-  /// so signing back in asks for a new one without touching another demo
-  /// identity's lock on the same device.
+  /// so signing back in asks for a new one without touching another identity's
+  /// lock on the same device.
   Future<void> forgotPin() async {
-    final account = currentAccount;
+    final key = _pinAccountKey;
     _pinRequired = false;
-    if (account != null) await pinStore.reset(account.id);
+    if (key != null) await pinStore.reset(key);
     await logout();
   }
 

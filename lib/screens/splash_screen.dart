@@ -42,15 +42,16 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       Future.delayed(const Duration(milliseconds: 1600)),
     ]);
     if (!mounted) return;
-    // init() restores the persisted session before it completes. A demo session
-    // reopens behind its PIN; a Supabase session (or no session) keeps the
-    // existing routing.
+    // init() restores the persisted session before it completes, so routing
+    // never races a half-restored identity. Onboarding comes first for a
+    // account that has not finished registering; a restored session then opens
+    // behind its device PIN before any protected content.
     Navigator.pushReplacementNamed(
       context,
-      state.requiresPin
-          ? '/pin'
-          : state.requiresOnboarding
-              ? '/onboarding'
+      state.requiresOnboarding
+          ? '/onboarding'
+          : state.requiresPin
+              ? '/pin'
               : state.isSignedIn
                   ? state.homeRoute
                   : '/login',
