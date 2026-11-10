@@ -38,6 +38,10 @@ class _MatchingScreenState extends State<MatchingScreen>
   /// rider" rather than the proposal they already accepted.
   bool _confirmed = false;
 
+  /// The rider the proposal named, kept after the proposal itself is cleared
+  /// on confirm so the waiting state can name them instead of an internal id.
+  String? _riderName;
+
   /// Fires the simulated rider acceptance after a pause, so the
   /// awaiting-acceptance state is actually visible. Guarded by [_confirmed]
   /// because it must not run for a request the passenger declined.
@@ -71,6 +75,7 @@ class _MatchingScreenState extends State<MatchingScreen>
   }
 
   void _confirm() {
+    _riderName = AppState.instance.rideProposal?.riderName;
     if (!AppState.instance.confirmRideMatch()) return;
     setState(() => _confirmed = true);
 
@@ -82,6 +87,9 @@ class _MatchingScreenState extends State<MatchingScreen>
       final request = AppState.instance.myRideRequest;
       if (request == null) return;
       AppState.instance.riderAccepts(request);
+      // The accepted trip is now live, so move on rather than leaving the
+      // passenger on a waiting screen that has nothing left to wait for.
+      if (mounted) _goToTrip();
     });
   }
 
@@ -248,6 +256,17 @@ class _MatchingScreenState extends State<MatchingScreen>
     );
   }
 
+  /// Names the rider the request went to. The proposal is cleared on confirm,
+  /// so the id it carried would be the only thing left to show otherwise.
+  String get _confirmedRiderLine {
+    final rider = _riderName;
+    return rider == null
+        ? 'Your request went to the nearest rider. '
+            'The trip starts once they accept.'
+        : 'Your request went to $rider. '
+            'The trip starts once they accept.';
+  }
+
   /// Between the passenger confirming and the rider accepting.
   Widget _waiting(RideRequestItem request) {
     return Scaffold(
@@ -291,8 +310,7 @@ class _MatchingScreenState extends State<MatchingScreen>
                       TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
               const SizedBox(height: 8),
               Text(
-                'Your request went to ${request.riderId ?? 'the nearest rider'}. '
-                'The trip starts once they accept.',
+                _confirmedRiderLine,
                 textAlign: TextAlign.center,
                 style:
                     const TextStyle(color: AppColors.muted, fontSize: 12.5),

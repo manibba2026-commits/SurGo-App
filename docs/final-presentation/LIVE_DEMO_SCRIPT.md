@@ -27,7 +27,16 @@ Do **not** try to sign in with a seeded demo account (`jr.derigay@email.com`, et
 4. Keep the session active (do not sign out).
 5. Verify the app restores the session on relaunch.
 
-If you want rider/owner/helper modes in the live demo, an authorized person must grant approved `earner` and `vehicle_owner` roles to that account's profile in Supabase **before** the defense. This is a privileged data change; get approval and record it.
+If you want rider/owner/helper modes in the live demo, unlock them in the app — no hosted change is required:
+
+1. Open **Profile → Verification**.
+2. Start verification for **Rider** and **Vehicle Owner**, tap each listed document (simulated upload), and submit.
+3. The demo auto-approves after about five seconds; the mode switcher then offers Rider and Vehicle Owner.
+4. For Pasuyo work, switch to Rider and enable **Errands** in Rider Profile.
+
+This grant is session-scoped: a restart returns the account to passenger-only, so prepare it once at the start of the demo and do not sign out. The verification screen labels the review as simulated; do not describe it as a real admin decision.
+
+If a persisted hosted role is preferred instead, an authorized person must grant approved `earner` and `vehicle_owner` roles to that account's profile in Supabase **before** the defense. This is a privileged data change; get approval and record it.
 
 Role-grant template (do not run without authorization):
 
@@ -41,7 +50,7 @@ on conflict (profile_id, role) do update
   set status = 'approved', approved_at = now();
 ```
 
-Without those roles, the Flutter demo is **passenger-only**; use the reduced path in section 6.
+Without the in-session verification or those roles, the Flutter demo is **passenger-only**; use the reduced path in section 6.
 
 ### 1.3 Data mode
 
@@ -51,19 +60,21 @@ Do not switch to `SURGO_DATA_SOURCE=supabase` during the demo.
 
 ### 1.4 What the fresh account will and will not show
 
-A phone-registered account gets a fresh local passenger/earner/owner slice:
+A phone-registered account gets a fresh local passenger slice; earner and owner slices become reachable only after the in-session verification (or a granted hosted role):
 
 | Screen | What to expect |
 | --- | --- |
-| Passenger Home | Works; shared seeded lists where applicable. |
+| Passenger Home | Works; shared seeded lists where applicable. The Recent Bookings card reads terminal rides through the repository, limit 3. |
 | Ride booking / matching / live trip | Works. The matching proposal assigns a seeded rider, so the driver card is populated. |
 | Activity | Seeded ride history plus the new ride. |
-| Wallet | Balance may be ₱0 and history empty. **Do not demo as rich.** |
-| Notifications | May be empty. **Do not demo.** |
+| Wallet | Balance may be ₱0 and history empty; the history list is a repository read. **Do not demo as rich.** |
+| Notifications | May be empty. **Do not demo unless populated.** If it is populated, ages come from real timestamps; mark-read is mock-only. |
 | Pasuyo customer hub | May be empty (seeded tasks belong to other customer ids). Show the post form instead, or skip. |
 | Pasuyo helper | Seeded open tasks appear **only after enabling Errands** in Rider Profile. |
+| Rider Home header | Shows the earner profile's name, rating, and member year. |
 | Rider profile | Vehicle fields may be blank. **Do not linger.** |
 | Owner fleet | Shared seeded vehicles appear. |
+| Vehicle documents | Owner-fleet paperwork read through the owner's vehicles; a rider with no fleet sees the empty state. |
 | Owner profile | May be sparse. **Do not linger.** |
 | Verification | Simulated. **Do not demo as a real review.** |
 
@@ -74,6 +85,8 @@ A phone-registered account gets a fresh local passenger/earner/owner slice:
 - Wallet top-up/cash-out as a real payment.
 - SOS as a real emergency alert.
 - Push notifications.
+- Notification read persistence in Supabase data mode.
+- The admin audit-log panel as a working feed (42501 is expected by design).
 - Flutter verification auto-approval as a real admin decision.
 - Admin approval of a real application (unless a disposable test application exists).
 - Pasuyo customer post → same-account helper accept (the app refuses self-acceptance).
@@ -130,11 +143,12 @@ A phone-registered account gets a fresh local passenger/earner/owner slice:
 5. Tap **Request** / **Book**.
 6. Matching screen appears; wait for the proposal.
 7. Tap **Confirm** / **Accept**.
-8. Wait ~2 seconds for the simulated rider acceptance.
+8. Wait ~2 seconds; the waiting state names the proposed rider, then opens Live Trip automatically.
 9. Live trip screen opens.
 10. Point to the driver card, status stepper, chat, share, and SOS.
-11. Advance/complete the trip.
-12. Rate the trip.
+11. Tap the status action through **Start heading to pickup** → **I've arrived at pickup** → **Start the trip**.
+12. Tap **Complete trip**; only this last state settles and opens the rating screen.
+13. Rate the trip.
 
 **Say:**
 
@@ -143,8 +157,9 @@ A phone-registered account gets a fresh local passenger/earner/owner slice:
 **Expected:**
 
 - Matching shows a rider proposal, not an eternal spinner.
-- Confirmation shows the waiting state.
+- Confirmation shows the waiting state and names the proposed rider; it then opens Live Trip automatically.
 - Live trip shows a populated seeded driver.
+- The action label and stepper follow the ride status.
 - Completion reaches the rating screen.
 - The ride appears in Activity.
 
@@ -153,6 +168,7 @@ A phone-registered account gets a fresh local passenger/earner/owner slice:
 - No riders: explain the honest no-riders state, go back, retry.
 - Wrong screen: use the system back or restart the app; the seed reloads.
 - Timer stalls: wait 2–3 seconds; if still stuck, restart and skip to Activity.
+- No action button: the trip is not in a state the passenger can advance; restart and use the seeded active trip.
 
 ---
 
@@ -164,7 +180,8 @@ A phone-registered account gets a fresh local passenger/earner/owner slice:
 
 1. Open **Activity** and show the Rides tab with the new completed ride plus seeded history.
 2. Briefly show Rentals and Pasuyo tabs.
-3. Return Home and tap **Rental**.
+3. Return Home and point to **Recent Bookings**: it lists only completed/cancelled rides, newest first, at most three.
+4. Tap **Rental**.
 
 **Say:**
 
@@ -290,19 +307,21 @@ A phone-registered account gets a fresh local passenger/earner/owner slice:
 2. Show the **Dashboard** overview.
 3. Open **Verification**; show the queue and document file states.
 4. Open **Reports**; switch the window between 7 and 30 days.
-5. Point out that the dashboard reads live hosted data and that actions go through audited RPCs.
+5. Open **Settings** and point out the audit-log panel: it says the log is not readable by this session. That is the 42501 grant boundary, not a page failure.
+6. Point out that the dashboard reads live hosted data as the signed-in `authenticated` role and that actions go through audited RPCs.
 
 **Say:**
 
-> "The admin app is separate. It authenticates with Supabase, checks `is_admin()` server-side, and never writes tables from the browser. Review decisions go through audited security-definer functions. The dashboard reads live hosted data; the Flutter business writes are the part still simulated."
+> "The admin app is separate. It authenticates with Supabase, checks `is_admin()` server-side, and never writes tables from the browser. Dashboard reads use the signed-in authenticated role through SELECT-only admin policies, not a service-role browser key. Review decisions go through audited security-definer functions. The audit log is written by those functions but the authenticated role has no table read grant, so the settings panel honestly shows it as unavailable. The Flutter business writes are the part still simulated."
 
-**Expected:** Dashboard, verification queue, and reports render without server errors.
+**Expected:** Dashboard, verification queue, reports, and settings render without server errors; the audit panel shows the unavailable state.
 
 **Recovery:**
 
 - Login fails: confirm password and network; use a prepared session in a second browser.
 - A page errors: switch to the architecture slide and explain the RPC/RLS design; do not debug live.
 - Finance is empty: that is expected; zero remittances are seeded.
+- Audit panel says unavailable: expected 42501 by design; do not try to fix it on stage.
 
 ---
 
@@ -347,27 +366,29 @@ If you are running long, cut **Owner mode**, then **Activity**, then **Pasuyo**.
 | 7 | Matching | Wait ~2 s | Live trip opens | Open Activity card |
 | 8 | Live trip | Inspect/advance | Stepper moves | Use back/restart |
 | 9 | Live trip | Complete | Rating screen | Skip rating |
-| 10 | Activity | Open Rides | New ride at top | Use seeded history |
-| 11 | Rental list | Open vehicle | Detail + price | Use another vehicle |
-| 12 | Rental detail | Pick dates | Total updates | Use defaults |
-| 13 | Rental detail | Request | Pending card | Show existing rental |
-| 14 | Home/Active | Wait ~10 s | Active rental | Restart; show seed |
-| 15 | Profile | Switch to Rider | Rider Home | Skip if no role |
-| 16 | Rider Home | Go online | Requests appear | Toggle again |
-| 17 | Rider Home | Accept | Active ride banner | Retry |
-| 18 | Rider Profile | Enable Errands | Nearby tasks appear | Restart |
-| 19 | Pasuyo task | Accept/advance | Stepper moves | Skip |
-| 20 | Profile | Switch to Owner | Owner Home | Skip if no role |
-| 21 | Owner Bookings | Open booking | Rental detail | Skip |
-| 22 | Admin login | Email/password | Dashboard | Use prepared session |
-| 23 | Admin verification | Open queue | Applications/docs | Explain empty state |
-| 24 | Admin reports | Change window | Charts update | Explain from slide |
+| 10 | Home | Point to Recent Bookings | At most 3 terminal rides, newest first | Use Activity instead |
+| 11 | Activity | Open Rides | New ride at top | Use seeded history |
+| 12 | Rental list | Open vehicle | Detail + price | Use another vehicle |
+| 13 | Rental detail | Pick dates | Total updates | Use defaults |
+| 14 | Rental detail | Request | Pending card | Show existing rental |
+| 15 | Home/Active | Wait ~10 s | Active rental | Restart; show seed |
+| 16 | Profile | Switch to Rider | Rider Home | Skip if no role |
+| 17 | Rider Home | Go online | Requests appear | Toggle again |
+| 18 | Rider Home | Accept | Active ride banner | Retry |
+| 19 | Rider Profile | Enable Errands | Nearby tasks appear | Restart |
+| 20 | Pasuyo task | Accept/advance | Stepper moves | Skip |
+| 21 | Profile | Switch to Owner | Owner Home | Skip if no role |
+| 22 | Owner Bookings | Open booking | Rental detail | Skip |
+| 23 | Admin login | Email/password | Dashboard | Use prepared session |
+| 24 | Admin verification | Open queue | Applications/docs | Explain empty state |
+| 25 | Admin reports | Change window | Charts update | Explain from slide |
+| 26 | Admin settings | Open audit panel | Unavailable (42501 by design) | Explain the grant boundary |
 
 ---
 
-## 6. Reduced live path (if roles are not granted)
+## 6. Reduced live path (if modes are not unlocked)
 
-Use this if the Flutter account is passenger-only. It still fits 8–9 minutes.
+Use this if the Flutter account is passenger-only — by choice, or because the in-session verification was skipped. It still fits 8–9 minutes.
 
 | Time | Segment | Action |
 | --- | --- | --- |
@@ -398,6 +419,9 @@ This is honest and avoids a failed live attempt.
 | Rental timer stalls | Show the seeded active rental or restart. | "The owner approval is a simulated timer." |
 | Admin login fails | Use the second prepared browser session. | "I'll use the prepared admin session." |
 | Admin page 500s | Switch to the architecture slide. | "The dashboard is a separate app; I'll show the design instead." |
+| Admin audit panel says unavailable | Expected: `authenticated` has no SELECT grant on `admin_audit_logs` (42501). Do not debug live. | "The audit log is written server-side but not readable by this session; that is the grant boundary." |
+| Notification badge returns after refresh | Expected only in Supabase data mode; the default mock demo persists the seed mutation. | "Read state is not written back in the read-only data mode." |
+| Recent Bookings is empty on a fresh account | Expected: it reads terminal rides, not open requests. Use Activity or the seeded demo build. | "A fresh account has no completed bookings yet." |
 | Projector overflow | Reduce window width or use a phone. | — |
 | Running over 12 minutes | Cut owner, Activity, Pasuyo. | — |
 
@@ -417,6 +441,7 @@ This is honest and avoids a failed live attempt.
 - [ ] Admin account password confirmed.
 - [ ] Admin session opened in a second browser/profile.
 - [ ] Recorded clip ready for the reduced path.
+- [ ] Know whether Recent Bookings and Notifications are populated for this account; skip them if empty.
 - [ ] Seed data visible.
 - [ ] Timer visible.
 - [ ] Backup device/network ready.

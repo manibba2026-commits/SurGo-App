@@ -5,7 +5,7 @@
 SurGo is a **Flutter prototype** of a multi-service mobility and delivery platform for **Tandag City, Surigao del Sur**. One account can operate in three modes:
 
 - **Passenger** — book rides, rent vehicles, post Pasuyo errands, manage wallet, notifications, profile, and verification.
-- **Rider / Helper** — go online, receive ride requests, accept trips, run Pasuyo errands, view earnings, and manage vehicle documents.
+- **Rider / Helper** — go online, receive ride requests, accept trips, run Pasuyo errands, view earnings, and open vehicle documents (owner-fleet paperwork; empty for a rider who owns no vehicles).
 - **Vehicle Owner** — list vehicles, manage rental bookings, view rental earnings, and see listed vehicles on a map.
 
 A separate **Next.js administrator dashboard** reads the hosted Supabase project to review verification applications, vehicles, users, rides, rentals, Pasuyo requests, finance, and reports.
@@ -46,9 +46,15 @@ These items are supported by real code paths and should be presented with confid
 - Session restoration and role/capability loading are implemented.
 - The app maps a Supabase identity onto the seeded business data (by auth user id, phone, or email) or creates a fresh passenger account.
 - Seeded business data drives the passenger, rider, owner, Pasuyo, wallet, notification, and verification screens.
+- Repository-backed reads now cover the passenger and earner profiles, the notification feed and unread counts, Recent Bookings, wallet balances and history, the owner fleet, and vehicle documents.
+- Matching names the proposed rider in the waiting state and opens Live Trip automatically when the simulated rider accepts.
+- The Live Trip action follows the ride status enum (accepted → heading to pickup → arrived → in progress), and only the in-progress state settles through `AppState.completeActiveRide`. The rating screen reads the completed ride and driver from that settlement instead of rebuilding them from `MockData`, so no duplicate history row is written.
+- A `DomainCache` session change retires any in-flight read and re-reads the affected slots for the new identity; tests cover a stale answer never landing, several restarts collapsing to one re-read, and a failed re-read staying retryable.
 - Ride pricing follows the documented platform-fee formula and is rendered from integer centavos.
 - The Next.js admin dashboard authenticates with Supabase email/password, checks `is_admin()` server-side, and calls audited `SECURITY DEFINER` RPCs for review actions.
-- The admin dashboard reads live hosted tables and displays verification queues, users, vehicles, rides, rentals, Pasuyo, finance, and reports.
+- The admin dashboard reads live hosted tables as the signed-in `authenticated` role through migration-14 `admin_read_*` SELECT policies; it does not use a service-role key in the browser.
+- `admin_audit_logs` remains unreadable by `authenticated` (SQLSTATE 42501 by design); the settings page renders that section as unavailable rather than failing the page.
+- The admin dashboard displays verification queues, users, vehicles, rides, rentals, Pasuyo, finance, and reports.
 - RLS is enabled on all hosted public tables, with read-own/catalog baseline policies and admin-only read policies.
 
 ## 5. What is simulated or demo-only
@@ -62,7 +68,8 @@ These items must be labelled as simulated during the defense. Do not claim them 
 | Rental approval | Owner approval fires on a 10 s timer in `app_state.dart`. |
 | Wallet | Top-up and cash-out mutate in-memory balances; no payment gateway. |
 | Verification (Flutter) | Submitted → under review → approved is timer-driven (`2 s`, `5 s`) inside the app. |
-| Pasuyo | Full lifecycle is in-memory; the same account can act as customer and helper. |
+| Pasuyo | Full lifecycle is in-memory; customer and helper share one task screen, and self-acceptance is refused. |
+| Notification read state | Mark-one/all read mutates the seeded feed in mock mode; a Supabase build reads the feed but does not persist read state. |
 | Business persistence | Most writes live in `AppState`/`DbService` memory and reset on reload. |
 | Demo data | Seeded JSON in `assets/db/`; hosted demo rows are imported copies, and demo auth accounts are banned. |
 
@@ -101,6 +108,8 @@ These items must be labelled as simulated during the defense. Do not claim them 
 | Test/preview | `MockAuthRepository`, fixed OTP `123456` | Local mock seed | Unit/widget tests and previews only; never installed by `main.dart` |
 
 > **Critical:** the fixed OTP `123456` is not available in a normal build. `main.dart` always installs `SupabaseAuthRepository` or `DisabledAuthRepository`. A live demo must use real Supabase SMS OTP or Google sign-in.
+
+> **Read-state caveat:** in Supabase data mode the notification feed is a real read, but marking a notification read does not write back; the badge can reappear after a refresh. The default mock mode re-reads the mutated seed and is the coherent demo configuration.
 
 ## 9. System context
 

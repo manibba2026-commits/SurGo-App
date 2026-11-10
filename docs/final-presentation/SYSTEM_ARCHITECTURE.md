@@ -119,6 +119,8 @@ Pushed routes cover booking, matching, live trip, chat, rental list/detail, acti
 
 Most mutations write to `DbService` lists in memory. A page reload restores the seed.
 
+Ride status is one enum path: `advanceRide()` uses `RideStatus.next`, and `completeActiveRide()` only succeeds from `inProgress`. The Live Trip screen listens to `AppState`, renders the action the current status offers, and shows an explicit empty state when there is no active trip. No screen can skip a state or settle early (`test/live_trip_widget_test.dart` pins the passenger-side path).
+
 ### 3.3 `DbService`
 
 `DbService` loads `assets/db/manifest.json` and the declared JSON files:
@@ -156,22 +158,40 @@ It also owns per-profile wallet, notification, and settings maps, and `activateA
 
 ### 3.5 Where repositories are actually read
 
-Repository reads are used by:
+Repository reads are used by eight screens:
 
-- `home_screen.dart`
-- `notifications_screen.dart`
-- `profile_screen.dart`
-- `rider_home_screen.dart`
-- `vehicle_documents_screen.dart`
-- `vehicle_owner_home_screen.dart`
-- `vehicle_owner_vehicles_screen.dart`
-- `wallet_screen.dart`
+| Screen | Reads |
+| --- | --- |
+| `home_screen.dart` | Passenger profile, unread badge, Recent Bookings (`fetchRideHistory`, limit 3, terminal rides only) |
+| `notifications_screen.dart` | Passenger or earner notification feed, newest first, with ages from `createdAt` |
+| `profile_screen.dart` | Profile and approved roles |
+| `rider_home_screen.dart` | Earner profile header and unread badge |
+| `vehicle_documents_screen.dart` | Owner-fleet vehicle documents, read through the owner's vehicles |
+| `vehicle_owner_home_screen.dart` | Owner fleet preview |
+| `vehicle_owner_vehicles_screen.dart` | Owner fleet |
+| `wallet_screen.dart` | Passenger, earner, or owner wallet balance and ledger entries |
 
 Most other screens still read `AppState`/`DbService` directly. This is the central architectural gap: **the repository layer exists and is used for selected reads, but it is not yet the only data path.**
 
 ### 3.6 `DomainCache`
 
-`DomainCache` holds repository read slots (profile, roles, unread counts, wallets, fleet, notifications, etc.). Screens use `RepositoryView`/`RepositoryInline` widgets to render loading, empty, failure, and data states, with retry.
+`DomainCache` holds repository read slots in explicit loading, empty, failure, and data states. Screens use `RepositoryView`/`RepositoryInline` widgets to render those states, with retry.
+
+The slots now include:
+
+- `profile` and `profileRoles`;
+- `passengerProfile` and `earnerProfile`;
+- `barangays`;
+- `unreadPassengerNotifications` and `unreadEarnerNotifications`;
+- `passengerNotificationFeed` and `earnerNotificationFeed`;
+- `passengerRecentRides` (`fetchRideHistory`, limit 3, completed/cancelled only);
+- three wallet balances and three wallet-entry lists (passenger, earner, owner);
+- `ownerFleet`;
+- `ownerVehicleDocuments` (read through the owner's vehicle ids, because `vehicle_documents` has no owner column).
+
+Mock reads mirror the in-memory seed and re-run when app data changes; Supabase reads are not re-fetched on unrelated app notifications and never fall back to seed rows on failure.
+
+**Session-change fix (verified):** a read that is still in flight when the identity changes is retired by a per-slot generation counter, and the request that was parked behind it re-runs once for the new profile key. This prevents the previous session's row from landing in the new session's cache. Tests cover three cases: a stale answer never appears, several restarts collapse into one re-read, and a failed re-read remains a failure the screen can retry (`test/domain_cache_test.dart`, group "session changes during a parked read"). `AppState` calls `cache.restart()` after session restore and sign-out.
 
 ## 4. Authentication architecture
 
@@ -252,6 +272,7 @@ The hosted RLS baseline grants `SELECT` only. There are **no client write polici
 
 - data can look inconsistent between screens that read live and screens that read memory;
 - a write in Supabase mode is not persisted;
+- notification read state is not written back, so a read badge can return after refresh;
 - the mode is suitable for read verification, not for a transactional demo.
 
 For the defense, the default **live auth + mock business data** mode is more coherent.
@@ -297,6 +318,7 @@ flowchart LR
 
 - Every action re-verifies admin server-side with `requireAdmin()`.
 - The browser never writes tables directly.
+- Dashboard reads run as the signed-in `authenticated` role through migration-14's ten SELECT-only `admin_read_*` policies (plus the `surgo admin read documents` storage policy), all gated on `public.is_admin()`. No service-role key is used in the browser.
 - Five audited RPCs handle decisions:
   - `admin_review_verification`
   - `admin_review_document`
@@ -305,7 +327,7 @@ flowchart LR
   - `admin_update_remittance`
 - Read RPCs: `admin_overview`, `admin_daily_activity`.
 - `is_admin()` checks an approved `admin` role in `user_roles`.
-- `admin_audit_logs` is written by the RPCs and is not readable by the `authenticated` role; it is read through `service_role` only.
+- `admin_audit_logs` is written by the RPCs and is not readable by the `authenticated` role. The hardening migration withholds the table-level `SELECT` grant, so even an admin session gets SQLSTATE 42501; the log is read through `service_role` only. The settings page treats that code as "not readable by this session" instead of an error.
 - Document previews use short-lived signed URLs (600 s) and report missing files honestly.
 
 ### Admin verification flow

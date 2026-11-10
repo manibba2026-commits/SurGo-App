@@ -13,6 +13,8 @@ SurGo uses a Supabase Postgres database with:
 
 The **hosted project currently has 26 tables and 18 enums** because the four local-only financial migrations have not been applied. This is a deliberate distinction, not a defect to hide.
 
+The admin dashboard reads as the signed-in `authenticated` role through migration-14's ten SELECT-only `admin_read_*` policies; it does not use a service-role key in the browser. `admin_audit_logs` is the deliberate exception: the `authenticated` role has no table-level `SELECT` grant, so even an admin session receives SQLSTATE 42501 and the dashboard renders that panel as unavailable.
+
 ## 2. Hosted vs. local state
 
 | Item | Local repository | Hosted project |
@@ -53,6 +55,8 @@ The **hosted project currently has 26 tables and 18 enums** because the four loc
 20261106140200  financial_rpc
 20261106140300  financial_reporting
 ```
+
+The hosted ledger records the admin migration as `20261106062246`; the repository keeps the same SQL under the retimed name `20261106091300`. That is a single known version drift, not a missing migration. `supabase/tools/audit_hosted.mjs` reports it explicitly, and `supabase/tools/verify_migration_sync.mjs` compares the local set with the hosted ledger.
 
 These add `cash_collections`, `cash_payment_disputes`, `platform_fee_receivables`, `provider_fee_remittances`, six financial enums, and functions such as `calculate_service_price`, `settle_service_transaction`, `confirm_cash_collection`, `open_cash_payment_dispute`, and `record_provider_fee_remittance`.
 
@@ -194,15 +198,16 @@ RLS is enabled on every public table. The baseline grants reads only:
 ### What is deliberately absent
 
 - **No client INSERT/UPDATE/DELETE policies.** The app cannot write business tables with the publishable key.
-- **No client grant on `admin_audit_logs`.** It is written by `SECURITY DEFINER` RPCs and read through `service_role`.
-- **No broad admin table access from the browser.** The admin dashboard reads through migration-14 `admin_read_*` policies and calls audited RPCs.
+- **No client grant on `admin_audit_logs`.** It is written by `SECURITY DEFINER` RPCs. Migration 14 adds an `admin_read_audit_logs` policy, but the hardening migration withholds the table-level `SELECT` grant from `authenticated`, so even an admin session receives SQLSTATE 42501; the log is read through `service_role`.
+- **No broad admin table access from the browser.** The admin dashboard reads through migration-14's ten SELECT-only `admin_read_*` policies and calls audited RPCs. It uses the signed-in `authenticated` session, not a service-role browser key.
 
 ### Admin security
 
 - `is_admin()` checks for an approved `admin` row in `user_roles`.
 - Five write RPCs re-check `is_admin()` and write an audit row.
-- Admin read policies cover the tables the dashboard needs.
-- Storage reads use the signed-in admin's session; document previews use 600-second signed URLs.
+- Admin read policies cover the tables the dashboard needs; `verify_admin_reads.mjs` validates 32 dashboard select strings as 52 checks against the hosted catalog.
+- Storage reads use the signed-in admin's session; document previews use 600-second signed URLs and report missing files as missing.
+- The settings page treats a 42501 on `admin_audit_logs` as "not readable by this session" rather than a page failure.
 
 ## 7. Auth trigger
 
@@ -247,14 +252,18 @@ assets/db/*.json
 | `wallet_transactions` | 79 |
 | `cash_fee_remittances` | 0 |
 
+These counts were re-verified against the hosted project on 9 November 2026. `supabase/tools/audit_hosted.mjs` runs **132 read-only integrity checks**: the documented counts, an id-by-id comparison of every table against `demo-data.sql`, foreign-key orphans in both directions, the role → provider → vehicle → wallet graph, wallet-ledger replay, settlement coverage, the eight banned demo accounts, and the real account's untouched state.
+
 ### Demo data rules
 
 - **Demo auth accounts are banned.** Each demo person has an `auth.users` row with no password and `banned_until = 'infinity'`. They cannot sign in.
 - **The real account is separate.** The operator's admin account (identified locally by `SURGO_REAL_USER_ID` / `SURGO_REAL_USER_EMAIL`) is unbanned but has an **email identity only**, so it is the admin-dashboard account, not a Flutter login. At the time of writing it has approved roles `passenger` and `admin` only.
 - **Cash only.** `payment_method` stays `cash`; GCash/Maya mentions are preserved in notes.
 - **No platform fees in demo rows.** `service_transactions.platform_fee_centavos = 0`; `pricing_policies` is empty.
+- **What the shipped pricing logic would have earned is hypothetical.** On the 29 demo settlements it would be **₱1,923.50** — ₱1,590.00 rental commission (10%), ₱268.50 Pasuyo commission (15%), and only ₱65.00 of ride platform fees, because all 13 imported rides carry `distance_km = 0` and therefore fall to the ₱5.00 floor. Nothing is written while pricing stays gated; `audit_hosted.mjs --fees` recomputes this per transaction.
 - **Wallets reconcile by construction.** An opening adjustment is derived from the JSON balance minus its ledger.
 - **Ratings below 1.0 are clamped up to 1.00** in the hosted import; a value already at or above 1.0 (e.g., `RV005` 1.1) is left unchanged.
+- **Timestamps are real.** Relative seed labels ("Just now", "Yesterday") are anchored to `2026-11-06T12:00Z` so re-imports are stable; the Flutter repository maps the real timestamps for display.
 - **Ownership follows foreign keys**, not JSON labels.
 - **`RV005` keeps `service_area_id = null`** because its plate duplicates `NGD 6612` under a partial unique index.
 
@@ -297,8 +306,10 @@ These are local seed inconsistencies, not necessarily hosted defects:
 - "The schema covers identity, catalog, rides, rentals, Pasuyo, money, engagement, and administration."
 - "RLS is enabled on every public table, with a read-only client baseline."
 - "Admin actions run through audited server-side functions, not browser writes."
+- "The admin dashboard reads as the signed-in authenticated role through SELECT-only admin policies; it uses no service-role key in the browser."
 - "The hosted project has demo rows for 19 demo people plus the real account."
 - "The financial ledger is designed and locally tested but not yet deployed."
+- "The hosted project has 15 migrations, 26 tables, 18 enums, and RLS on all 26; the local set has 19 migrations, 30 tables, and 24 enums."
 
 ## 12. Database claims to avoid
 
@@ -307,3 +318,5 @@ These are local seed inconsistencies, not necessarily hosted defects:
 - "Demo accounts can be used to sign in." — They are banned.
 - "Pricing is final for Pasuyo and rentals." — It is unresolved.
 - "The admin dashboard has been fully browser-tested against production." — It has not.
+- "The admin dashboard uses a service-role key." — It uses the signed-in authenticated session and RLS; the service role is only for the audit-log read channel.
+- "The demo rows contain ₱1,923.50 in platform fees." — That is a hypothetical recomputation; every imported settlement stores zero fees.

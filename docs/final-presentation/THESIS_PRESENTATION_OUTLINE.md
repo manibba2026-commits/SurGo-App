@@ -166,7 +166,8 @@
 - RLS enabled on every public table; read-only client baseline.
 - No client write policies.
 - Admin actions through audited `SECURITY DEFINER` RPCs.
-- `admin_audit_logs` is not readable by the authenticated role.
+- The admin dashboard reads as the signed-in `authenticated` role through SELECT-only `admin_read_*` policies; no service-role key in the browser.
+- `admin_audit_logs` is not readable by the authenticated role (42501 by design); the settings page renders it as unavailable.
 
 **Suggested visuals**
 
@@ -188,6 +189,8 @@
 - Pickup/destination, vehicle class, fare breakdown.
 - Platform fee = `min(₱30, max(₱5, distance × ₱2))`; provider keeps the fare.
 - Request → matching → confirmation → live trip → completion → rating.
+- The waiting state names the proposed rider and opens Live Trip automatically when the simulated rider accepts.
+- The Live Trip action follows the status machine (accepted → heading to pickup → arrived → in progress); only in-progress settles through `completeActiveRide`, and the rating screen reads the settled ride and driver, so history is not duplicated.
 - Matching and rider acceptance are simulated on timers.
 - Live trip includes status stepper, chat, share, and SOS (simulated).
 
@@ -284,11 +287,13 @@
 **Main content**
 
 - Email/password sign-in; server-side `is_admin()` check.
+- Dashboard reads as the signed-in `authenticated` role through SELECT-only admin policies; no service-role key in the browser.
 - Dashboard: users, rides, rentals, Pasuyo, fees, attention list.
-- Verification and vehicle-document review.
+- Verification and vehicle-document review with signed previews and honest missing-file states.
 - Users, vehicles, rides, rentals, Pasuyo, providers.
 - Finance: cash fee remittances and transactions.
 - Reports: 7/14/30/90-day windows, growth, usage, demand by barangay.
+- Audit log is written by the RPCs but not readable by `authenticated` (42501 by design); the settings page shows it as unavailable.
 
 **Suggested visuals**
 
@@ -300,7 +305,7 @@
 
 > "The admin dashboard is a separate Next.js app. It never writes tables from the browser; every decision goes through an audited server function. The reports page is intentionally operational: it shows what happened in a window, not a predictive model."
 
-> Note: the dashboard has been verified by tests, typecheck, lint, and build, but not by a full manual browser pass against the hosted project. State that if asked.
+> Note: the dashboard has been verified by TypeScript tests, typecheck, lint, production build, and direct hosted read checks; the maintained audit covers 132 checks and the admin-read check covers 52. It has not had a full manual browser pass. State that if asked.
 
 ---
 
@@ -312,6 +317,7 @@
 
 - Live Supabase authentication.
 - Three role experiences and shared navigation.
+- Repository-backed reads for profiles, Recent Bookings, notifications, wallet history, owner fleet, and vehicle documents.
 - End-to-end ride, rental, and Pasuyo flows.
 - Transparent pricing and integer-centavo money handling.
 - RLS and audited admin functions.
@@ -341,9 +347,11 @@
 - No payment gateway, payout, escrow, or refunds.
 - No live GPS, routing, or real-time dispatch.
 - No push notifications.
+- Notification read state is not persisted in Supabase data mode.
 - Flutter verification and admin verification are disconnected.
 - Pasuyo and rental pricing unresolved.
 - Hosted project lacks the four financial migrations.
+- The audit-log panel is unavailable to the authenticated role by design; reading it needs the service-role channel.
 - Admin dashboard needs a full browser pass.
 
 **Future work**

@@ -102,7 +102,10 @@ flowchart TD
     Confirm --> Wait["Waiting for rider (2 s simulated acceptance)"]
     Wait --> Live["Live trip"]
     Proposal -->|Decline| Cancel["Cancel request"]
-    Live --> Complete["Complete trip"]
+    Live --> Heading["Heading to pickup"]
+    Heading --> Arrived["Arrived at pickup"]
+    Arrived --> InProgress["Trip in progress"]
+    InProgress --> Complete["Complete trip"]
     Complete --> Rate["Rate trip"]
 ```
 
@@ -113,9 +116,12 @@ Steps:
 3. The fare breakdown shows **provider fare**, **SurGo platform fee**, and **total customer payment**.
 4. Requesting a ride creates an in-memory request and opens `/matching`.
 5. Matching waits 900 ms, then proposes a seeded rider or reports "no riders available".
-6. The passenger confirms; after 2 seconds the simulated rider accepts.
-7. The app opens `/livetrip`, which shows the route, driver card, status stepper, chat, share, and SOS.
-8. Completing the trip updates in-memory history and opens the rating screen.
+6. The passenger confirms; the waiting state names the proposed rider, and after 2 seconds the simulated rider accepts and the app opens Live Trip automatically.
+7. The app opens `/livetrip`, which shows the route, driver card, status stepper, chat, share, and SOS. The screen listens to `AppState`, so a status change or a rider-side cancel updates it; with no active trip it shows an explicit "No active trip" state.
+8. The action button follows the ride state machine: **Start heading to pickup** → **I've arrived at pickup** → **Start the trip**. Each tap calls `AppState.advanceRide()`, which uses `RideStatus.next` and cannot skip a step.
+9. **Complete trip** calls `AppState.completeActiveRide()` once, and only from `inProgress`. That single call writes both sides of the history and releases the money in memory. The rating screen then reads `lastCompletedRide` / `lastCompletedRideDriver` from that settlement instead of rebuilding the trip from `MockData`, so no duplicate history row is added.
+
+The passenger Home also shows a **Recent Bookings** card read through `DomainSlot.passengerRecentRides`. It calls `RideRepository.fetchRideHistory(passengerId, limit: 3)` and lists only terminal rides (`completed`, `cancelled`), newest first; a request still being matched is not treated as a booking.
 
 **Simulated:** rider search, rider acceptance, live location movement, SOS delivery, trip sharing, persistence.
 
@@ -142,6 +148,7 @@ sequenceDiagram
     participant Home as Rider Home
     participant State as AppState
     participant Trip as Active Ride / Live Trip
+    participant Passenger
 
     Rider->>Home: Go online
     Home->>State: toggleRiderOnline()
@@ -150,8 +157,10 @@ sequenceDiagram
     Home->>State: acceptRideRequest(request)
     State->>State: assign rider, set activeRide
     State-->>Trip: route to active trip
-    Rider->>Trip: Advance status / complete
-    Trip->>State: completeRide()
+    Rider->>Trip: Advance status (heading → arrived → in progress)
+    Trip->>State: advanceRide()
+    Passenger->>Trip: Complete trip
+    Trip->>State: completeActiveRide()
     State->>State: update earnings + history in memory
 ```
 
@@ -160,8 +169,9 @@ sequenceDiagram
 **Status:** Simulated/demo data for live tracking; in-memory completion.
 
 - Live trip shows a map, status stepper, driver/passenger card, chat, share, and SOS.
+- The action button advances the ride through `RideStatus.next` (heading to pickup → arrived → in progress); only **Complete trip** settles.
 - SOS requires at least one emergency contact and shows a "simulated" success notice.
-- Trip completion updates the in-memory ledger and history.
+- Trip completion runs the same `completeActiveRide()` settlement used by the rider banner, then opens the rating screen with the settled ride.
 
 ### 3.4 Earnings and withdrawal
 
@@ -260,15 +270,15 @@ Steps:
 
 | Action | Behaviour |
 | --- | --- |
-| View balance | Reads through `WalletRepository` (mock or Supabase) via `DomainCache`. |
-| Transaction history | Rendered from wallet transactions. |
+| View balance | Reads `WalletRepository.fetchBalanceCentavos` (mock or Supabase) through a role-specific `DomainCache` balance slot. |
+| Transaction history | Reads `WalletRepository.fetchTransactions` through the matching passenger/earner/owner `*WalletEntries` slot; the list is repository-backed, not read from the seed directly. |
 | Top up | In-memory balance increase; no payment gateway. |
 | Cash out | In-memory balance decrease; minimum withdrawal enforced; no payout provider. |
 | Ride settlement | In-memory ledger entry; provider keeps fare; platform fee recorded as earned. |
 | Pasuyo settlement | In-memory 15% commission split. |
 | Rental settlement | In-memory 10% commission split. |
 
-The wallet balance can be read from Supabase in `SURGO_DATA_SOURCE=supabase`, but top-up/cash-out still mutate memory. This mixed state is why the default demo uses mock data throughout.
+The wallet balance and history can be read from Supabase in `SURGO_DATA_SOURCE=supabase`, but top-up/cash-out still mutate memory. This mixed state is why the default demo uses mock data throughout.
 
 ## 7. Verification workflow
 
@@ -309,17 +319,21 @@ stateDiagram-v2
 
 ### 8.1 Notifications
 
-**Status:** Partially implemented.
+**Status:** Partially implemented; the feed is a real read, read state is mock-only.
 
-- The feed and unread count are read through `NotificationRepository` (mock or Supabase).
-- Mark-one-read and mark-all-read mutate in-memory state.
-- No push delivery is implemented.
+- The feed is read through `NotificationRepository.fetchNotifications` into the passenger or earner `*NotificationFeed` slot, newest first.
+- Ages are computed from each record's real `createdAt` with `displayAge`, not from the seed's hand-written label.
+- The unread badge is a separate `countUnread` read (`unreadPassengerNotifications` / `unreadEarnerNotifications`).
+- Mark-one-read and mark-all-read mutate the seeded feed; the mock cache re-reads it, so the default demo updates immediately. A Supabase build does not persist read state, so a badge can return after refresh.
+- No push delivery or realtime subscription is implemented.
 
 ### 8.2 Profile
 
 **Status:** Partially implemented.
 
 - Profile name, rating, member year, and roles are read through `ProfileRepository`.
+- The rider Home header reads `DomainSlot.earnerProfile` and shows the earner's full name, rating, and `Since <year>` from the profile row. It deliberately omits an `Earner ID` line because a Supabase `profiles.id` is an auth UUID, and mixing a name from one source with an id from another would misrepresent the identity.
+- Vehicle documents read the owner's fleet paperwork through `DomainSlot.ownerVehicleDocuments`. A rider profile links to the same screen, but a rider who owns no vehicles sees the empty state.
 - Editing profile fields, saved places, payment methods, emergency contacts, and account settings is in-memory.
 - Sign-out is real.
 
@@ -377,9 +391,9 @@ stateDiagram-v2
 | Rental browse / request | Implemented and demonstrable |
 | Rental owner approval | Simulated/demo data |
 | Pasuyo post / accept / fulfill | Implemented and demonstrable (in-memory) |
-| Wallet view | Partially implemented |
+| Wallet view | Partially implemented (balance/history reads real; top-up/cash-out simulated) |
 | Wallet top-up / cash-out | Simulated/demo data |
-| Notifications | Partially implemented |
+| Notifications | Partially implemented (real feed read; read state mock-only) |
 | Profile | Partially implemented |
 | Flutter verification | Simulated/demo data |
 | Admin verification | Implemented but needs verification |

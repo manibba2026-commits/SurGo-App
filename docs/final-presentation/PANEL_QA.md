@@ -16,7 +16,7 @@ Rider matching and acceptance timers, live-trip movement, SOS delivery, trip sha
 
 ### 3. What is genuinely real?
 
-Supabase authentication, session restoration, role/capability loading, selected repository reads, the seeded data model, ride pricing arithmetic, the schema, RLS policies, storage buckets, and the audited admin RPCs and dashboard reads.
+Supabase authentication, session restoration, role/capability loading, selected repository reads (passenger/earner profiles, notification feed and unread counts, Recent Bookings, wallet balances and history, owner fleet, vehicle documents), the seeded data model, ride pricing arithmetic, the schema, RLS policies, storage buckets, and the audited admin RPCs and dashboard reads. Notification **read state** is the exception: the feed is a real read, but marking a notification read is mock-only.
 
 ### 4. Why not just say it is finished?
 
@@ -60,12 +60,12 @@ No. The client has no write policy on `user_roles`. Role grants happen through t
 
 ### 12. Is business data saved to Supabase?
 
-Not from the Flutter app. Reads can come from Supabase in `SURGO_DATA_SOURCE=supabase`, but writes remain in `AppState`/`DbService` memory. A reload restores the seed. The schema and RPCs are ready for the next phase.
+Not from the Flutter app. Reads can come from Supabase in `SURGO_DATA_SOURCE=supabase`, but writes remain in `AppState`/`DbService` memory. A reload restores the seed. Notification read state is also not written back. The schema and RPCs are ready for the next phase.
 
 ### 13. What is the difference between the two data modes?
 
 - **Default:** live Supabase Auth + local mock business data. Coherent and stable for demos.
-- **Supabase data mode:** live Supabase Auth + read-only Supabase business data. Useful for verifying reads, but writes still go to memory, so the state can diverge.
+- **Supabase data mode:** live Supabase Auth + read-only Supabase business data. Useful for verifying reads, but writes still go to memory, so the state can diverge. Notification read state is not persisted either.
 
 ### 14. Why keep writes in memory?
 
@@ -93,11 +93,11 @@ RLS is enabled on every public table. The baseline grants reads only: public cat
 
 ### 19. Can a client write tables with the publishable key?
 
-No. The key is public by design, but RLS and grants prevent writes. Business writes must go through a server-side function or the service role.
+No. The key is public by design, but RLS and grants prevent writes. Business writes must go through a server-side function. The service role is a trusted tooling channel, not an app write path.
 
 ### 20. How does admin authorization work?
 
-The Next.js app requires a Supabase session, then calls `is_admin()`, which checks for an approved `admin` role. Every server action re-checks this before calling an RPC. A valid non-admin session is rejected.
+The Next.js app requires a Supabase session, then calls `is_admin()`, which checks for an approved `admin` role. Every server action re-checks this before calling an RPC. A valid non-admin session is rejected. Dashboard reads run as the signed-in `authenticated` role through migration-14's SELECT-only `admin_read_*` policies; the browser does not use a service-role key.
 
 ### 21. What prevents an admin from being spoofed?
 
@@ -105,7 +105,7 @@ Authorization is server-side and database-backed. The browser cannot grant itsel
 
 ### 22. How are admin actions audited?
 
-The five write RPCs call `_admin_audit()` and write an `admin_audit_logs` row with actor, action, entity, before/after, and reason. The authenticated role has no read grant on that table; it is read through `service_role`.
+The five write RPCs call `_admin_audit()` and write an `admin_audit_logs` row with actor, action, entity, before/after, and reason. The authenticated role has no table-level `SELECT` grant on that table, so even an admin session receives SQLSTATE 42501; the settings page renders the panel as unavailable, and the log is read through `service_role`.
 
 ### 23. Why `SECURITY DEFINER`?
 
@@ -153,7 +153,7 @@ The prototype assumes cash. A ride platform fee is recorded as **earned** at set
 
 ### 32. How does ride matching work?
 
-The passenger requests a ride; the matching screen waits 900 ms, proposes a seeded rider, and the passenger confirms. After 2 seconds, the rider "accepts" and the live trip opens. It is a simulation of dispatch, not a real dispatch network.
+The passenger requests a ride; the matching screen waits 900 ms, proposes a seeded rider, and the passenger confirms. The waiting state names that rider, and after 2 seconds the rider "accepts" and the live trip opens automatically. It is a simulation of dispatch, not a real dispatch network. The Home **Recent Bookings** card is a separate repository read: it lists only terminal rides (`completed`, `cancelled`), newest first, at most three, because an open request is not yet a booking.
 
 ### 33. Is ride acceptance real?
 
@@ -161,7 +161,7 @@ The state transition is real and guarded by the ride state machine, but the coun
 
 ### 34. How does live trip tracking work?
 
-The screen renders a route and status stepper from seeded/mock coordinates. It does not consume live GPS or a routing service. SOS and sharing show simulated notices.
+The screen renders a route and status stepper from seeded/mock coordinates. It does not consume live GPS or a routing service. The action button follows the ride's own state machine: earlier steps advance the status, and only in-progress settles. SOS and sharing show simulated notices.
 
 ### 35. How do rentals work?
 
@@ -177,11 +177,11 @@ The app refuses self-acceptance when the customer and helper ids match. In the s
 
 ### 38. How does the wallet work?
 
-Balances and history can be read through the wallet repository. Top-up and cash-out mutate memory and enforce the ₱300 minimum. There is no payment gateway or payout provider.
+Balances and role-specific history lists are read through the wallet repository (separate balance and `*WalletEntries` slots for passenger, earner, and owner). Top-up and cash-out mutate memory and enforce the ₱300 minimum. There is no payment gateway or payout provider.
 
 ### 39. Are notifications real-time or push?
 
-No. The feed and unread count can be read from Supabase, but mark-read is in-memory and there is no push delivery or realtime subscription.
+No. The feed and unread count are repository reads, and notification ages come from each record's real `createdAt`. Mark-read is mock-only: it mutates the seeded feed, and a Supabase build does not persist it, so a badge can return after refresh. There is no push delivery or realtime subscription.
 
 ---
 
@@ -205,7 +205,7 @@ The reports page supports 7/14/30/90-day windows and shows new users, rides, ren
 
 ### 44. Has the admin dashboard been tested in a browser against production?
 
-Not by a full manual pass. The evidence is TypeScript unit tests, typecheck, lint, production build, PGlite SQL tests, and hosted read verification. Treat browser behaviour as "implemented but needs verification".
+Not by a full manual pass. The evidence is TypeScript unit tests, typecheck, lint, production build, PGlite SQL tests, and direct hosted read checks. The maintained hosted audit covers 132 checks and the admin-read check covers 52; both can be re-run. Treat browser behaviour as "implemented but needs verification".
 
 ### 45. Can the admin approve a real application safely?
 
@@ -245,7 +245,7 @@ The combination of (a) one account with three capability-gated modes, (b) a tran
 
 ### 52. How did you test it?
 
-Flutter static analysis and tests, Node tests for the admin logic, PGlite SQL verification of migrations and demo data, TypeScript typecheck/lint/build, and read-only hosted checks. Formal usability or field evaluation is separate and must be supplied by the researcher.
+Flutter static analysis and 428 Flutter tests at the time of this review, 10 Node tests for the admin logic, PGlite SQL verification of migrations and demo data, TypeScript typecheck/lint/build, and read-only hosted checks. Formal usability or field evaluation is separate and must be supplied by the researcher.
 
 ### 53. What would you do next?
 

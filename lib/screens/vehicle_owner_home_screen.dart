@@ -47,7 +47,7 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                       Text(owner.name,
                           style: const TextStyle(
                               fontWeight: FontWeight.w800, fontSize: 14)),
-                      Text('Vehicle Owner · ${owner.id}',
+                      Text('Vehicle Owner · Member since ${owner.memberSince}',
                           style: const TextStyle(
                               color: AppColors.muted, fontSize: 11)),
                     ],

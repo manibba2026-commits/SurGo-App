@@ -83,20 +83,22 @@ The only unbanned hosted account is expected to be:
 
 The real account (operator's admin account) has only `passenger` and `admin` roles **and an email identity only**, so it cannot sign into the Flutter app (which uses phone OTP). It is the admin-dashboard account. Use a separate, dedicated Flutter demo account that was registered by phone OTP and has a prepared session.
 
-- [ ] **Option A (preferred):** an authorized person grants approved `earner` and `vehicle_owner` roles to the **dedicated phone-registered Flutter demo account** before the defense. This is a privileged data change and must be approved and recorded. Do not grant roles to the real account for this purpose; it cannot sign into Flutter anyway.
-- [ ] **Option B:** demo passenger (Flutter demo account) + admin (real account) live, and use screenshots or a recorded clip for rider/owner/Pasuyo helper.
-- [ ] **Option C:** create a new disposable **phone-registered** account and grant it roles through the admin/role process, if one exists.
+- [ ] **Option A (preferred, no hosted change):** unlock the modes in-session from the dedicated phone-registered Flutter demo account: **Profile → Verification**, start verification for Rider and Vehicle Owner, tap each demo document, submit, and wait ~5 seconds for the simulated auto-approval. The mode switcher then offers both modes. For Pasuyo, switch to Rider and enable **Errands**. The grant is session-scoped; a restart returns the account to passenger-only.
+- [ ] **Option B (persisted roles):** an authorized person grants approved `earner` and `vehicle_owner` roles to the **dedicated phone-registered Flutter demo account** before the defense. This is a privileged data change and must be approved and recorded. Do not grant roles to the real account for this purpose; it cannot sign into Flutter anyway.
+- [ ] **Option C:** demo passenger (Flutter demo account) + admin (real account) live, and use screenshots or a recorded clip for rider/owner/Pasuyo helper.
+- [ ] **Option D:** create a new disposable **phone-registered** account and grant it roles through the admin/role process, if one exists.
 
 Do not attempt to sign in with a seeded demo account; those auth rows are banned.
 
-### 4.3 If Option A is approved, verify
+### 4.3 If modes were unlocked, verify
 
-- [ ] `user_roles` has approved `earner` and `vehicle_owner` for the **dedicated Flutter demo account** (not the real admin account).
+- [ ] Option A: the Verification screen shows Rider and Vehicle Owner as **Approved**.
+- [ ] Option B: `user_roles` has approved `earner` and `vehicle_owner` for the **dedicated Flutter demo account** (not the real admin account).
 - [ ] Flutter shows Rider and Owner mode entries after signing in to that account.
 - [ ] The rider/owner screens render seeded data (the local seed is shared).
 - [ ] A test ride/Pasuyo/rental can be completed without errors.
 
-### 4.4 If Option B is chosen, prepare
+### 4.4 If Option C is chosen, prepare
 
 - [ ] Screenshots or a 60–90 second screen recording of rider accept, active trip, owner booking, and Pasuyo helper.
 - [ ] The recording is stored locally and does not depend on network.
@@ -126,10 +128,17 @@ Sign in and walk the app in the order you will present.
 - [ ] Fare breakdown shows provider fare, platform fee, and total.
 - [ ] Requesting a ride opens Matching.
 - [ ] Matching shows a proposal or a clear no-riders state.
-- [ ] Confirming shows the waiting state, then the live trip.
+- [ ] Confirming shows the waiting state, names the proposed rider, then opens the live trip automatically.
 - [ ] Live trip renders map, driver card, and stepper.
+- [ ] The action label follows the status: Start heading to pickup → I've arrived at pickup → Start the trip → Complete trip.
+- [ ] Only Complete trip settles the ride; the earlier actions advance the status without paying out.
+- [ ] Opening Live Trip with no active trip shows "No active trip".
 - [ ] SOS dialog explains that contacts are required and that the alert is simulated.
 - [ ] Completing the trip reaches the rating screen.
+- [ ] The rating screen shows the same ride and driver that were just completed.
+- [ ] Completing the trip adds exactly one history row (no duplicate from the rating screen).
+- [ ] Recent Bookings shows only completed/cancelled rides, newest first, at most three.
+- [ ] The unread notification badge appears only when the unread read returns a positive count.
 - [ ] The completed ride appears in Activity.
 
 ### 5.3 Pasuyo
@@ -160,12 +169,16 @@ Sign in and walk the app in the order you will present.
 ### 5.5 Wallet, notifications, profile
 
 - [ ] Wallet balance renders (or a clear loading/error state).
-- [ ] Transaction history renders.
+- [ ] Transaction history renders from the role-specific wallet entries (or an honest empty state).
 - [ ] Top-up opens and completes in-memory.
 - [ ] Cash-out enforces the minimum.
-- [ ] Notifications feed renders.
-- [ ] Mark-all-read updates the UI.
+- [ ] Notifications feed renders repository rows.
+- [ ] Notification ages come from real timestamps (e.g. "2h ago"), not a hand-written seed label.
+- [ ] Mark-one and mark-all-read update the UI in the default mock mode.
+- [ ] If using Supabase data mode, confirm read state is not expected to persist after refresh.
 - [ ] Profile name, rating, and roles render.
+- [ ] The rider Home header shows the earner's name, rating, and member year (no auth UUID).
+- [ ] The owner Home header shows the owner's name and member year, not an internal id.
 - [ ] Saved places, payment methods, emergency contacts, and settings open.
 
 ### 5.6 Verification
@@ -188,7 +201,7 @@ Sign in and walk the app in the order you will present.
 - [ ] `/verification` loads applications or a clear empty state.
 - [ ] A document preview either opens a signed URL or reports "missing/unknown" honestly.
 - [ ] `/users` loads.
-- [ ] `/users/[id]` loads.
+- [ ] `/users/[id]` loads and shows the person's verification bundle.
 - [ ] `/vehicles` loads.
 - [ ] `/rides` loads.
 - [ ] `/rides/[id]` loads.
@@ -197,6 +210,7 @@ Sign in and walk the app in the order you will present.
 - [ ] `/providers` loads.
 - [ ] `/finance` loads; zero remittances is an acceptable empty state.
 - [ ] `/reports` loads for 7/14/30/90 days.
+- [ ] `/settings` loads; the audit-log panel says it is not readable by this session (42501) instead of returning a 500.
 - [ ] Charts render (not blank).
 - [ ] No unhandled server exception appears in the terminal.
 
@@ -221,14 +235,24 @@ select count(*) from public.ride_requests;            -- expected 19
 select count(*) from public.rental_bookings;          -- expected 16
 select count(*) from public.service_requests;         -- expected 20
 select count(*) from public.service_transactions;     -- expected 29
+select count(*) from public.notifications;            -- expected 25
+select count(*) from public.wallet_transactions;      -- expected 79
 select count(*) from public.verification_applications;-- expected 3
 select count(*) from public.cash_fee_remittances;     -- expected 0
+select count(*) from supabase_migrations.schema_migrations; -- expected 15
+select count(*) from information_schema.tables
+  where table_schema = 'public' and table_type = 'BASE TABLE'; -- expected 26
+select has_table_privilege('authenticated','public.admin_audit_logs','SELECT'); -- expected false
 ```
 
 - [ ] Counts match expectations or differences are explained.
 - [ ] The real account exists and is unbanned.
 - [ ] The real account's roles are known.
 - [ ] Demo accounts are banned.
+- [ ] The hosted ledger has 15 migrations; the local set has 19.
+- [ ] `admin_audit_logs` is not readable by `authenticated` (42501 by design).
+- [ ] `node supabase/tools/audit_hosted.mjs` reports 132 read-only checks passing.
+- [ ] `node supabase/tools/verify_admin_reads.mjs` reports 52 admin-read checks passing.
 
 ## 8. Failure and recovery drills
 
@@ -240,6 +264,8 @@ select count(*) from public.cash_fee_remittances;     -- expected 0
 | Matching shows no riders | Restart or choose a different seeded request; explain the no-riders state is intentional. |
 | Admin login fails | Check password and network; use a prepared admin session in a second browser. |
 | Admin page 500s | Capture the terminal error; fall back to the architecture/schema explanation. |
+| Admin audit panel says unavailable | Expected: the `authenticated` role has no SELECT grant on `admin_audit_logs` (42501). Do not debug live. |
+| Notification badge returns after refresh in Supabase mode | Expected: read state is not written back. Use the default mock mode for the demo. |
 | Projector resolution causes overflow | Use a phone-sized window or device; test at 1280×720 and 1920×1080. |
 | Mic/audio fails | Have the speaker notes printed or on a second screen. |
 

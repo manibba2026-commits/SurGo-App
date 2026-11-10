@@ -3,6 +3,7 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
@@ -56,50 +57,80 @@ class LiveTripScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // The trip status changes from the rider's side (or from the simulated
+    // progress action below), so the screen has to listen rather than read the
+    // status once and keep rendering the frame it was built with.
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) {
+        final activeRide = state.activeRide;
+        if (activeRide == null) return _noActiveTrip(context);
+        return _trip(context, state, activeRide);
+      },
+    );
+  }
+
+  /// Shown when the trip ended elsewhere — a rider cancel, say — or the screen
+  /// was opened with nothing assigned.
+  Widget _noActiveTrip(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Live Trip')),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.route_outlined, size: 40, color: AppColors.muted2),
+            const SizedBox(height: 14),
+            const Text('No active trip',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            const SizedBox(height: 6),
+            const Text('Book a ride to start a trip.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            const SizedBox(height: 20),
+            SbOutlineButton(
+              label: 'Back to Home',
+              block: false,
+              onPressed: () => Navigator.of(context)
+                  .pushNamedAndRemoveUntil('/home', (route) => false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _trip(BuildContext context, AppState state, RideRequestItem activeRide) {
     final db = DbService.instance;
-    final activeRide = state.activeRide;
     final earner = db.earner;
     MapPassenger? matchById;
     MapPassenger? matchByName;
-    if (activeRide != null) {
-      for (final p in db.mapPassengers) {
-        if (p.id == activeRide.passengerId) {
-          matchById = p;
-          break;
-        }
+    for (final p in db.mapPassengers) {
+      if (p.id == activeRide.passengerId) {
+        matchById = p;
+        break;
       }
-      for (final p in db.mapPassengers) {
-        if (p.name == activeRide.passengerName) {
-          matchByName = p;
-          break;
-        }
+    }
+    for (final p in db.mapPassengers) {
+      if (p.name == activeRide.passengerName) {
+        matchByName = p;
+        break;
       }
     }
     final passenger = matchById ??
         matchByName ??
-        (activeRide == null && db.mapPassengers.isNotEmpty
-            ? db.mapPassengers.first
-            : null);
-    if (passenger == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Live Trip')),
-        body: const Center(child: Text('No passenger selected yet.')),
-      );
-    }
+        (db.mapPassengers.isNotEmpty ? db.mapPassengers.first : null);
 
-    final rideMatch = activeRide != null
-        ? db.mapRideRequests
-            .where((request) =>
-                request.id == activeRide.id ||
-                (activeRide.passengerId != null &&
-                    request.passengerId == activeRide.passengerId))
-            .toList()
-        : <MapRideRequest>[];
+    final rideMatch = db.mapRideRequests
+        .where((request) =>
+            request.id == activeRide.id ||
+            (activeRide.passengerId != null &&
+                request.passengerId == activeRide.passengerId))
+        .toList();
     final matchedRequest = rideMatch.isNotEmpty ? rideMatch.first : null;
 
     MapRider? assignedRider;
     for (final r in db.mapRiders) {
-      if (activeRide?.riderId != null && r.id == activeRide!.riderId) {
+      if (activeRide.riderId != null && r.id == activeRide.riderId) {
         assignedRider = r;
         break;
       }
@@ -121,11 +152,11 @@ class LiveTripScreen extends StatelessWidget {
         ?.position ??
         db.mapConfig.defaultCenter;
     final pickupPoint = matchedRequest?.pickup ??
-        (activeRide?.pickupLatitude != null
-            ? MapPoint(activeRide!.pickupLatitude!, activeRide.pickupLongitude!)
-            : passenger.position);
-    final destinationPoint = activeRide?.dropoffLatitude != null
-        ? MapPoint(activeRide!.dropoffLatitude!, activeRide.dropoffLongitude!)
+        (activeRide.pickupLatitude != null
+            ? MapPoint(activeRide.pickupLatitude!, activeRide.pickupLongitude!)
+            : (passenger?.position ?? db.mapConfig.defaultCenter));
+    final destinationPoint = activeRide.dropoffLatitude != null
+        ? MapPoint(activeRide.dropoffLatitude!, activeRide.dropoffLongitude!)
         : driverPosition;
 
     final markers = <SurgoMapMarker>[
@@ -144,13 +175,12 @@ class LiveTripScreen extends StatelessWidget {
         id: 'pickup',
         position: pickupPoint,
         icon: surgoMarkerIcon('passenger'),
-        title: activeRide?.passengerName ?? passenger.name,
-        subtitle: activeRide != null
-            ? '${activeRide.pickupBarangay} · ${activeRide.pickupPurok}'
-            : '${passenger.barangay} · ${passenger.purok}',
+        title: activeRide.passengerName,
+        subtitle:
+            '${activeRide.pickupBarangay} · ${activeRide.pickupPurok}',
         details: [
-          MapEntry('Pick-up', activeRide?.pickup ?? passenger.barangay),
-          MapEntry('Provider fare', Money.format(activeRide?.fare ?? 0)),
+          MapEntry('Pick-up', activeRide.pickup),
+          MapEntry('Provider fare', Money.format(activeRide.fare)),
         ],
       ),
       SurgoMapMarker(
@@ -158,12 +188,11 @@ class LiveTripScreen extends StatelessWidget {
         position: destinationPoint,
         icon: surgoMarkerIcon('rental'),
         title: 'Destination',
-        subtitle: activeRide != null
-            ? '${activeRide.dropoffBarangay} · ${activeRide.dropoffPurok}'
-            : 'Trip destination',
+        subtitle:
+            '${activeRide.dropoffBarangay} · ${activeRide.dropoffPurok}',
         details: [
-          MapEntry('ETA', '${activeRide?.etaMinutes ?? 0} min'),
-          MapEntry('Payment', activeRide?.paymentMethod ?? 'Cash'),
+          MapEntry('ETA', '${activeRide.etaMinutes} min'),
+          MapEntry('Payment', activeRide.paymentMethod),
         ],
       ),
     ];
@@ -242,9 +271,7 @@ class LiveTripScreen extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             SbTag(
-                              activeRide != null
-                                  ? 'On the way · ${activeRide.etaMinutes} min'
-                                  : 'Ride details',
+                              '${activeRide.status.shortLabel} · ${activeRide.etaMinutes} min',
                               secondary: true,
                             ),
                             Text(
@@ -299,6 +326,40 @@ class LiveTripScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
+                  SbCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text('Trip status',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12.5)),
+                            const Spacer(),
+                            SbTag(activeRide.status.shortLabel,
+                                secondary: true),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        _RideStatusStepper(status: activeRide.status),
+                        const SizedBox(height: 12),
+                        Text(
+                          activeRide.status == RideStatus.inProgress
+                              ? 'The trip is under way. Complete it to settle '
+                                  'the fare and rate your rider.'
+                              : 'Rider progress is simulated in this '
+                                  'prototype. Advance the trip to see the next '
+                                  'state.',
+                          style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 11.5,
+                              height: 1.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   SbOutlineButton(
                     label: 'Share this trip',
                     icon: Icons.shield_outlined,
@@ -309,29 +370,126 @@ class LiveTripScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SbPrimaryButton(
-                    label: 'Complete Trip',
-                    onPressed: () {
-                      // Settle before showing the receipt: the rating screen
-                      // reads the completed ride and its fare from state. A
-                      // trip that is not in progress cannot settle, so say so
-                      // instead of opening the previous trip's receipt.
-                      if (!state.completeActiveRide()) {
-                        SurgoNotice.show(
-                          context,
-                          'The trip cannot be completed yet.',
-                          tone: SbNoticeTone.warning,
-                        );
-                        return;
-                      }
-                      Navigator.pushReplacementNamed(context, '/rate');
-                    },
-                  ),
+                  if (activeRide.status.advanceActionLabel != null)
+                    SbPrimaryButton(
+                      label: activeRide.status.advanceActionLabel!,
+                      onPressed: () {
+                        // One action follows the trip's own state machine: the
+                        // earlier steps move it along, and only the last live
+                        // state settles. Settling here (not from `accepted`)
+                        // is what lets a passenger-only demo finish a trip.
+                        if (activeRide.status == RideStatus.inProgress) {
+                          // The rating screen reads the completed ride and its
+                          // fare from state, so settle before navigating.
+                          if (!state.completeActiveRide()) {
+                            SurgoNotice.show(
+                              context,
+                              'The trip cannot be completed yet.',
+                              tone: SbNoticeTone.warning,
+                            );
+                            return;
+                          }
+                          Navigator.pushReplacementNamed(context, '/rate');
+                        } else {
+                          state.advanceRide();
+                          SurgoNotice.show(
+                            context,
+                            activeRide.status.label,
+                            tone: SbNoticeTone.info,
+                          );
+                        }
+                      },
+                    ),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Progress along [RideStatus] from acceptance to the trip starting.
+///
+/// The dots come from the same enum the action button reads, so the stepper
+/// cannot show a step the trip has not reached or hide one it has.
+class _RideStatusStepper extends StatelessWidget {
+  final RideStatus status;
+  const _RideStatusStepper({required this.status});
+
+  static const _milestones = [
+    RideStatus.accepted,
+    RideStatus.headingToPickup,
+    RideStatus.arrived,
+    RideStatus.inProgress,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final current = status.index;
+    return Column(
+      children: [
+        Row(
+          children: [
+            for (var i = 0; i < _milestones.length; i++) ...[
+              _dot(_milestones[i], current),
+              if (i != _milestones.length - 1) _line(_milestones[i], current),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (final milestone in _milestones)
+              Expanded(
+                child: Text(
+                  milestone.shortLabel,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: milestone.index <= current
+                        ? AppColors.secondaryLight
+                        : AppColors.muted2,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _dot(RideStatus milestone, int current) {
+    final done = milestone.index <= current;
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: done
+            ? AppColors.secondary
+            : AppColors.muted2.withValues(alpha: 0.35),
+        border: Border.all(
+          color: milestone.index == current
+              ? AppColors.secondaryLight
+              : Colors.transparent,
+          width: 2,
+        ),
+      ),
+    );
+  }
+
+  Widget _line(RideStatus milestone, int current) {
+    return Expanded(
+      child: Container(
+        height: 2,
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        color: milestone.index < current
+            ? AppColors.secondary
+            : AppColors.muted2.withValues(alpha: 0.35),
       ),
     );
   }

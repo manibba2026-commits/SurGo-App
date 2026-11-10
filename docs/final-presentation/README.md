@@ -15,6 +15,7 @@ This folder is a documentation-only package prepared for the SurGo thesis defens
 | [THESIS_PRESENTATION_OUTLINE.md](THESIS_PRESENTATION_OUTLINE.md) | Fifteen-slide deck outline with visuals and speaker notes. |
 | [LIVE_DEMO_SCRIPT.md](LIVE_DEMO_SCRIPT.md) | An 8–12 minute demo sequence with exact actions and recovery paths. |
 | [PANEL_QA.md](PANEL_QA.md) | Twenty-five-plus anticipated panel questions with technically accurate answers. |
+| [DEMO_ACCOUNTS.md](DEMO_ACCOUNTS.md) | Which accounts exist, how each signs in, and why no passwords are stored in the repository. |
 | [FINAL_READINESS_REPORT.md](FINAL_READINESS_REPORT.md) | Readiness summary, blockers, Qoder dependencies, and preparation order. |
 
 ## Status vocabulary

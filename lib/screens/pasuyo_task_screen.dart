@@ -354,7 +354,7 @@ class PasuyoTaskScreen extends StatelessWidget {
   void _report(BuildContext context, PasuyoTask task) {
     SurgoNotice.show(
       context,
-      'Report for ${task.id} sent. Our team will review it within 24 hours.',
+      'Report sent. Our team will review it within 24 hours.',
       tone: SbNoticeTone.success,
     );
   }
