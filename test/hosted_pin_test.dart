@@ -18,6 +18,7 @@ class _HostedAuth implements AuthRepository {
     this.phone = '+639170009911',
     this.email,
     this.needsOnboarding = false,
+    this.demo = false,
     AuthUser? persisted,
   }) : _user = persisted;
 
@@ -27,6 +28,10 @@ class _HostedAuth implements AuthRepository {
   String? phone;
   final String? email;
   bool needsOnboarding;
+
+  /// Marks the identity as one of the provisioned demo accounts, the same
+  /// `surgo_demo` marker the provisioning tool writes to user metadata.
+  final bool demo;
 
   /// When true, [restoreSession] reports no valid session even if an event
   /// payload still carries a user — the revoked / expired refresh-token case.
@@ -42,7 +47,10 @@ class _HostedAuth implements AuthRepository {
         email: email,
         fullName: 'Hosted Tester',
         providers: const {'google'},
-        metadata: needsOnboarding ? const {} : const {'surgo_onboarded': true},
+        metadata: {
+          if (!needsOnboarding) 'surgo_onboarded': true,
+          if (demo) 'surgo_demo': true,
+        },
       );
 
   /// Delivers the session event a sign-in or relaunch would produce.
@@ -73,6 +81,15 @@ class _HostedAuth implements AuthRepository {
   Future<AuthUser?> restoreSession() async => restoreReturnsNull ? null : _user;
 
   @override
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  }) async {
+    _user = _makeUser();
+    return _user!;
+  }
+
+  @override
   Future<bool> signInWithGoogle() async {
     _user = _makeUser();
     return true;
@@ -97,6 +114,7 @@ class _HostedAuth implements AuthRepository {
       providers: user.providers,
       profileExists: true,
       needsOnboarding: needsOnboarding,
+      isDemoAccount: demo,
     );
   }
 
@@ -319,6 +337,43 @@ void main() {
     expect(state.requiresPin, isTrue);
     expect(await state.setPin('123456'), isTrue);
     expect(await state.unlockWithPin('123456'), PinUnlockResult.success);
+    expect(state.requiresPin, isFalse);
+  });
+
+  test('a provisioned demo account signs in without the device PIN', () async {
+    state.configureAuth(_HostedAuth(demo: true));
+
+    final failure = await state.signInWithDemoPin(
+      phone: '09170000001',
+      pin: '246810',
+    );
+    expect(failure, isNull);
+    expect(state.isSignedIn, isTrue);
+    expect(state.isDemoAccount, isTrue);
+    // The PIN just verified by the server is the only credential; stacking the
+    // device lock on top would ask for the same secret twice.
+    expect(state.requiresPin, isFalse);
+
+    await state.logout();
+
+    // A relaunch restores the session and reads the same demo marker, so the
+    // presenter is not sent to a second lock screen.
+    final relaunched = _HostedAuth(
+      demo: true,
+      persisted: const AuthUser(
+        id: uuidA,
+        phone: '+639170000001',
+        fullName: 'Hosted Tester',
+        providers: {'phone'},
+        metadata: {'surgo_demo': true},
+      ),
+    );
+    state.configureAuth(relaunched);
+    relaunched.emitSession();
+    await settle();
+
+    expect(state.isSignedIn, isTrue);
+    expect(state.isDemoAccount, isTrue);
     expect(state.requiresPin, isFalse);
   });
 }

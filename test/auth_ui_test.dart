@@ -1,12 +1,114 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:surgo/auth/auth_models.dart';
+import 'package:surgo/auth/auth_repository.dart';
+import 'package:surgo/auth/mock_auth_repository.dart';
+import 'package:surgo/data/db_models.dart';
 import 'package:surgo/screens/forgot_password_screen.dart';
 import 'package:surgo/screens/login_screen.dart';
 import 'package:surgo/screens/otp_screen.dart';
 import 'package:surgo/screens/register_screen.dart';
 import 'package:surgo/state/app_state.dart';
 import 'package:surgo/theme/app_theme.dart';
+
+/// A hosted provider with no network. It reports `isMock = false`, so the login
+/// screen offers the demo PIN form and [AppState] takes the hosted-session path.
+class _HostedPinAuth implements AuthRepository {
+  static const String phone = '+639170000001';
+  static const String pin = '246810';
+
+  AuthUser? _user;
+
+  @override
+  bool get isMock => false;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Stream<AuthUser?> get authStateChanges => const Stream.empty();
+
+  @override
+  Future<AuthUser?> restoreSession() async => _user;
+
+  @override
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  }) async {
+    if (normalizePhoneNumber(phone) != _HostedPinAuth.phone ||
+        pin != _HostedPinAuth.pin) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidPin,
+        'That phone number and PIN do not match a demo account.',
+      );
+    }
+    return _user = AuthUser(
+      id: 'demo-uuid',
+      phone: _HostedPinAuth.phone,
+      fullName: 'Demo One',
+      providers: const {'phone'},
+      metadata: const {'surgo_demo': true},
+    );
+  }
+
+  @override
+  Future<bool> signInWithGoogle() async => false;
+
+  @override
+  Future<void> signOut() async {
+    _user = null;
+  }
+
+  @override
+  Future<SurgoIdentity> loadIdentity(AuthUser user) async {
+    const capabilities = {CapabilityType.passenger};
+    return SurgoIdentity(
+      userId: user.id,
+      phone: user.phone,
+      fullName: user.fullName,
+      capabilities: capabilities,
+      eligibleCapabilities: eligibleCapabilitiesFor(capabilities),
+      roles: const {'passenger'},
+      providers: user.providers,
+      profileExists: true,
+      isDemoAccount: true,
+    );
+  }
+
+  @override
+  Future<void> completeOnboarding({
+    required String fullName,
+    required String phone,
+  }) async {}
+
+  @override
+  Future<void> requestPhoneOtp({
+    required String phone,
+    String? fullName,
+    bool createUser = false,
+  }) async {}
+
+  @override
+  Future<AuthUser> verifyPhoneOtp({
+    required String phone,
+    required String token,
+  }) async =>
+      _user!;
+
+  @override
+  Future<bool> linkGoogleIdentity() async => false;
+
+  @override
+  Future<void> requestPhoneLink(String phone) async {}
+
+  @override
+  Future<void> verifyPhoneLink({
+    required String phone,
+    required String token,
+  }) async {}
+}
 
 /// Drives the auth screens through a light harness. Destination routes are
 /// stand-ins, so a test asserts navigation happened without building the real
@@ -80,6 +182,10 @@ void main() {
 
   setUpAll(() => AppState.instance.init());
   setUp(() => AppState.instance.logout());
+  tearDown(() async {
+    await AppState.instance.logout();
+    AppState.instance.configureAuth(MockAuthRepository());
+  });
 
   testWidgets('the login form requests a code and opens OTP', (tester) async {
     await pumpScreen(tester, const LoginScreen());
@@ -89,6 +195,70 @@ void main() {
 
     expect(find.text('OTP'), findsOneWidget);
     expect(AppState.instance.isSignedIn, isFalse);
+  });
+
+  testWidgets('demo PIN sign-in validates, then opens the dashboard',
+      (tester) async {
+    AppState.instance.configureAuth(_HostedPinAuth());
+    await pumpScreen(tester, const LoginScreen());
+    await tester.ensureVisible(find.text('Use demo phone + PIN'));
+    await tester.tap(find.text('Use demo phone + PIN'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Sign in'));
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a valid phone number, for example 0917 000 0001.'),
+        findsOneWidget);
+    expect(
+        find.text('Enter the 6-digit PIN for this account.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), '0917 000 0001');
+    await tester.enterText(find.byType(TextField).at(1), '246810');
+    await tester.ensureVisible(find.text('Sign in'));
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(AppState.instance.isSignedIn, isTrue);
+    // A demo identity signs in with its own PIN, so no device lock is stacked
+    // on top before the dashboard opens.
+    expect(AppState.instance.isDemoAccount, isTrue);
+    expect(AppState.instance.requiresPin, isFalse);
+    expect(find.text('HOME'), findsOneWidget);
+  });
+
+  testWidgets('demo PIN sign-in reports a mismatched PIN', (tester) async {
+    AppState.instance.configureAuth(_HostedPinAuth());
+    await pumpScreen(tester, const LoginScreen());
+    await tester.ensureVisible(find.text('Use demo phone + PIN'));
+    await tester.tap(find.text('Use demo phone + PIN'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).at(0), '09170000001');
+    await tester.enterText(find.byType(TextField).at(1), '000000');
+    await tester.ensureVisible(find.text('Sign in'));
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('That phone number and PIN do not match a demo account.'),
+      findsOneWidget,
+    );
+    expect(AppState.instance.isSignedIn, isFalse);
+  });
+
+  testWidgets('demo PIN form returns to the phone form', (tester) async {
+    AppState.instance.configureAuth(_HostedPinAuth());
+    await pumpScreen(tester, const LoginScreen());
+    await tester.ensureVisible(find.text('Use demo phone + PIN'));
+    await tester.tap(find.text('Use demo phone + PIN'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Use a phone number instead'));
+    await tester.tap(find.text('Use a phone number instead'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send code'), findsOneWidget);
+    expect(find.text('Sign in'), findsNothing);
   });
 
   testWidgets('an unknown number is refused at the login screen',

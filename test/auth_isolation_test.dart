@@ -14,22 +14,32 @@ class _HostedFakeAuth implements AuthRepository {
     required this.phone,
     this.email,
     this.needsOnboarding = false,
+    this.id = 'hosted-user',
+    this.fullName = 'Hosted Tester',
+    this.capabilities = const {CapabilityType.passenger},
   });
 
   String? phone;
   final String? email;
   bool needsOnboarding;
+  final String id;
+  final String fullName;
+  final Set<CapabilityType> capabilities;
+  bool _signedInWithDemoPin = false;
   AuthUser? _user;
 
   AuthUser _currentUser() => AuthUser(
-        id: 'hosted-user',
+        id: id,
         phone: phone,
         email: email,
-        fullName: 'Hosted Tester',
-        providers: const {'google'},
+        fullName: fullName,
+        providers: _signedInWithDemoPin ? const {'phone'} : const {'google'},
         metadata: needsOnboarding
             ? const {}
-            : const {'surgo_onboarded': true},
+            : {
+                'surgo_onboarded': true,
+                if (_signedInWithDemoPin) 'surgo_demo': true,
+              },
       );
 
   @override
@@ -46,8 +56,19 @@ class _HostedFakeAuth implements AuthRepository {
 
   @override
   Future<bool> signInWithGoogle() async {
+    _signedInWithDemoPin = false;
     _user = _currentUser();
     return true;
+  }
+
+  @override
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  }) async {
+    _signedInWithDemoPin = true;
+    _user = _currentUser();
+    return _user!;
   }
 
   @override
@@ -57,18 +78,19 @@ class _HostedFakeAuth implements AuthRepository {
 
   @override
   Future<SurgoIdentity> loadIdentity(AuthUser user) async {
-    final capabilities = {CapabilityType.passenger};
+    final caps = capabilities;
     return SurgoIdentity(
       userId: user.id,
       phone: user.phone,
       email: user.email,
       fullName: user.fullName,
-      capabilities: capabilities,
-      eligibleCapabilities: eligibleCapabilitiesFor(capabilities),
+      capabilities: caps,
+      eligibleCapabilities: eligibleCapabilitiesFor(caps),
       roles: const {'passenger'},
       providers: user.providers,
       profileExists: true,
       needsOnboarding: needsOnboarding,
+      isDemoAccount: _signedInWithDemoPin,
     );
   }
 
@@ -173,5 +195,83 @@ void main() {
     );
     expect(failure, isNull);
     expect(state.requiresOnboarding, isFalse);
+  });
+
+  test('switching demo accounts replaces the account and its view', () async {
+    state.configureAuth(_HostedFakeAuth(
+      id: 'demo-a',
+      fullName: 'Demo A',
+      phone: '+639170000001',
+      email: 'demo.a@surgo-demo.test',
+    ));
+    final first = await state.signInWithDemoPin(
+      phone: '+639170000001',
+      pin: '246810',
+    );
+    expect(first, isNull);
+    expect(state.currentAccount?.authUserId, 'demo-a');
+    expect(state.db.hasIsolatedSession, isTrue);
+    expect(state.rideHistory, isEmpty);
+    final accountAId = state.currentAccount!.id;
+
+    await state.logout();
+    expect(state.currentAccount, isNull);
+    expect(state.db.hasIsolatedSession, isFalse);
+
+    state.configureAuth(_HostedFakeAuth(
+      id: 'demo-b',
+      fullName: 'Demo B',
+      phone: '+639170000002',
+      email: 'demo.b@surgo-demo.test',
+      capabilities: const {
+        CapabilityType.passenger,
+        CapabilityType.earner,
+      },
+    ));
+    final second = await state.signInWithDemoPin(
+      phone: '+639170000002',
+      pin: '246810',
+    );
+    expect(second, isNull);
+
+    // A different auth user must be a different app account, with none of the
+    // seed rows and only the roles the provider returned.
+    expect(state.currentAccount?.authUserId, 'demo-b');
+    expect(state.currentAccount?.id, isNot(accountAId));
+    expect(state.currentAccount?.name, 'Demo B');
+    expect(state.rideHistory, isEmpty);
+    expect(state.pasuyoTasks, isEmpty);
+    expect(state.db.hasIsolatedSession, isTrue);
+    expect(state.availableModes, contains(UserMode.earner));
+    expect(state.availableModes, isNot(contains(UserMode.vehicleOwner)));
+  });
+
+  test('signing in again after logout restores the same demo account',
+      () async {
+    final account = _HostedFakeAuth(
+      id: 'demo-a',
+      fullName: 'Demo A',
+      phone: '+639170000001',
+      email: 'demo.a@surgo-demo.test',
+    );
+    state.configureAuth(account);
+    await state.signInWithDemoPin(
+      phone: '+639170000001',
+      pin: '246810',
+    );
+    expect(state.currentAccount?.authUserId, 'demo-a');
+
+    await state.logout();
+    expect(state.currentAccount, isNull);
+    expect(state.rideHistory, isNotEmpty);
+
+    state.configureAuth(account);
+    await state.signInWithDemoPin(
+      phone: '+639170000001',
+      pin: '246810',
+    );
+    expect(state.currentAccount?.authUserId, 'demo-a');
+    expect(state.db.hasIsolatedSession, isTrue);
+    expect(state.rideHistory, isEmpty);
   });
 }

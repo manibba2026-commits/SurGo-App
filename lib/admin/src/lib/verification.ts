@@ -4,6 +4,25 @@ import { ok, type Row } from './query.ts';
 export const VERIFICATION_BUCKET = 'verification-documents';
 export const VEHICLE_BUCKET = 'vehicle-documents';
 
+/** Document types offered when an administrator uploads on someone's behalf. */
+export const VERIFICATION_DOCUMENT_TYPES: [string, string][] = [
+  ['government_id', 'Government ID'],
+  ['drivers_license', "Driver's license"],
+  ['vehicle_registration', 'Vehicle registration'],
+  ['nbi_clearance', 'NBI clearance'],
+  ['police_clearance', 'Police clearance'],
+  ['barangay_clearance', 'Barangay clearance'],
+  ['other', 'Other document'],
+];
+
+export const VEHICLE_DOCUMENT_TYPES: [string, string][] = [
+  ['franchise', 'Franchise'],
+  ['official_receipt', 'Official receipt'],
+  ['certificate_of_registration', 'Certificate of registration'],
+  ['insurance', 'Insurance'],
+  ['other', 'Other document'],
+];
+
 /** Signed URLs expire with the page, never with the file. */
 const SIGN_TTL_SECONDS = 600;
 
@@ -193,7 +212,7 @@ export async function verificationForProfile(
         (await db
           .from('vehicle_documents')
           .select(
-            'id,document_type,document_number,storage_path,expires_at,status,rejection_reason,vehicle:vehicles!vehicle_documents_vehicle_id_fkey(name,plate_number,owner_profile_id)',
+            'id,document_type,document_number,storage_path,expires_at,status,rejection_reason,vehicle:vehicles!vehicle_documents_vehicle_id_fkey(id,name,plate_number,owner_profile_id)',
           )
           .in('vehicle_id', vehicleIds.map((v: Row) => v.id))
           .order('created_at')) as any,

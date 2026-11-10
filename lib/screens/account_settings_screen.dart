@@ -98,7 +98,7 @@ class AccountSettingsScreen extends StatelessWidget {
               _linkedPhoneTile(context, state),
               const SizedBox(height: 8),
               _linkedGoogleTile(context, state),
-              if (state.devicePinEnabled) ...[
+              if (state.devicePinEnabled && !state.isDemoAccount) ...[
                 const SizedBox(height: 8),
                 _pinTile(context),
               ],

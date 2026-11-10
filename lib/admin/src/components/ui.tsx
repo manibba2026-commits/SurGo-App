@@ -97,11 +97,11 @@ export const Select = ({ options, ...p }: React.SelectHTMLAttributes<HTMLSelectE
   <select id={p.name} {...p} className={base}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
 );
 
-export function Pager({ base: href, params, page, count }: { base: string; params: Record<string, string | undefined>; page: number; count: number }) {
+export function Pager({ base: href, params, page, count, param = 'page' }: { base: string; params: Record<string, string | undefined>; page: number; count: number; param?: string }) {
   const pages = Math.max(1, Math.ceil(count / 25));
   const mk = (p: number) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
-    q.set('page', String(p)); return `${href}?${q}`;
+    q.set(param, String(p)); return `${href}?${q}`;
   };
   return (
     <div className="mt-3 flex items-center justify-between text-sm text-ink-500">

@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react';
 import { d, dt, label } from '@/lib/format';
 import type { Row } from '@/lib/query';
 import { approvalBlockReason, documentFileState, isReviewable, type FileState } from '@/lib/verification';
-import { reviewApplication, reviewDocument } from '@/app/actions';
+import { detachVehicleDocument, detachVerificationDocument, reviewApplication, reviewDocument } from '@/app/actions';
 import { ActionForm } from '@/components/ActionForm';
 import { Badge, Input, Panel } from '@/components/ui';
 
@@ -14,10 +15,12 @@ export function DocumentRow({
   doc,
   kind,
   file,
+  remove,
 }: {
   doc: Row;
   kind: 'verification' | 'vehicle';
   file?: FileState;
+  remove?: ReactNode;
 }) {
   const pending = doc.status === 'pending';
   const state = documentFileState(doc, file);
@@ -72,6 +75,7 @@ export function DocumentRow({
           </ActionForm>
         </div>
       )}
+      {remove && <div className="mt-2">{remove}</div>}
     </li>
   );
 }
@@ -85,11 +89,15 @@ export function ApplicationCard({
   files,
   title,
   contact,
+  manage,
+  upload,
 }: {
   app: Row;
   files: Map<string, FileState>;
   title: string;
   contact?: string | null;
+  manage?: boolean;
+  upload?: ReactNode;
 }) {
   const reviewable = isReviewable(app.status);
   const documents = app.documents as Row[];
@@ -141,11 +149,26 @@ export function ApplicationCard({
             </p>
             <ul className="space-y-2">
               {documents.map((doc: Row) => (
-                <DocumentRow key={doc.id} doc={doc} kind="verification" file={files.get(doc.storage_path)} />
+                <DocumentRow
+                  key={doc.id}
+                  doc={doc}
+                  kind="verification"
+                  file={files.get(doc.storage_path)}
+                  remove={manage ? (
+                    <ActionForm
+                      action={detachVerificationDocument}
+                      hidden={{ id: doc.id }}
+                      label="Remove file"
+                      tone="danger"
+                      confirm="Remove this file from the application?"
+                    />
+                  ) : undefined}
+                />
               ))}
             </ul>
           </>
         )}
+        {upload}
       </div>
       {approvalBlocked && (
         <p className="mt-3 rounded-md border border-line bg-paper px-3 py-2 text-xs text-coral" role="status">
@@ -187,10 +210,12 @@ export function VehicleDocumentList({
   documents,
   files,
   showOwner,
+  manage,
 }: {
   documents: Row[];
   files: Map<string, FileState>;
   showOwner?: boolean;
+  manage?: boolean;
 }) {
   if (!documents.length) {
     return (
@@ -213,6 +238,15 @@ export function VehicleDocumentList({
             doc={{ ...doc, label: label(doc.document_type) }}
             kind="vehicle"
             file={files.get(doc.storage_path)}
+            remove={manage ? (
+              <ActionForm
+                action={detachVehicleDocument}
+                hidden={{ id: doc.id }}
+                label="Remove file"
+                tone="danger"
+                confirm="Remove this vehicle document?"
+              />
+            ) : undefined}
           />
         </li>
       ))}

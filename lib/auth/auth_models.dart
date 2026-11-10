@@ -13,6 +13,8 @@ enum AuthStatus { uninitialized, restoring, signedOut, signedIn, error }
 enum AuthFailureCode {
   invalidPhone,
   invalidCode,
+  invalidPin,
+  accountUnavailable,
   rateLimited,
   noAccount,
   providerUnavailable,
@@ -118,6 +120,61 @@ class AuthFailure implements Exception {
     return AuthFailure(AuthFailureCode.unknown, error.message);
   }
 
+  /// Translates the `demo-login` Edge Function's status and JSON body. The
+  /// function keeps its own messages generic, so this picks the copy the
+  /// screen shows without ever echoing backend text back to the user.
+  static AuthFailure fromDemoLogin(int status, Object? details) {
+    if (status == 0) {
+      return const AuthFailure(
+        AuthFailureCode.network,
+        'You appear to be offline. Check your connection and try again.',
+      );
+    }
+    final body = details is Map ? details : const <String, dynamic>{};
+    switch (status) {
+      case 400:
+        return const AuthFailure(
+          AuthFailureCode.invalidPin,
+          'Enter a valid Philippine mobile number and its 6-digit PIN.',
+        );
+      case 401:
+        return const AuthFailure(
+          AuthFailureCode.invalidPin,
+          'That phone number and PIN do not match a demo account.',
+        );
+      case 403:
+        return const AuthFailure(
+          AuthFailureCode.accountUnavailable,
+          'This demo account is not available right now.',
+        );
+      case 429:
+        final retry = body['retry_after_seconds'];
+        final wait = retry is int && retry > 0 ? _waitLabel(retry) : null;
+        return AuthFailure(
+          AuthFailureCode.rateLimited,
+          wait == null
+              ? 'Too many attempts. Wait a few minutes and try again.'
+              : 'Too many attempts. Try again in $wait.',
+        );
+      case 500:
+        return const AuthFailure(
+          AuthFailureCode.providerUnavailable,
+          'Demo sign-in is not configured on this server yet.',
+        );
+      default:
+        return const AuthFailure(
+          AuthFailureCode.unknown,
+          'Demo sign-in did not complete. Try again in a moment.',
+        );
+    }
+  }
+
+  static String _waitLabel(int seconds) {
+    if (seconds < 60) return seconds == 1 ? '1 second' : '$seconds seconds';
+    final minutes = (seconds / 60).ceil();
+    return minutes == 1 ? '1 minute' : '$minutes minutes';
+  }
+
   @override
   String toString() => 'AuthFailure($code): $message';
 }
@@ -185,6 +242,11 @@ class SurgoIdentity {
   /// identity and the `surgo_onboarded` metadata marker instead.
   final bool needsOnboarding;
 
+  /// Whether this is one of the provisioned fictional demo identities. Its PIN
+  /// is the sign-in credential and is verified on the server, so the separate
+  /// device lock never applies to it.
+  final bool isDemoAccount;
+
   const SurgoIdentity({
     required this.userId,
     required this.capabilities,
@@ -196,6 +258,7 @@ class SurgoIdentity {
     this.fullName,
     this.profileExists = false,
     this.needsOnboarding = false,
+    this.isDemoAccount = false,
   });
 
   bool get hasPhoneIdentity => providers.contains('phone');

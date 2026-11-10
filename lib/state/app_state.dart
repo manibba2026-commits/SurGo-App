@@ -359,8 +359,12 @@ class AppState extends ChangeNotifier {
     // A new account passes the device PIN before the dashboard. The flag is
     // set before the identity lands so a screen listening for isSignedIn
     // already sees requiresPin. The same account refreshing its token keeps
-    // the unlock it already earned instead of being relocked.
-    if (devicePinEnabled && identity?.userId != current.id) _pinRequired = true;
+    // the unlock it already earned instead of being relocked. A demo identity
+    // never gets the device lock: its PIN was just verified by the server.
+    final isDemo = current.metadata['surgo_demo'] == true;
+    if (devicePinEnabled && !isDemo && identity?.userId != current.id) {
+      _pinRequired = true;
+    }
     await _applyAuthUser(current);
   }
 
@@ -396,6 +400,9 @@ class AppState extends ChangeNotifier {
       }
 
       identity = loaded;
+      // A demo identity signed in with its server-verified PIN, so any lock
+      // carried in from a restored session is released here.
+      if (loaded.isDemoAccount) _pinRequired = false;
       final account = _syncLocalAccount(loaded);
       currentAccount = account;
       if (_auth.isMock) {
@@ -501,6 +508,24 @@ class AppState extends ChangeNotifier {
         : null;
   }
 
+  /// Signs in a fictional demo identity with its phone number and PIN. The PIN
+  /// is verified on the server and exchanged for a real session, so this is the
+  /// account's only credential and the device lock is not stacked on top.
+  Future<AuthFailure?> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  }) async {
+    _pinRequired = false;
+    final failure = await _performAuth(() async {
+      final user = await _auth.signInWithDemoPin(phone: phone, pin: pin);
+      await _applyAuthUser(user);
+    });
+    if (failure != null) return failure;
+    return currentAccount == null
+        ? authError ?? AuthFailure.from('Sign-in did not complete.')
+        : null;
+  }
+
   Future<AuthFailure?> signInWithGoogle() async {
     _pinRequired = devicePinEnabled;
     final failure = await _performAuth(() async {
@@ -586,10 +611,16 @@ class AppState extends ChangeNotifier {
   bool get demoAuthEnabled => DemoAuthConfig.enabled && _auth.isMock;
 
   /// The device PIN guards a session in the offline demo and in a hosted
-  /// Supabase build alike. Plain mock tests (no demo flag) keep no PIN, and a
-  /// provider that could not initialize has nothing to lock.
+  /// Supabase build alike. Plain mock tests (no demo flag) keep no PIN, a
+  /// provider that could not initialize has nothing to lock, and a provisioned
+  /// demo identity already authenticated with its own PIN.
   bool get devicePinEnabled =>
       _auth.isAvailable && (demoAuthEnabled || !_auth.isMock);
+
+  /// True when the hosted provider is installed, so the `demo-login` function
+  /// can be reached. The offline presentation build keeps using its seeded
+  /// account numbers, fixed OTP and device PIN instead.
+  bool get demoPinLoginAvailable => _auth.isAvailable && !_auth.isMock;
 
   /// The PIN is device-level, like a phone's lock screen.
   final DemoPinStore pinStore = DemoPinStore();
@@ -597,7 +628,13 @@ class AppState extends ChangeNotifier {
   bool _pinRequired = false;
 
   /// A restored session must be unlocked before the dashboard is shown.
-  bool get requiresPin => devicePinEnabled && isSignedIn && _pinRequired;
+  bool get requiresPin =>
+      devicePinEnabled && isSignedIn && _pinRequired && !isDemoAccount;
+
+  /// Whether the signed-in account is one of the provisioned fictional demo
+  /// identities. Its PIN is the sign-in credential itself, so the app offers
+  /// neither a second device lock nor a PIN-management tile for it.
+  bool get isDemoAccount => identity?.isDemoAccount ?? false;
 
   /// The device-local key the signed-in account's PIN is stored under.
   ///

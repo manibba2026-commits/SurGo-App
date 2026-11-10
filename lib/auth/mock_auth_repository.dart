@@ -130,6 +130,48 @@ class MockAuthRepository implements AuthRepository {
     return user;
   }
 
+  /// Preview stand-in for the server-verified demo PIN. It matches a seed
+  /// account by phone and accepts the same fixed code the preview uses for
+  /// OTP; the hosted build verifies each account's real PIN server-side.
+  @override
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  }) async {
+    final normalized = normalizePhoneNumber(phone);
+    if (normalized == null) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidPhone,
+        'Enter a valid Philippine mobile number, for example 0917 000 0001.',
+      );
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidPin,
+        'Enter the 6-digit PIN for this demo account.',
+      );
+    }
+    final account = _accountForPhone(normalized);
+    if (account == null || pin != otpCode) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidPin,
+        'That phone number and PIN do not match a demo account.',
+      );
+    }
+    final user = AuthUser(
+      id: account.authUserId ?? 'mock:pin:$normalized',
+      phone: normalized,
+      email: account.email,
+      fullName: account.name,
+      providers: const {'phone'},
+      metadata: const {'surgo_demo': true, 'surgo_onboarded': true},
+    );
+    _user = user;
+    await _persist(user);
+    _emit(user);
+    return user;
+  }
+
   @override
   Future<bool> signInWithGoogle() async {
     final accounts = DbService.instance.accounts;
@@ -180,6 +222,7 @@ class MockAuthRepository implements AuthRepository {
       roles: _rolesFromCapabilities(capabilities),
       providers: user.providers,
       profileExists: true,
+      isDemoAccount: user.metadata['surgo_demo'] == true,
     );
   }
 

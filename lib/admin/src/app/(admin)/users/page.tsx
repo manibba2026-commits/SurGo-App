@@ -20,7 +20,11 @@ export default async function Users({ searchParams }: { searchParams: SP }) {
   const rows = ok(res, 'Users') as unknown as Row[];
   return (
     <>
-      <PageHeader title="Users" sub="Every account. Roles are operational capabilities; one person can hold several." />
+      <PageHeader
+        title="Users"
+        sub="Every account. Roles are operational capabilities; one person can hold several."
+        actions={<Link href="/users/new" className="rounded-md bg-sea px-3 py-2 text-sm font-medium text-white hover:bg-sea-600">Create user</Link>}
+      />
       <Filters action="/users">
         <Field name="q" label="Search"><Input name="q" defaultValue={searchParams.q} placeholder="Name, email or phone" className="w-64" /></Field>
         <Field name="role" label="Role"><Select name="role" defaultValue={searchParams.role ?? ''} options={[['', 'Any'], ['passenger', 'Passenger'], ['earner', 'Helper (earner)'], ['rider', 'Rider'], ['vehicle_owner', 'Vehicle owner'], ['admin', 'Administrator']]} /></Field>

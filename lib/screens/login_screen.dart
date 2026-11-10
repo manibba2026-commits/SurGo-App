@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../auth/auth_models.dart';
 import '../auth/demo_auth.dart';
 import '../auth/phone_input.dart';
@@ -7,11 +8,12 @@ import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
 import '../widgets/common.dart';
 
-/// Sign-in through Supabase Auth: a phone one-time code or Google.
+/// Sign-in through Supabase Auth: a phone one-time code, Google, or (on the
+/// hosted build) the phone number and PIN issued to a fictional demo account.
 ///
 /// The screen never sees a password. A successful phone request continues on
-/// the OTP screen; Google completes through the provider's deep link and is
-/// applied by [AppState]'s auth-state listener.
+/// the OTP screen; Google completes through the provider's deep link; a demo
+/// PIN is verified by the server and signs in immediately.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -21,11 +23,15 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final phoneCtrl = TextEditingController();
+  final pinCtrl = TextEditingController();
+  bool _pinMode = false;
+  bool _obscure = true;
   bool _submitting = false;
   bool _googleLoading = false;
   bool _navigated = false;
   String? _error;
   String? _phoneError;
+  String? _pinError;
 
   AppState get state => AppState.instance;
 
@@ -39,6 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     state.removeListener(_onAuthStateChanged);
     phoneCtrl.dispose();
+    pinCtrl.dispose();
     super.dispose();
   }
 
@@ -110,6 +117,52 @@ class _LoginScreenState extends State<LoginScreen> {
       '/otp',
       arguments: {'phone': phone, 'mode': 'login'},
     );
+  }
+
+  Future<void> _submitPin() async {
+    if (_submitting) return;
+    FocusScope.of(context).unfocus();
+
+    final normalized = normalizePhoneNumber(phoneCtrl.text.trim());
+    final pin = pinCtrl.text.trim();
+    final pinInvalid = !RegExp(r'^\d{6}$').hasMatch(pin);
+    if (normalized == null || pinInvalid) {
+      setState(() {
+        _phoneError = normalized == null
+            ? 'Enter a valid phone number, for example 0917 000 0001.'
+            : null;
+        _pinError =
+            pinInvalid ? 'Enter the 6-digit PIN for this account.' : null;
+        _error = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+      _phoneError = null;
+      _pinError = null;
+      _error = null;
+    });
+
+    final failure = await state.signInWithDemoPin(phone: normalized, pin: pin);
+    if (!mounted) return;
+
+    setState(() {
+      _submitting = false;
+      _error = failure?.message;
+    });
+    if (failure == null && state.isSignedIn) _finishSignedIn();
+  }
+
+  void _setPinMode(bool value) {
+    if (_submitting) return;
+    setState(() {
+      _pinMode = value;
+      _error = null;
+      _phoneError = null;
+      _pinError = null;
+    });
   }
 
   Widget _demoAccountsCard() {
@@ -215,48 +268,126 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 22),
         const SbBrandLockup(),
         const SizedBox(height: 30),
-        const SbAuthHeader(
-          title: 'Welcome back',
-          subtitle: 'We will text you a one-time code. No password needed.',
+        SbAuthHeader(
+          title: _pinMode ? 'Demo sign-in' : 'Welcome back',
+          subtitle: _pinMode
+              ? 'Use the phone number and PIN issued for this demo account.'
+              : 'We will text you a one-time code. No password needed.',
         ),
         const SizedBox(height: 26),
-        SbAuthField(
-          label:
-              state.demoAuthEnabled ? 'Phone or account number' : 'Phone number',
-          controller: phoneCtrl,
-          icon: Icons.phone_outlined,
-          errorText: _phoneError,
-          keyboardType: state.demoAuthEnabled
-              ? TextInputType.text
-              : TextInputType.phone,
-          inputFormatters:
-              state.demoAuthEnabled ? null : [phPhoneInputFormatter],
-          autofillHints: state.demoAuthEnabled
-              ? null
-              : const [AutofillHints.telephoneNumber],
-          textInputAction: TextInputAction.done,
-          enabled: !busy,
-          onChanged: (_) {
-            if (_phoneError != null) setState(() => _phoneError = null);
-          },
-          onSubmitted: (_) => _submit(),
-        ),
-        if (state.demoAuthEnabled) _demoAccountsCard(),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: busy
-                ? null
-                : () => Navigator.pushNamed(context, '/forgot-password'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primaryLight,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              textStyle:
-                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-            ),
-            child: const Text('Trouble signing in?'),
+        if (_pinMode) ...[
+          SbAuthField(
+            label: 'Demo phone number',
+            controller: phoneCtrl,
+            icon: Icons.phone_outlined,
+            errorText: _phoneError,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [phPhoneInputFormatter],
+            textInputAction: TextInputAction.next,
+            enabled: !busy,
+            onChanged: (_) {
+              if (_phoneError != null) setState(() => _phoneError = null);
+            },
           ),
-        ),
+          const SizedBox(height: 12),
+          SbAuthField(
+            label: 'Demo PIN',
+            controller: pinCtrl,
+            icon: Icons.lock_outline,
+            errorText: _pinError,
+            obscureText: _obscure,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
+            textInputAction: TextInputAction.done,
+            enabled: !busy,
+            suffix: IconButton(
+              icon: Icon(
+                _obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 18,
+                color: AppColors.muted,
+              ),
+              onPressed:
+                  busy ? null : () => setState(() => _obscure = !_obscure),
+              tooltip: _obscure ? 'Show PIN' : 'Hide PIN',
+            ),
+            onChanged: (_) {
+              if (_pinError != null) setState(() => _pinError = null);
+            },
+            onSubmitted: (_) => _submitPin(),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: busy ? null : () => _setPinMode(false),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryLight,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                textStyle: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+              child: const Text('Use a phone number instead'),
+            ),
+          ),
+        ] else ...[
+          SbAuthField(
+            label: state.demoAuthEnabled
+                ? 'Phone or account number'
+                : 'Phone number',
+            controller: phoneCtrl,
+            icon: Icons.phone_outlined,
+            errorText: _phoneError,
+            keyboardType: state.demoAuthEnabled
+                ? TextInputType.text
+                : TextInputType.phone,
+            inputFormatters:
+                state.demoAuthEnabled ? null : [phPhoneInputFormatter],
+            autofillHints: state.demoAuthEnabled
+                ? null
+                : const [AutofillHints.telephoneNumber],
+            textInputAction: TextInputAction.done,
+            enabled: !busy,
+            onChanged: (_) {
+              if (_phoneError != null) setState(() => _phoneError = null);
+            },
+            onSubmitted: (_) => _submit(),
+          ),
+          if (state.demoAuthEnabled) _demoAccountsCard(),
+          if (state.demoPinLoginAvailable)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: busy ? null : () => _setPinMode(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaryLight,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  textStyle: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+                child: const Text('Use demo phone + PIN'),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: busy
+                  ? null
+                  : () => Navigator.pushNamed(context, '/forgot-password'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryLight,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                textStyle:
+                    const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+              child: const Text('Trouble signing in?'),
+            ),
+          ),
+        ],
         const SizedBox(height: 6),
         if (!state.authAvailable)
           const SbAuthError(
@@ -265,8 +396,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         SbAuthError(message: _error),
         SbPrimaryButton(
-          label: _submitting ? 'Sending code…' : 'Send code',
-          onPressed: busy ? null : _submit,
+          label: _pinMode
+              ? (_submitting ? 'Signing in…' : 'Sign in')
+              : (_submitting ? 'Sending code…' : 'Send code'),
+          onPressed: busy ? null : (_pinMode ? _submitPin : _submit),
         ),
         const SizedBox(height: 22),
         const SbOrDivider(),
@@ -278,12 +411,14 @@ class _LoginScreenState extends State<LoginScreen> {
           onPressed: busy ? null : _google,
         ),
         const SizedBox(height: 24),
-        SbAuthLink(
-          prefix: 'No account?',
-          action: 'Sign up',
-          onPressed:
-              busy ? null : () => Navigator.pushReplacementNamed(context, '/register'),
-        ),
+        if (!_pinMode)
+          SbAuthLink(
+            prefix: 'No account?',
+            action: 'Sign up',
+            onPressed: busy
+                ? null
+                : () => Navigator.pushReplacementNamed(context, '/register'),
+          ),
         const SizedBox(height: 8),
       ],
     );

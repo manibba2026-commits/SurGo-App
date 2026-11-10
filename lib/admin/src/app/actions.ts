@@ -51,6 +51,98 @@ export async function updateRemittance(_: ActionState, f: FormData) {
     ['/finance', '/dashboard'], 'Remittance updated');
 }
 
+// Account management -----------------------------------------------------
+
+export async function updateProfile(_: ActionState, f: FormData) {
+  return run('admin_update_profile',
+    {
+      p_profile_id: s(f, 'id'), p_full_name: s(f, 'full_name'), p_first_name: s(f, 'first_name'),
+      p_address: s(f, 'address'), p_barangay: s(f, 'barangay'),
+    },
+    ['/users'], 'Profile updated');
+}
+export async function setAvatar(_: ActionState, f: FormData) {
+  return run('admin_set_avatar',
+    { p_profile_id: s(f, 'id'), p_avatar_path: s(f, 'avatar_path') },
+    ['/users'], 'Photo updated');
+}
+export async function setUserRole(_: ActionState, f: FormData) {
+  return run('admin_set_user_role',
+    { p_profile_id: s(f, 'id'), p_role: s(f, 'role'), p_status: s(f, 'status'), p_reason: s(f, 'reason') },
+    ['/users', '/verification'], 'Role updated');
+}
+export async function startVerification(_: ActionState, f: FormData) {
+  return run('admin_ensure_verification_application',
+    { p_profile_id: s(f, 'id'), p_capability: s(f, 'capability') },
+    ['/users', '/verification'], 'Verification opened');
+}
+export async function attachVerificationDocument(_: ActionState, f: FormData) {
+  return run('admin_attach_verification_document',
+    {
+      p_application_id: s(f, 'application_id'), p_document_type: s(f, 'document_type'),
+      p_label: s(f, 'label'), p_storage_path: s(f, 'storage_path'),
+      p_document_number: s(f, 'document_number'), p_expires_at: s(f, 'expires_at'),
+    },
+    ['/users', '/verification'], 'Document attached');
+}
+export async function detachVerificationDocument(_: ActionState, f: FormData) {
+  return run('admin_detach_verification_document',
+    { p_document_id: s(f, 'id') }, ['/users', '/verification'], 'Document removed');
+}
+export async function attachVehicleDocument(_: ActionState, f: FormData) {
+  return run('admin_attach_vehicle_document',
+    {
+      p_vehicle_id: s(f, 'vehicle_id'), p_document_type: s(f, 'document_type'),
+      p_storage_path: s(f, 'storage_path'), p_document_number: s(f, 'document_number'),
+      p_expires_at: s(f, 'expires_at'),
+    },
+    ['/users', '/vehicles', '/verification'], 'Vehicle document attached');
+}
+export async function detachVehicleDocument(_: ActionState, f: FormData) {
+  return run('admin_detach_vehicle_document',
+    { p_document_id: s(f, 'id') }, ['/users', '/vehicles', '/verification'], 'Vehicle document removed');
+}
+
+/** Called by the create-account wizard after the browser has uploaded files
+ *  straight to Storage. Each capability's application is opened (or reused) and
+ *  every file is attached as pending so it still needs a review. */
+export async function attachCreatedDocuments(_: ActionState, f: FormData) {
+  await requireAdmin();
+  const profileId = s(f, 'id');
+  let documents: { type?: string; label?: string; path?: string; number?: string | null; expires?: string | null }[];
+  let capabilities: string[];
+  try {
+    documents = JSON.parse(String(f.get('documents') ?? '[]'));
+    capabilities = JSON.parse(String(f.get('capabilities') ?? '[]'));
+  } catch {
+    return { error: 'Invalid document payload.' };
+  }
+  if (!profileId || !Array.isArray(documents) || !Array.isArray(capabilities)) {
+    return { error: 'Missing account details.' };
+  }
+  const db = createClient();
+  for (const capability of capabilities.filter((c) => c === 'rider' || c === 'vehicle_owner')) {
+    const { data: applicationId, error } = await db.rpc('admin_ensure_verification_application', {
+      p_profile_id: profileId, p_capability: capability,
+    });
+    if (error) return { error: error.message };
+    for (const doc of documents) {
+      if (!doc?.type || !doc?.path) continue;
+      const { error: attachError } = await db.rpc('admin_attach_verification_document', {
+        p_application_id: applicationId,
+        p_document_type: doc.type,
+        p_label: doc.label ?? null,
+        p_storage_path: doc.path,
+        p_document_number: doc.number ?? null,
+        p_expires_at: doc.expires ?? null,
+      });
+      if (attachError) return { error: attachError.message };
+    }
+  }
+  revalidatePath('/users', 'layout');
+  return { ok: 'Documents attached' };
+}
+
 // Attachments -------------------------------------------------------------
 // The browser uploads bytes straight to the private bucket; these actions are
 // the only path that records them. Each one re-verifies the admin, lets the

@@ -35,6 +35,14 @@ abstract class AuthRepository {
     required String token,
   });
 
+  /// Signs in a fictional demo identity with its phone number and PIN. The PIN
+  /// is verified server-side and exchanged for a real session, so no SMS is
+  /// sent and the app never bundles a credential.
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  });
+
   /// Opens the Google consent screen. The session arrives through
   /// [authStateChanges] (or on the next launch after a web redirect).
   Future<bool> signInWithGoogle();

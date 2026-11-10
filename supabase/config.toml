@@ -398,6 +398,12 @@ deno_version = 2
 [functions.send-sms]
 verify_jwt = false
 
+# Demo sign-in authenticates with the per-account PIN, not a Supabase JWT, so the
+# platform must let the request reach the function. The function itself uses the
+# service role only after the PIN is verified.
+[functions.demo-login]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

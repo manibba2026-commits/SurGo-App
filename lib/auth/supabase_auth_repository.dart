@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthUser;
 
@@ -125,6 +127,64 @@ class SupabaseAuthRepository implements AuthRepository {
     });
   }
 
+  static final RegExp _demoPinPattern = RegExp(r'^\d{6}$');
+
+  @override
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
+  }) {
+    return _guard(() async {
+      final normalized = normalizePhoneNumber(phone);
+      if (normalized == null) {
+        throw const AuthFailure(
+          AuthFailureCode.invalidPhone,
+          'Enter a valid Philippine mobile number, for example 0917 000 0001.',
+        );
+      }
+      if (!_demoPinPattern.hasMatch(pin)) {
+        throw const AuthFailure(
+          AuthFailureCode.invalidPin,
+          'Enter the 6-digit PIN for this demo account.',
+        );
+      }
+
+      final FunctionResponse response;
+      try {
+        // The function owns the PIN comparison, the lockout counter and the
+        // session exchange; the app only forwards what the user typed.
+        response = await _client.functions.invoke(
+          'demo-login',
+          body: {'phone': normalized, 'pin': pin},
+        );
+      } on FunctionException catch (error) {
+        throw AuthFailure.fromDemoLogin(error.status, error.details);
+      }
+
+      final data = response.data;
+      final session = data is Map ? data['session'] : null;
+      if (session is! Map) {
+        throw const AuthFailure(
+          AuthFailureCode.unknown,
+          'Demo sign-in did not return a session. Try again.',
+        );
+      }
+
+      // The function exchanged the PIN for a real GoTrue session. Adopting it
+      // keeps the provider's own refresh and sign-out behaviour, so the rest of
+      // the app treats this exactly like any other Supabase session.
+      final recovered = await _client.auth.recoverSession(jsonEncode(session));
+      final user = _authUser(recovered.user);
+      if (user == null) {
+        throw const AuthFailure(
+          AuthFailureCode.unknown,
+          'Demo sign-in did not complete. Try again.',
+        );
+      }
+      return user;
+    });
+  }
+
   @override
   Future<bool> signInWithGoogle() {
     return _guard(() {
@@ -174,9 +234,12 @@ class SupabaseAuthRepository implements AuthRepository {
     // The auth trigger gives every new provider user a passenger profile, so a
     // "registered" account is one with a phone identity or an explicit marker.
     // A Google-only account is walked through onboarding instead of being
-    // dropped into a dashboard it never finished creating.
+    // dropped into a dashboard it never finished creating. A provisioned demo
+    // identity is already complete and never revisits onboarding.
     final onboarded = user.metadata['surgo_onboarded'] == true;
-    final needsOnboarding = profileLoaded &&
+    final isDemoAccount = user.metadata['surgo_demo'] == true;
+    final needsOnboarding = !isDemoAccount &&
+        profileLoaded &&
         rolesLoaded &&
         ((!profileExists && capabilities.isEmpty) ||
             (profileExists &&
@@ -186,7 +249,9 @@ class SupabaseAuthRepository implements AuthRepository {
 
     return SurgoIdentity(
       userId: user.id,
-      phone: user.phone,
+      phone: profile?.phone?.trim().isNotEmpty == true
+          ? profile!.phone!.trim()
+          : user.phone,
       email: profile?.email?.trim().isNotEmpty == true
           ? profile!.email!.trim()
           : user.email,
@@ -199,6 +264,7 @@ class SupabaseAuthRepository implements AuthRepository {
       providers: user.providers,
       profileExists: profileExists,
       needsOnboarding: needsOnboarding,
+      isDemoAccount: isDemoAccount,
     );
   }
 
@@ -322,6 +388,14 @@ class DisabledAuthRepository implements AuthRepository {
   Future<AuthUser> verifyPhoneOtp({
     required String phone,
     required String token,
+  }) async {
+    throw _offline;
+  }
+
+  @override
+  Future<AuthUser> signInWithDemoPin({
+    required String phone,
+    required String pin,
   }) async {
     throw _offline;
   }
