@@ -20,6 +20,9 @@ import 'screens/vehicle_owner_map_screen.dart';
 import 'screens/active_rental_screen.dart';
 import 'screens/pasuyo_screen.dart';
 import 'screens/pasuyo_post_screen.dart';
+import 'screens/pin_lock_screen.dart';
+import 'auth/demo_auth.dart';
+import 'auth/mock_auth_repository.dart';
 import 'auth/supabase_auth_repository.dart';
 import 'data/data_source.dart';
 import 'repositories/backend.dart';
@@ -30,6 +33,20 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The presentation build signs in against the existing seed accounts. It
+  // skips Supabase entirely so the demo works offline and no hosted identity
+  // or session is touched. Without the flag nothing below changes.
+  if (DemoAuthConfig.enabled) {
+    AppState.instance.configureAuth(
+      MockAuthRepository(
+        otpCode: DemoAuthConfig.defaultOtpCode,
+        sessionStore: SharedPreferencesDemoSessionStore(),
+      ),
+    );
+    AppState.instance.configureRepositories(RepositoryRegistry.mock());
+    runApp(const SurGoApp());
+    return;
+  }
   final supabaseReady = await initializeSupabase();
   AppState.instance.configureAuth(
     supabaseReady
@@ -78,6 +95,7 @@ class SurGoApp extends StatelessWidget {
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
+        '/pin': (context) => const PinLockScreen(),
         '/register': (context) => const RegisterScreen(),
         '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/otp': (context) => const OtpScreen(),

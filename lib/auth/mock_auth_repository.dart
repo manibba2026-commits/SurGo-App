@@ -4,6 +4,7 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import 'auth_models.dart';
 import 'auth_repository.dart';
+import 'demo_auth.dart';
 
 /// In-memory identity provider for tests and previews. It mirrors the Supabase
 /// contract without passwords: a fixed OTP stands in for the SMS code and the
@@ -11,12 +12,18 @@ import 'auth_repository.dart';
 ///
 /// Production never constructs this class; `main` installs
 /// `SupabaseAuthRepository` (or `DisabledAuthRepository` when it cannot boot).
+/// The presentation build opts in with `SURGO_DEMO_AUTH=true` and passes a
+/// [DemoSessionStore] so the identity survives a restart.
 class MockAuthRepository implements AuthRepository {
-  MockAuthRepository({this.otpCode = defaultOtpCode});
+  MockAuthRepository({
+    this.otpCode = defaultOtpCode,
+    this.sessionStore,
+  });
 
   static const String defaultOtpCode = '123456';
 
   final String otpCode;
+  final DemoSessionStore? sessionStore;
   final StreamController<AuthUser?> _controller =
       StreamController<AuthUser?>.broadcast();
 
@@ -34,7 +41,27 @@ class MockAuthRepository implements AuthRepository {
   Stream<AuthUser?> get authStateChanges => _controller.stream;
 
   @override
-  Future<AuthUser?> restoreSession() async => _user;
+  Future<AuthUser?> restoreSession() async {
+    if (_user != null) return _user;
+    final store = sessionStore;
+    if (store == null) return null;
+    final session = await store.read();
+    if (session == null) return null;
+    return _user = session.toUser();
+  }
+
+  /// Resolves the login box's input: an account number (`ACC003`) or any phone
+  /// shape [normalizePhoneNumber] accepts. Returns null when neither matches an
+  /// existing seed account.
+  Account? accountForIdentifier(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    for (final account in DbService.instance.accounts) {
+      if (account.id.toLowerCase() == value.toLowerCase()) return account;
+    }
+    final phone = normalizePhoneNumber(value);
+    return phone == null ? null : _accountForPhone(phone);
+  }
 
   @override
   Future<void> requestPhoneOtp({
@@ -98,6 +125,7 @@ class MockAuthRepository implements AuthRepository {
     );
     _pending.remove(normalized);
     _user = user;
+    await _persist(user);
     _emit(user);
     return user;
   }
@@ -120,6 +148,7 @@ class MockAuthRepository implements AuthRepository {
       providers: const {'google'},
     );
     _user = user;
+    await _persist(user);
     _emit(user);
     return true;
   }
@@ -129,6 +158,7 @@ class MockAuthRepository implements AuthRepository {
     _user = null;
     _pending.clear();
     _pendingLinkPhone = null;
+    await sessionStore?.clear();
     _emit(null);
   }
 
@@ -163,6 +193,7 @@ class MockAuthRepository implements AuthRepository {
     }
     final linked = user.copyWith(providers: {...user.providers, 'google'});
     _user = linked;
+    await _persist(linked);
     _emit(linked);
     return true;
   }
@@ -216,7 +247,14 @@ class MockAuthRepository implements AuthRepository {
       providers: {...user.providers, 'phone'},
     );
     _user = linked;
+    await _persist(linked);
     _emit(linked);
+  }
+
+  Future<void> _persist(AuthUser user) async {
+    final store = sessionStore;
+    if (store == null) return;
+    await store.write(DemoSession.fromUser(user));
   }
 
   void _emit(AuthUser? user) {

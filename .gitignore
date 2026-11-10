@@ -32,3 +32,6 @@ Thumbs.db
 # Supabase CLI scratch state and the local SQL-test harness
 supabase/.temp/
 supabase/tests/node_modules/
+
+# Private demo credentials: keep the filled copy local
+docs/final-presentation/demo-accounts.local.*

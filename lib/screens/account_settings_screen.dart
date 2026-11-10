@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
+import '../auth/demo_auth.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -96,6 +97,10 @@ class AccountSettingsScreen extends StatelessWidget {
               _linkedPhoneTile(context, state),
               const SizedBox(height: 8),
               _linkedGoogleTile(context, state),
+              if (state.demoAuthEnabled) ...[
+                const SizedBox(height: 8),
+                _pinTile(context),
+              ],
               const SizedBox(height: 24),
               SbOutlineButton(
                 label: 'Log Out',
@@ -277,6 +282,178 @@ class AccountSettingsScreen extends StatelessWidget {
           : 'Finish linking Google in the browser window.',
       tone: linkedNow ? SbNoticeTone.success : SbNoticeTone.info,
     );
+  }
+
+  Widget _pinTile(BuildContext context) {
+    return SbCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      onTap: () => _changePin(context),
+      child: Row(
+        children: [
+          const SbToneIcon(
+            tone: SbTone.brand,
+            icon: Icons.lock_outline,
+            size: 34,
+            iconSize: 17,
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'App PIN',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Required when SurGo reopens',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+          const Text(
+            'Change',
+            style: TextStyle(
+              color: AppColors.primaryLight,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changePin(BuildContext context) async {
+    final current = TextEditingController();
+    final next = TextEditingController();
+    final confirm = TextEditingController();
+    String? error;
+
+    Future<void> save(StateSetter setDialogState, BuildContext dialogContext) async {
+      final currentPin = current.text.trim();
+      final nextPin = next.text.trim();
+      if (!isDemoPin(currentPin)) {
+        setDialogState(() => error = 'Enter your current 6-digit PIN.');
+        return;
+      }
+      if (!isDemoPin(nextPin)) {
+        setDialogState(() => error = 'The new PIN must be 6 digits.');
+        return;
+      }
+      if (nextPin != confirm.text.trim()) {
+        setDialogState(() => error = 'The new PINs do not match.');
+        return;
+      }
+
+      final result = await AppState.instance.changePin(
+        currentPin: currentPin,
+        newPin: nextPin,
+      );
+      if (!dialogContext.mounted) return;
+      if (result == PinChangeResult.success) {
+        Navigator.pop(dialogContext, true);
+        return;
+      }
+      setDialogState(() => error = switch (result) {
+            PinChangeResult.incorrectCurrent => 'That is not the current PIN.',
+            PinChangeResult.sameAsCurrent =>
+              'Choose a PIN different from the current one.',
+            _ => 'Enter a 6-digit PIN.',
+          });
+    }
+
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppColors.panel,
+              title: const Text('Change app PIN'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: current,
+                      autofocus: true,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      maxLength: DemoAuthConfig.pinLength,
+                      decoration: const InputDecoration(
+                        labelText: 'Current PIN',
+                        counterText: '',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: next,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      maxLength: DemoAuthConfig.pinLength,
+                      decoration: const InputDecoration(
+                        labelText: 'New PIN',
+                        counterText: '',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: confirm,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      maxLength: DemoAuthConfig.pinLength,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirm new PIN',
+                        counterText: '',
+                      ),
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          error!,
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => save(setDialogState, dialogContext),
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    current.dispose();
+    next.dispose();
+    confirm.dispose();
+    if (changed == true && context.mounted) {
+      SurgoNotice.show(
+        context,
+        'App PIN updated.',
+        tone: SbNoticeTone.success,
+      );
+    }
   }
 
   Widget _switchTile(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {

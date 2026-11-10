@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
+import '../auth/demo_auth.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
@@ -54,11 +55,26 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_submitting) return;
     FocusScope.of(context).unfocus();
 
-    final phone = normalizePhoneNumber(phoneCtrl.text);
-    if (phone == null) {
-      setState(() => _error =
-          'Enter a valid phone number, for example 0917 512 4809.');
-      return;
+    if (!state.ready) await state.init();
+
+    final raw = phoneCtrl.text.trim();
+    late final String phone;
+    if (state.demoAuthEnabled) {
+      final account = state.demoAccountFor(raw);
+      if (account == null) {
+        setState(() => _error =
+            'Enter a demo account number (for example ACC003) or a registered phone number.');
+        return;
+      }
+      phone = normalizePhoneNumber(account.phone) ?? account.phone;
+    } else {
+      final normalized = normalizePhoneNumber(raw);
+      if (normalized == null) {
+        setState(() => _error =
+            'Enter a valid phone number, for example 0917 512 4809.');
+        return;
+      }
+      phone = normalized;
     }
 
     setState(() {
@@ -66,7 +82,6 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
 
-    if (!state.ready) await state.init();
     final failure = await state.sendPhoneOtp(phone: phone);
     if (!mounted) return;
 
@@ -83,6 +98,81 @@ class _LoginScreenState extends State<LoginScreen> {
       context,
       '/otp',
       arguments: {'phone': phone, 'mode': 'login'},
+    );
+  }
+
+  Widget _demoAccountsCard() {
+    final accounts = state.demoLoginAccounts;
+    if (accounts.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        decoration: BoxDecoration(
+          color: AppColors.panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'DEMO ACCOUNTS',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
+                color: AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 2),
+            for (final account in accounts)
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _submitting
+                    ? null
+                    : () => setState(() {
+                          phoneCtrl.text = account.id;
+                          _error = null;
+                        }),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  child: Row(
+                    children: [
+                      Text(
+                        account.id,
+                        style: const TextStyle(
+                          color: AppColors.primaryLight,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          account.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        demoAccountRefFor(account.id)?.roleLabel ?? '',
+                        style: const TextStyle(
+                          color: AppColors.muted2,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -119,14 +209,16 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 26),
         SbEditableField(
-          label: 'Phone number',
+          label: state.demoAuthEnabled ? 'Phone or account number' : 'Phone number',
           controller: phoneCtrl,
           leading: const Icon(Icons.phone, size: 18, color: AppColors.text),
-          keyboardType: TextInputType.phone,
+          keyboardType: TextInputType.text,
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _submit(),
-          hintText: '+63 9XX XXX XXXX',
+          hintText:
+              state.demoAuthEnabled ? 'ACC003 or 0917 512 4809' : '+63 9XX XXX XXXX',
         ),
+        if (state.demoAuthEnabled) _demoAccountsCard(),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(

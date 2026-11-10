@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
 import '../auth/auth_repository.dart';
+import '../auth/demo_auth.dart';
 import '../auth/mock_auth_repository.dart';
 import '../data/models.dart';
 import '../data/db_models.dart';
@@ -266,6 +267,9 @@ class AppState extends ChangeNotifier {
         authStatus = AuthStatus.signedOut;
         notifyListeners();
       } else {
+        // A restored demo session starts locked: the PIN replaces the OTP on
+        // every relaunch, while a fresh sign-in in this run does not.
+        if (demoAuthEnabled) _pinRequired = true;
         await _applyAuthUser(user);
       }
     } on AuthFailure catch (failure) {
@@ -304,6 +308,7 @@ class AppState extends ChangeNotifier {
   void configureAuth(AuthRepository repository) {
     _authSubscription?.cancel();
     _auth = repository;
+    _pinRequired = false;
     _authSubscription = repository.authStateChanges.listen(
       (user) => unawaited(_handleAuthEvent(user)),
       onError: (Object error) {
@@ -361,7 +366,7 @@ class AppState extends ChangeNotifier {
       db.activateAccount(account);
       // Whatever was cached belongs to the previous session's profile key.
       cache.restart();
-      mode = availableModes.isEmpty ? UserMode.passenger : availableModes.first;
+      mode = _preferredModeFor(account);
       authStatus = AuthStatus.signedIn;
       authError = null;
       notifyListeners();
@@ -439,6 +444,7 @@ class AppState extends ChangeNotifier {
       await _applyAuthUser(user);
     });
     if (failure != null) return failure;
+    _pinRequired = false;
     return currentAccount == null
         ? authError ?? AuthFailure.from('Sign-in did not complete.')
         : null;
@@ -458,6 +464,7 @@ class AppState extends ChangeNotifier {
       final user = await _auth.restoreSession();
       if (user != null) await _applyAuthUser(user);
     });
+    if (failure == null) _pinRequired = false;
     return failure;
   }
 
@@ -523,7 +530,84 @@ class AppState extends ChangeNotifier {
 
   bool get isSignedIn => currentAccount != null;
 
+  /// True when the presentation build opted into the local demo provider.
+  bool get demoAuthEnabled => DemoAuthConfig.enabled && _auth.isMock;
+
+  /// The demo PIN is device-level, like a phone's lock screen.
+  final DemoPinStore pinStore = DemoPinStore();
+
+  bool _pinRequired = false;
+
+  /// A restored demo session must be unlocked before the dashboard is shown.
+  bool get requiresPin => demoAuthEnabled && isSignedIn && _pinRequired;
+
+  /// The four prepared identities, in presentation order. Only the account ids
+  /// are hardcoded; names, phones and roles come from the existing seed rows.
+  List<Account> get demoLoginAccounts {
+    if (!demoAuthEnabled) return const [];
+    final byId = {for (final account in db.accounts) account.id: account};
+    return [
+      for (final ref in demoAccountRefs)
+        if (byId[ref.accountNumber] != null) byId[ref.accountNumber]!,
+    ];
+  }
+
+  /// Resolves an account number (`ACC003`) or a registered phone number.
+  Account? demoAccountFor(String identifier) {
+    final auth = _auth;
+    return auth is MockAuthRepository
+        ? auth.accountForIdentifier(identifier)
+        : null;
+  }
+
+  /// Verifies the device PIN and releases the restored session.
+  Future<PinUnlockResult> unlockWithPin(String pin) async {
+    if (!demoAuthEnabled || !isSignedIn) return PinUnlockResult.success;
+    if (!await pinStore.verify(pin)) return PinUnlockResult.incorrect;
+    _pinRequired = false;
+    notifyListeners();
+    return PinUnlockResult.success;
+  }
+
+  Future<PinChangeResult> changePin({
+    required String currentPin,
+    required String newPin,
+  }) async {
+    if (!demoAuthEnabled) return PinChangeResult.invalidNew;
+    if (!isDemoPin(newPin)) return PinChangeResult.invalidNew;
+    if (currentPin == newPin) return PinChangeResult.sameAsCurrent;
+    if (!await pinStore.verify(currentPin)) {
+      return PinChangeResult.incorrectCurrent;
+    }
+    await pinStore.setPin(newPin);
+    return PinChangeResult.success;
+  }
+
+  /// Forgot PIN returns to authentication. The PIN resets to the demo default
+  /// so the next OTP sign-in is not immediately locked behind a PIN the user
+  /// cannot remember.
+  Future<void> forgotPin() async {
+    _pinRequired = false;
+    await pinStore.reset();
+    await logout();
+  }
+
   UserMode mode = UserMode.passenger;
+
+  /// The demo identities land on their prepared dashboard; a multi-role account
+  /// keeps the existing first-mode behaviour. Normal Supabase sign-in is
+  /// untouched because this only runs with the demo provider installed.
+  UserMode _preferredModeFor(Account account) {
+    final fallback =
+        availableModes.isEmpty ? UserMode.passenger : availableModes.first;
+    if (!demoAuthEnabled) return fallback;
+    final preferred = switch (demoAccountRefFor(account.id)?.role) {
+      DemoRole.rider || DemoRole.helper => UserMode.earner,
+      DemoRole.vehicleOwner => UserMode.vehicleOwner,
+      _ => UserMode.passenger,
+    };
+    return availableModes.contains(preferred) ? preferred : fallback;
+  }
 
   /// The modes the signed-in account can act as, in a stable order. A mode is
   /// unlocked only by an *approved* capability, not an eligible one: approving
@@ -569,6 +653,7 @@ class AppState extends ChangeNotifier {
   void _clearSession() {
     currentAccount = null;
     identity = null;
+    _pinRequired = false;
     db.activatePrimary();
     // Nothing cached under the old key may survive into the signed-out demo.
     cache.restart();
