@@ -59,7 +59,10 @@ const BOOTSTRAP = `
     id uuid primary key default gen_random_uuid(),
     bucket_id text not null references storage.buckets (id),
     name text not null,
-    owner uuid
+    owner uuid,
+    -- Supabase Storage records size and MIME here. The attachments RPCs verify
+    -- those values when present, so the local stub must have the column.
+    metadata jsonb
   );
   alter table storage.objects enable row level security;
 

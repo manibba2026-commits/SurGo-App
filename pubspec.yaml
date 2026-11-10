@@ -20,6 +20,8 @@ dependencies:
   crypto: ^3.0.7
   shared_preferences: ^2.5.6
   file_picker: ^13.3.3
+  # Opening a signed URL for a PDF, video or other non-image attachment.
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

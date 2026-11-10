@@ -7,6 +7,8 @@ import { verificationForProfile } from '@/lib/verification';
 import { PageHeader, Panel, Badge, Table, Input, Empty } from '@/components/ui';
 import { ActionForm } from '@/components/ActionForm';
 import { ApplicationCard, VehicleDocumentList } from '@/components/Verification';
+import { AttachmentsManager } from '@/components/AttachmentsManager';
+import { attachmentsForProfile } from '@/lib/attachments';
 import { setAccountStatus } from '@/app/actions';
 
 export default async function UserDetail({ params }: { params: { id: string } }) {
@@ -14,7 +16,7 @@ export default async function UserDetail({ params }: { params: { id: string } })
   const { data: u, error } = await db.from('profiles').select('*').eq('id', params.id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!u) notFound();
-  const [roles, prov, veh, rides, tx, audit, verification] = await Promise.all([
+  const [roles, prov, veh, rides, tx, audit, verification, attachments] = await Promise.all([
     db.from('user_roles').select('role,status,approved_at').eq('profile_id', u.id),
     db.from('provider_profiles').select('*').eq('profile_id', u.id).maybeSingle(),
     db.from('vehicles').select('id,name,plate_number,status,price_per_day_centavos').eq('owner_profile_id', u.id),
@@ -22,6 +24,7 @@ export default async function UserDetail({ params }: { params: { id: string } })
     db.from('service_transactions').select('provider_payout_centavos,platform_revenue_centavos,status').or(`customer_id.eq.${u.id},provider_id.eq.${u.id}`),
     db.from('admin_audit_logs').select('action,created_at,after_state').eq('entity_id', u.id).order('created_at', { ascending: false }).limit(5),
     verificationForProfile(db, u.id),
+    attachmentsForProfile(db, u.id),
   ]);
   const R = (x: any, w: string) => ok(x, w) as Row[];
   const roleRows = R(roles, 'Roles'), vehicles = R(veh, 'Vehicles'), rideRows = R(rides, 'Rides'), txRows = R(tx, 'Transactions');
@@ -95,6 +98,32 @@ export default async function UserDetail({ params }: { params: { id: string } })
           </Panel>
         </div>
       </div>
+      <div className="mt-4">
+        <Panel
+          title="Files"
+          aside={
+            attachments ? (
+              <span className="text-xs text-ink-500">
+                {attachments.rows.length} file{attachments.rows.length === 1 ? '' : 's'}
+              </span>
+            ) : undefined
+          }
+        >
+          {attachments === null ? (
+            <p className="text-sm text-ink-500">
+              Not available yet: the attachments migration has not been applied to this project, so there is no
+              private file bucket or metadata table to manage. Apply the pending Supabase migrations first.
+            </p>
+          ) : (
+            <AttachmentsManager
+              profileId={u.id}
+              rows={attachments.rows}
+              files={Object.fromEntries(attachments.files)}
+            />
+          )}
+        </Panel>
+      </div>
+
       {auditRows === null ? (
         <Panel title="Admin actions on this account" className="mt-4">
           <p className="text-sm text-ink-500">Not readable by this session: the &quot;authenticated&quot; role has no SELECT privilege on admin_audit_logs, so decisions are logged but only visible through the service-role channel.</p>

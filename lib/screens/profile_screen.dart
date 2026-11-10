@@ -9,6 +9,7 @@ import '../widgets/mode_switcher.dart';
 import '../widgets/repository_states.dart';
 import 'account_settings_screen.dart';
 import 'activity_screen.dart';
+import 'attachments_screen.dart';
 import 'emergency_contacts_screen.dart';
 import 'favorites_screen.dart';
 import 'payment_methods_screen.dart';
@@ -108,6 +109,12 @@ class ProfileScreen extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const VerificationScreen()))),
+              const SizedBox(height: 8),
+              _settingsRow(context, 'My Files',
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AttachmentsScreen()))),
               const SizedBox(height: 8),
               _settingsRow(context, 'Account Settings',
                   onTap: () => Navigator.push(

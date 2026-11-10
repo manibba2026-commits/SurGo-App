@@ -4,7 +4,8 @@ PostgreSQL schema for SurGo, managed with the Supabase CLI. The pilot market is
 Tandag City, Surigao del Sur; the payment method for the pilot is cash.
 
 This directory is infrastructure only. The schema is applied to the hosted
-project, but no Flutter screen reads from or writes to Supabase yet.
+project. The Flutter app and the admin dashboard read through the repository
+layer and the audited RPCs; they never hold a service-role key.
 
 ## Migrations
 
@@ -32,11 +33,15 @@ previous one ran.
 | 17 | `20261106140100_financial_ledger.sql` | pricing snapshots, cash collections, disputes, receivables, remittances, RLS |
 | 18 | `20261106140200_financial_rpc.sql` | server-side pricing, settlement, cash, dispute and remittance RPCs |
 | 19 | `20261106140300_financial_reporting.sql` | provider earnings and platform revenue views |
+| 20 | `20261110100000_verification_submission.sql` | applicant-side verification submission RPC |
+| 21 | `20261110120000_verification_review_integrity.sql` | approval requires every document approved; decided applications freeze their documents |
+| 22 | `20261111100000_account_management.sql` | admin profile edits, role grant/revoke/suspend, admin-managed documents |
+| 23 | `20261111120000_attachments.sql` | private `attachments` bucket, metadata table, RPCs and storage policies |
 
 Row 14 is a **verbatim copy** of SQL that is already on the hosted project under
 a different timestamp — see [Admin dashboard migration sync](#admin-dashboard-migration-sync).
 
-All 30 business tables use UUID primary keys, `timestamptz` timestamps and
+All 31 business tables use UUID primary keys, `timestamptz` timestamps and
 `bigint` centavos. Every mutable table has an `updated_at` trigger.
 
 ## Money and pricing
@@ -214,8 +219,8 @@ node supabase/tools/audit_hosted.mjs --fees         # + the fee each settlement 
 `apply_demo_data.mjs` uses the Supabase Management API SQL endpoint with the
 access token the Supabase CLI already keeps in the Windows Credential Manager; it
 posts no service-role key, prints no token, and the hosted project has no
-`db push` of these rows. The four financial migrations (16-19) are still not on
-the hosted project, so the demo SQL references none of their columns
+`db push` of these rows. The demo SQL was generated before the financial
+migrations reached the host and references none of their columns
 (`pricing_snapshot`, `fee_mode`, `fee_type`, `distance_km`, `duration_minutes`).
 
 ### Hosted audit
@@ -251,7 +256,7 @@ and the audit reports them as `NOTED` instead of hiding them:
 
 ## RLS baseline
 
-RLS is enabled on all 30 tables. The baseline only grants reads:
+RLS is enabled on all 31 tables. The baseline only grants reads:
 
 - catalog (`service_areas`, `barangays`, `puroks`) to any signed-in user
 - the active `pricing_policies` row
@@ -298,6 +303,76 @@ remain by design: RLS policies call those helpers as the signed-in role, so
 revoking EXECUTE would make every protected read fail. They return booleans and
 never row data.
 
+## File attachments
+
+`20261111120000_attachments.sql` adds one private bucket and one metadata table.
+The bytes live in Supabase Storage; the database stores only the pointer and the
+facts needed to validate it. There is no base64 column and no file is ever
+written to the `public` schema.
+
+| piece | rule |
+| ----- | ---- |
+| bucket | `attachments`, `public = false`, `file_size_limit = 20971520` |
+| object name | `<owner_profile_id>/<timestamp>-<random>.<ext>` |
+| table | `public.attachments` (`owner_profile_id`, `bucket_id`, `storage_path`, `file_name`, `mime_type`, `size_bytes`, generated `category`, `label`, `uploaded_by`) |
+| read | owner (`owner_profile_id = auth.uid()`) or `public.is_admin()`; `SELECT` only |
+| write | only `register_attachment`, `replace_attachment`, `delete_attachment` |
+| link | short-lived signed URL (5 minutes in both clients) |
+
+The allowlist is repeated in three places that must stay in sync: the bucket's
+`allowed_mime_types`, `public.attachment_mime_allowed()` (used by the table check
+constraint and the RPCs), and the client-side extension maps. It covers PDF,
+DOC/DOCX/RTF/TXT, XLS/XLSX/CSV, PPT/PPTX, raster images (JPEG/PNG/WebP/GIF/
+HEIC/HEIF/BMP/TIFF), ZIP, audio and video. **SVG is deliberately excluded** — a
+signed URL can render it as an active document in a browser. The 20 MB limit is
+enforced by the bucket, `attachments_size_check` and every RPC, so a client
+cannot raise it.
+
+Why writes are RPC-only:
+
+- `attachments` grants `authenticated` only `SELECT`. Direct
+  INSERT/UPDATE/DELETE is revoked, so a signed-in account cannot invent a row
+  that points at a missing object or another person's path.
+- `_attachment_validate()` re-checks the owner profile, the
+  `<owner>/...` prefix, the file name, the MIME type and the size, and then
+  confirms the object exists in `storage.objects`. When Storage recorded
+  `metadata->>'size'` / `metadata->>'mimetype'`, those must match too.
+- `register_attachment` upserts on `(bucket_id, storage_path)` but refuses to
+  take over a path owned by a different profile.
+- `replace_attachment` returns the previous path; `delete_attachment` returns
+  the removed path. The caller removes the now-unreferenced object.
+- Admin actions (`v_uid <> owner_profile_id`) are written through
+  `_admin_audit()` as `attachment.registered`, `attachment.replaced` and
+  `attachment.deleted`.
+
+Storage policies mirror the verification buckets: an account may read, insert,
+update and delete only inside its own top-level folder, and an admin may do the
+same in any folder. Both clients upload bytes **first**, call the RPC **second**,
+and remove the just-uploaded object if the RPC fails, so a failed metadata write
+cannot leave a phantom row. A successful RPC followed by a failed read-back
+throws instead of deleting anything, because the row is already committed.
+
+Client entry points:
+
+- Flutter: `lib/repositories/attachment_repository.dart` (validation, upload,
+  replace, delete, orphan cleanup) and `lib/screens/attachments_screen.dart`
+  (**Profile → My Files**). The repository chooses the storage path, so a caller
+  cannot file bytes under another account's folder. Progress is stage-based
+  (`uploading` → `recording`) because the SDK does not expose byte progress.
+  `MockAttachmentRepository` throws `RepositoryFailure.unsupported`; it never
+  fakes a successful upload.
+- Admin: `lib/admin/src/components/AttachmentsManager.tsx` on the user detail
+  page (**Files** panel), backed by `registerAttachment` / `replaceAttachment` /
+  `deleteAttachment` in `app/actions.ts`. Uploads use the signed-in admin's own
+  session; the service-role key stays server-only and is never sent to the
+  browser. On an environment where the migration has not been applied,
+  `attachmentsForProfile()` returns `null` and the panel says so instead of
+  breaking the page.
+
+Both clients accept multiple files, show per-file progress, preview images
+in-app, and open everything else through a short-lived signed URL. There is no
+public URL for this bucket.
+
 ## Running locally
 
 The standard Supabase path needs Docker:
@@ -324,7 +399,7 @@ npm test
 The harness boots the schema twice (fresh and reset), applies the seed twice,
 then runs the SQL tests in `supabase/tests/sql/`.
 
-Current result: **19 migrations + seed + 9 SQL test files pass on both runs.**
+Current result: **23 migrations + seed + 12 SQL test files pass on both runs.**
 
 Supabase grants default privileges to `anon`/`authenticated`/`service_role` when
 an object is created. The harness simulates that immediately before the first
@@ -336,7 +411,7 @@ matching the hosted project (`anon_rpc: false`, `auth_rpc: true`).
 
 The tests cover:
 
-- exactly 30 tables, 24 enums and RLS on every table
+- exactly 31 tables, 24 enums and RLS on every table
 - FK integrity across purok → barangay → service area
 - purok/barangay mismatch, cross-area references and owner/vehicle mismatch
 - invalid statuses, negative money, zero quantities and timestamp requirements
@@ -363,6 +438,12 @@ The tests cover:
 - the per-person verification read shape the dashboard uses, including a
   referenced document whose storage object is absent
 - `admin_overview()` pending counts and `admin_daily_activity(7)` day rows
+- verification submission from the applicant side, including the decided-application freeze
+- admin account management: profile edits, role grant/revoke/suspend, the
+  approved-verification gate for rider/owner roles, and admin-managed documents
+- attachments: bucket limits and allowlist, owner/admin read RLS, direct writes
+  denied, `_attachment_validate()` rejecting a foreign folder, wrong MIME,
+  oversized or missing objects, the admin audit rows, and storage folder isolation
 - seed counts, deterministic IDs and idempotent re-seeding
 - `updated_at` trigger behavior
 
@@ -438,10 +519,31 @@ RLS-helper notices. Migration 14 reached the host through a different route and
 under a different version — see
 [Admin dashboard migration sync](#admin-dashboard-migration-sync).
 
-The four financial migrations (16-19) are newer and are **not** assumed to be
-on the hosted project yet. They add four tables (30 total) and six enums (24
-total), and they do not seed or activate any pricing policy. Review and push
-them as a separate change after approval.
+The hosted project stopped at migration 15
+(`20261106130000_security_hardening`) until 2026-11-11. On that date the
+remaining eight migrations were applied in filename order through the Management
+API SQL channel, with each repo version recorded in the ledger:
+
+| # | File | Adds |
+| - | ---- | ---- |
+| 16 | `20261106140000_pricing_versions` | versioned pricing policies |
+| 17 | `20261106140100_financial_ledger` | cash collections, disputes, receivables, remittances |
+| 18 | `20261106140200_financial_rpc` | settlement, cash, dispute and remittance RPCs |
+| 19 | `20261106140300_financial_reporting` | provider earnings and platform revenue views |
+| 20 | `20261110100000_verification_submission` | applicant verification submission RPC |
+| 21 | `20261110120000_verification_review_integrity` | document-approval gate and decided-application freeze |
+| 22 | `20261111100000_account_management` | admin profile/role/document write paths |
+| 23 | `20261111120000_attachments` | `attachments` bucket, table, RPCs and storage policies |
+
+The hosted schema now has 23 migrations, 31 tables, 24 enums, 24 `updated_at`
+triggers and 4 storage buckets. None of the migrations seeds or activates a
+pricing policy. The 29 existing `service_transactions` rows and the demo roster
+were left untouched, and `public.attachments` starts empty.
+
+The attachment feature depends on migration 23. On any environment where it has
+not been applied, `storage.buckets` has no `attachments` row and PostgREST has no
+`public.attachments` table; the Flutter screen reports the failure and the admin
+Files panel shows the feature as unavailable. Neither client fakes a success.
 
 `login` and `link` are interactive and must be run in a normal terminal (the CLI
 refuses the browser flow in non-TTY shells). The database password is entered at
@@ -470,7 +572,7 @@ npx supabase db push --remote
 
 Before the push, confirm the hosted `public` schema is empty. This repo creates
 `public.profiles`, so an existing quickstart `profiles` (or any table with the
-same name as one of the 30) must be dropped or renamed first, otherwise the push
+same name as one of the 31) must be dropped or renamed first, otherwise the push
 fails midway. `todos` from a quickstart can stay; it is unrelated. The hosted
 project was empty at push time, so no collision check was needed.
 

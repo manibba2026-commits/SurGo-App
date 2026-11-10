@@ -52,7 +52,7 @@ const BOOTSTRAP = `
   create table storage.objects (
     id uuid primary key default gen_random_uuid(),
     bucket_id text not null references storage.buckets (id),
-    name text not null, owner uuid
+    name text not null, owner uuid, metadata jsonb
   );
   alter table storage.objects enable row level security;
   create or replace function storage.foldername(name text)

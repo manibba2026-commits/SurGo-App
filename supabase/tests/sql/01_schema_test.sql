@@ -12,7 +12,7 @@ declare
     'service_transactions', 'wallet_accounts', 'wallet_transactions',
     'cash_fee_remittances', 'cash_collections', 'cash_payment_disputes',
     'platform_fee_receivables', 'provider_fee_remittances',
-    'notifications', 'device_tokens', 'admin_audit_logs'
+    'notifications', 'device_tokens', 'admin_audit_logs', 'attachments'
   ];
   missing_tables text[];
   rls_tables integer;
@@ -38,8 +38,8 @@ begin
   );
 
   perform public.test_assert(
-    (select count(*) from pg_tables where schemaname = 'public') = 30,
-    'expected exactly 30 public tables'
+    (select count(*) from pg_tables where schemaname = 'public') = 31,
+    'expected exactly 31 public tables'
   );
 
   select count(*) into rls_tables
@@ -49,7 +49,7 @@ begin
      and c.relkind = 'r'
      and c.relrowsecurity;
 
-  perform public.test_assert(rls_tables = 30, 'RLS must be enabled on all 30 tables');
+  perform public.test_assert(rls_tables = 31, 'RLS must be enabled on all 31 tables');
 
   select count(*) into enum_count
     from pg_type t
@@ -65,8 +65,8 @@ begin
      and tgname like '%_set_updated_at';
 
   perform public.test_assert(
-    updated_at_triggers = 23,
-    'expected 23 updated_at triggers, found ' || updated_at_triggers
+    updated_at_triggers = 24,
+    'expected 24 updated_at triggers, found ' || updated_at_triggers
   );
 
   select count(*) into auth_triggers
@@ -124,7 +124,7 @@ begin
   );
 
   select count(*) into bucket_count from storage.buckets;
-  perform public.test_assert(bucket_count = 3, 'expected 3 storage buckets');
+  perform public.test_assert(bucket_count = 4, 'expected 4 storage buckets');
 end;
 $$;
 

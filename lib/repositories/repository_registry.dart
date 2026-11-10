@@ -1,4 +1,5 @@
 import '../data/db_service.dart';
+import 'attachment_repository.dart';
 import 'backend.dart';
 import 'catalog_repository.dart';
 import 'notification_repository.dart';
@@ -27,6 +28,7 @@ class RepositoryRegistry {
     required this.notifications,
     required this.wallet,
     required this.verifications,
+    required this.attachments,
     required this.isSupabaseBacked,
   });
 
@@ -43,6 +45,7 @@ class RepositoryRegistry {
       notifications: MockNotificationRepository(db),
       wallet: MockWalletRepository(db),
       verifications: MockVerificationRepository(db),
+      attachments: const MockAttachmentRepository(),
     );
   }
 
@@ -51,6 +54,9 @@ class RepositoryRegistry {
     // double keeps the read surface and refuses submissions.
     final writer = backend is SurgoWriteBackend
         ? backend as SurgoWriteBackend
+        : null;
+    final storage = backend is SurgoStorageBackend
+        ? backend as SurgoStorageBackend
         : null;
     return RepositoryRegistry(
       isSupabaseBacked: true,
@@ -66,6 +72,11 @@ class RepositoryRegistry {
         backend,
         writer: writer,
       ),
+      attachments: SupabaseAttachmentRepository(
+        backend,
+        writer: writer,
+        storage: storage,
+      ),
     );
   }
 
@@ -78,6 +89,7 @@ class RepositoryRegistry {
   final NotificationRepository notifications;
   final WalletRepository wallet;
   final VerificationRepository verifications;
+  final AttachmentRepository attachments;
 
   /// False for the seeded set. Screens use this to decide whether a failure is
   /// a real outage or a test fixture, never to substitute the other set.

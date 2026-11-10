@@ -29,6 +29,28 @@ abstract interface class SurgoBackend {
   });
 }
 
+/// The private-storage surface: signed links out, object cleanup in.
+///
+/// Kept apart from [SurgoBackend] because most repositories only read tables
+/// and their test doubles should not have to stub storage.
+abstract interface class SurgoStorageBackend {
+  /// Creates a short-lived signed URL for one private object.
+  ///
+  /// The bucket is never public: every download and preview goes through this
+  /// call, and the link stops working when [expiresIn] elapses.
+  Future<String> signedObjectUrl({
+    required String bucket,
+    required String path,
+    Duration expiresIn = const Duration(minutes: 5),
+  });
+
+  /// Removes one object from a private bucket.
+  ///
+  /// A missing object is not an error: cleanup runs after the metadata row has
+  /// already moved on, and a second attempt must still succeed.
+  Future<void> removeObject({required String bucket, required String path});
+}
+
 /// The write surface a repository needs when the user creates a record.
 ///
 /// Kept separate from [SurgoBackend] because most repositories are read-only
@@ -57,7 +79,8 @@ abstract interface class SurgoWriteBackend {
 ///
 /// Only the publishable key is ever used here; the service-role key cannot
 /// reach this code path because it is not in the client build.
-class SupabaseBackend implements SurgoBackend, SurgoWriteBackend {
+class SupabaseBackend
+    implements SurgoBackend, SurgoWriteBackend, SurgoStorageBackend {
   SupabaseBackend({SupabaseClient? client, this.requestTimeout = _timeout})
       : _client = client ?? Supabase.instance.client;
 
@@ -121,6 +144,20 @@ class SupabaseBackend implements SurgoBackend, SurgoWriteBackend {
   }
 
   @override
+  Future<String> signedObjectUrl({
+    required String bucket,
+    required String path,
+    Duration expiresIn = const Duration(minutes: 5),
+  }) {
+    return _guard(
+      () => _client.storage
+          .from(bucket)
+          .createSignedUrl(path, expiresIn.inSeconds)
+          .timeout(requestTimeout),
+    );
+  }
+
+  @override
   Future<dynamic> rpc({
     required String function,
     Map<String, dynamic> params = const {},
@@ -148,6 +185,16 @@ class SupabaseBackend implements SurgoBackend, SurgoWriteBackend {
     });
   }
 
+  @override
+  Future<void> removeObject({
+    required String bucket,
+    required String path,
+  }) {
+    return _guard(() async {
+      await _client.storage.from(bucket).remove([path]).timeout(requestTimeout);
+    });
+  }
+
   Future<T> _guard<T>(Future<T> Function() read) async {
     try {
       return await read();
@@ -170,6 +217,37 @@ RepositoryFailure mapBackendError(Object error) {
   if (error is TimeoutException) return RepositoryFailure.offline(error);
   if (error is SocketException || error is HandshakeException) {
     return RepositoryFailure.offline(error);
+  }
+
+  if (error is StorageException) {
+    final status = error.statusCode;
+    final message = error.message.toLowerCase();
+
+    if (status == '404' || message.contains('not found')) {
+      return RepositoryFailure.notFound(error);
+    }
+    if (status == '401' ||
+        status == '403' ||
+        message.contains('unauthorized') ||
+        message.contains('row-level security')) {
+      return RepositoryFailure.permissionDenied(error);
+    }
+    if (status == '409' || message.contains('already exists')) {
+      return RepositoryFailure.conflict(
+        'That file already exists. Try again with a new upload.',
+        error,
+      );
+    }
+    // Storage rejects a disallowed MIME type or an oversized object with 400 or
+    // 413; both are the user's file, not a service outage.
+    if (status == '400' ||
+        status == '413' ||
+        message.contains('too large') ||
+        message.contains('mime') ||
+        message.contains('content type')) {
+      return RepositoryFailure.invalidData(error.message, error);
+    }
+    return RepositoryFailure.unavailable(error);
   }
 
   if (error is PostgrestException) {
@@ -237,7 +315,8 @@ bool isNetworkWording(String lowerMessage) =>
 /// A build asked for the database, so every read says the database is
 /// unreachable. Substituting the seed here would present fake data as the real
 /// balance of an account.
-class UnreachableBackend implements SurgoBackend, SurgoWriteBackend {
+class UnreachableBackend
+    implements SurgoBackend, SurgoWriteBackend, SurgoStorageBackend {
   const UnreachableBackend();
 
   @override
@@ -254,6 +333,23 @@ class UnreachableBackend implements SurgoBackend, SurgoWriteBackend {
     required String path,
     required Uint8List bytes,
     required String contentType,
+  }) async {
+    throw RepositoryFailure.unavailable();
+  }
+
+  @override
+  Future<void> removeObject({
+    required String bucket,
+    required String path,
+  }) async {
+    throw RepositoryFailure.unavailable();
+  }
+
+  @override
+  Future<String> signedObjectUrl({
+    required String bucket,
+    required String path,
+    Duration expiresIn = const Duration(minutes: 5),
   }) async {
     throw RepositoryFailure.unavailable();
   }

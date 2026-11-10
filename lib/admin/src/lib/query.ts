@@ -18,6 +18,18 @@ export function okOrDenied<T>(res: { data: T | null; error: PostgrestError | nul
   }
   return (res.data ?? ([] as unknown)) as T;
 }
+/** Same shape as {@link okOrDenied}, for a table that a repo migration may not
+ *  have applied yet. `42P01` (undefined table) and `PGRST205` (not in the
+ *  PostgREST schema cache) mean the feature is unavailable, not that the page is
+ *  broken; anything else still throws. */
+export function okOrMissing<T>(res: { data: T | null; error: PostgrestError | null }, what: string): T | null {
+  if (res.error) {
+    if (res.error.code === '42P01' || res.error.code === '42501' || res.error.code === 'PGRST205') return null;
+    throw new Error(`${what}: ${res.error.message}`);
+  }
+  return (res.data ?? ([] as unknown)) as T;
+}
+
 export const PAGE = 25;
 export const pageRange = (page: number) => [(page - 1) * PAGE, page * PAGE - 1] as const;
 export const toPage = (v?: string) => Math.max(1, parseInt(v ?? '1', 10) || 1);
