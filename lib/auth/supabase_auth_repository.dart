@@ -8,6 +8,28 @@ import '../repositories/profile_repository.dart';
 import 'auth_models.dart';
 import 'auth_repository.dart';
 
+/// Resolves where the OAuth round trip should return to.
+///
+/// Supabase falls back to the project's Site URL when no target is given, and
+/// that default is a localhost address. On web the callback must therefore
+/// name the page the app is actually served from; on native it keeps the
+/// registered custom scheme.
+@visibleForTesting
+String resolveOAuthRedirect({
+  required bool isWeb,
+  required Uri base,
+  required String nativeRedirect,
+}) {
+  if (!isWeb) return nativeRedirect;
+  final path = base.path.isEmpty ? '/' : base.path;
+  return Uri(
+    scheme: base.scheme,
+    host: base.host,
+    port: base.hasPort ? base.port : null,
+    path: path,
+  ).toString();
+}
+
 /// The production identity provider. Every credential, session and identity
 /// link lives in Supabase Auth; this class only translates the SDK into the
 /// app's own types.
@@ -29,6 +51,12 @@ class SupabaseAuthRepository implements AuthRepository {
   final SupabaseClient _client;
   final ProfileRepository _profiles;
   final String redirectTo;
+
+  String get _oauthRedirect => resolveOAuthRedirect(
+        isWeb: kIsWeb,
+        base: Uri.base,
+        nativeRedirect: redirectTo,
+      );
 
   @override
   bool get isMock => false;
@@ -92,7 +120,7 @@ class SupabaseAuthRepository implements AuthRepository {
     return _guard(() {
       return _client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? null : redirectTo,
+        redirectTo: _oauthRedirect,
       );
     });
   }
@@ -150,7 +178,7 @@ class SupabaseAuthRepository implements AuthRepository {
     return _guard(() {
       return _client.auth.linkIdentity(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? null : redirectTo,
+        redirectTo: _oauthRedirect,
       );
     });
   }
