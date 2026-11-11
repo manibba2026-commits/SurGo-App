@@ -97,8 +97,8 @@ select set_config(
 do $$
 begin
   perform public.test_assert(
-    (select count(*) from public.profiles) = 1,
-    'a user must only see their own profile'
+    (select count(*) from public.profiles) = 2,
+    'a passenger sees their own profile and the rider on their ride'
   );
   perform public.test_assert(
     (select count(*) from public.user_roles) = 1,
@@ -197,8 +197,8 @@ begin
     'a provider must see their settlement'
   );
   perform public.test_assert(
-    (select count(*) from public.profiles) = 1,
-    'a provider still only sees their own profile'
+    (select count(*) from public.profiles) = 2,
+    'a rider sees their own profile and the passenger on their ride'
   );
 end;
 $$;

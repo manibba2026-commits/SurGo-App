@@ -26,133 +26,133 @@ begin;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('19aa7137-bdef-93ed-1610-0139c328cf0e', 'authenticated', 'authenticated', 'jr.derigay@email.com', '+63 917 512 4809',
+values ('19aa7137-bdef-93ed-1610-0139c328cf0e', 'authenticated', 'authenticated', 'jr.derigay@email.com', '+639170000010',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Jr Derigay","first_name":"jr-derigay"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('2db06d3b-a51d-e5a7-f9d7-2b459fc14694', 'authenticated', 'authenticated', 'grace.villaflor@email.com', '+63 917 220 4411',
+values ('2db06d3b-a51d-e5a7-f9d7-2b459fc14694', 'authenticated', 'authenticated', 'grace.villaflor@email.com', '+639170000007',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Grace Ann Villaflor","first_name":"grace-ann-villaflor"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79', 'authenticated', 'authenticated', 'nena.villareal@email.com', '+63 918 335 2290',
+values ('6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79', 'authenticated', 'authenticated', 'nena.villareal@email.com', '+639170000016',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Nena Villareal","first_name":"nena-villareal"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', 'authenticated', 'authenticated', 'danilo.cruz@email.com', '+63 919 447 8812',
+values ('043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', 'authenticated', 'authenticated', 'danilo.cruz@email.com', '+639170000004',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Danilo Cruz","first_name":"danilo-cruz"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('ead213ad-285a-a69b-6a89-2f587ad3fcf5', 'authenticated', 'authenticated', 'rosalinda.pajo@email.com', '+63 916 558 7734',
+values ('ead213ad-285a-a69b-6a89-2f587ad3fcf5', 'authenticated', 'authenticated', 'rosalinda.pajo@email.com', '+639170000019',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Rosalinda Pajo","first_name":"rosalinda-pajo"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('d3a8847f-82ba-7ea9-af85-b773c71205fb', 'authenticated', 'authenticated', 'isabella.dizon@email.com', '+63 930 215 8888',
+values ('d3a8847f-82ba-7ea9-af85-b773c71205fb', 'authenticated', 'authenticated', 'isabella.dizon@email.com', '+639170000008',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Isabella Dizon","first_name":"isabella-dizon"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('ed2aa82a-f064-9589-b57d-24f7c1820f3f', 'authenticated', 'authenticated', 'bebot.lim@email.com', '+63 926 771 3390',
+values ('ed2aa82a-f064-9589-b57d-24f7c1820f3f', 'authenticated', 'authenticated', 'bebot.lim@email.com', '+639170000002',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Bebot Lim","first_name":"bebot-lim"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('f0be59a4-1186-ebe9-bcbb-8ecab26716bc', 'authenticated', 'authenticated', 'carlo.mendoza@email.com', '+63 927 882 4415',
+values ('f0be59a4-1186-ebe9-bcbb-8ecab26716bc', 'authenticated', 'authenticated', 'carlo.mendoza@email.com', '+639170000003',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Carlo Mendoza","first_name":"carlo-mendoza"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('f4ad1842-a5ff-c9e3-9b43-d141b0f0745e', 'authenticated', 'authenticated', 'danny.reyes@email.com', '+63 928 993 5521',
+values ('f4ad1842-a5ff-c9e3-9b43-d141b0f0745e', 'authenticated', 'authenticated', 'danny.reyes@email.com', '+639170000005',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Danny Reyes","first_name":"danny-reyes"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('e5f153af-2b86-ddcd-3ace-fb16a216a0da', 'authenticated', 'authenticated', 'edwin.santillan@email.com', '+63 929 104 6632',
+values ('e5f153af-2b86-ddcd-3ace-fb16a216a0da', 'authenticated', 'authenticated', 'edwin.santillan@email.com', '+639170000006',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Edwin Santillan","first_name":"edwin-santillan"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('c8c331f0-856a-8315-92b8-25e6a1340d1b', 'authenticated', 'authenticated', 'marco.villanueva@email.com', '+63 931 326 9977',
+values ('c8c331f0-856a-8315-92b8-25e6a1340d1b', 'authenticated', 'authenticated', 'marco.villanueva@email.com', '+639170000013',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Marco Villanueva","first_name":"marco-villanueva"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('3a47be71-1288-3dd1-428b-43cd444316d6', 'authenticated', 'authenticated', null, null,
+values ('3a47be71-1288-3dd1-428b-43cd444316d6', 'authenticated', 'authenticated', null, '+639170000011',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Junel Ramos","first_name":"junel-ramos"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('41f801ff-8cc1-e8dc-e475-7d174f5ad610', 'authenticated', 'authenticated', null, null,
+values ('41f801ff-8cc1-e8dc-e475-7d174f5ad610', 'authenticated', 'authenticated', null, '+639170000009',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Jomar Lim","first_name":"jomar-lim"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('55b85eed-6ef1-a9b9-cf5d-8fec8cbfb508', 'authenticated', 'authenticated', null, null,
+values ('55b85eed-6ef1-a9b9-cf5d-8fec8cbfb508', 'authenticated', 'authenticated', null, '+639170000012',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Kd Sotto","first_name":"kd-sotto"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('2bd7c3b2-e16c-3484-79fd-a1dc6483ffa2', 'authenticated', 'authenticated', null, null,
+values ('2bd7c3b2-e16c-3484-79fd-a1dc6483ffa2', 'authenticated', 'authenticated', null, '+639170000015',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Marlon Uy","first_name":"marlon-uy"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('d323a372-5f50-eeb3-8704-934baaca7d82', 'authenticated', 'authenticated', null, null,
+values ('d323a372-5f50-eeb3-8704-934baaca7d82', 'authenticated', 'authenticated', null, '+639170000014',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Marisol Cruz","first_name":"marisol-cruz"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('d587f6ac-8df2-c405-fa63-451c7b9cde00', 'authenticated', 'authenticated', null, null,
+values ('d587f6ac-8df2-c405-fa63-451c7b9cde00', 'authenticated', 'authenticated', null, '+639170000017',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Rhea Puno","first_name":"rhea-puno"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('3f6cbb9b-9a43-af30-7d51-03f3a179499f', 'authenticated', 'authenticated', null, null,
+values ('3f6cbb9b-9a43-af30-7d51-03f3a179499f', 'authenticated', 'authenticated', null, '+639170000001',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Alex Tan","first_name":"alex-tan"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
 
 insert into auth.users (id, aud, role, email, phone, raw_app_meta_data,
   raw_user_meta_data, created_at, updated_at, is_sso_user, is_anonymous, banned_until)
-values ('47ca4ef2-7325-73b2-2c37-d802e3595b2e', 'authenticated', 'authenticated', null, null,
+values ('47ca4ef2-7325-73b2-2c37-d802e3595b2e', 'authenticated', 'authenticated', null, '+639170000018',
   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Rico D.","first_name":"rico-d"}'::jsonb,
   '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00', false, false, 'infinity'::timestamptz)
 on conflict (id) do nothing;
@@ -163,7 +163,7 @@ on conflict (id) do nothing;
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('19aa7137-bdef-93ed-1610-0139c328cf0e', 'Jr Derigay', 'Jr', 'jr.derigay@email.com', '+63 917 512 4809',
+values ('19aa7137-bdef-93ed-1610-0139c328cf0e', 'Jr Derigay', 'Jr', 'jr.derigay@email.com', '+639170000010',
   'active', '4.95', 1240, '2023-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -173,7 +173,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('2db06d3b-a51d-e5a7-f9d7-2b459fc14694', 'Grace Ann Villaflor', 'Grace', 'grace.villaflor@email.com', '+63 917 220 4411',
+values ('2db06d3b-a51d-e5a7-f9d7-2b459fc14694', 'Grace Ann Villaflor', 'Grace', 'grace.villaflor@email.com', '+639170000007',
   'active', '4.90', 212, '2023-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -183,7 +183,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79', 'Nena Villareal', 'Nena', 'nena.villareal@email.com', '+63 918 335 2290',
+values ('6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79', 'Nena Villareal', 'Nena', 'nena.villareal@email.com', '+639170000016',
   'active', '4.60', 74, '2024-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -193,7 +193,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', 'Danilo Cruz', 'Danilo', 'danilo.cruz@email.com', '+63 919 447 8812',
+values ('043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', 'Danilo Cruz', 'Danilo', 'danilo.cruz@email.com', '+639170000004',
   'active', '4.95', 341, '2022-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -203,7 +203,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('ead213ad-285a-a69b-6a89-2f587ad3fcf5', 'Rosalinda Pajo', 'Rosalinda', 'rosalinda.pajo@email.com', '+63 916 558 7734',
+values ('ead213ad-285a-a69b-6a89-2f587ad3fcf5', 'Rosalinda Pajo', 'Rosalinda', 'rosalinda.pajo@email.com', '+639170000019',
   'active', '4.70', 96, '2025-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -213,7 +213,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('d3a8847f-82ba-7ea9-af85-b773c71205fb', 'Isabella Dizon', 'Isabella', 'isabella.dizon@email.com', '+63 930 215 8888',
+values ('d3a8847f-82ba-7ea9-af85-b773c71205fb', 'Isabella Dizon', 'Isabella', 'isabella.dizon@email.com', '+639170000008',
   'active', '4.90', 310, '2024-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -223,7 +223,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('ed2aa82a-f064-9589-b57d-24f7c1820f3f', 'Bebot Lim', 'Bebot', 'bebot.lim@email.com', '+63 926 771 3390',
+values ('ed2aa82a-f064-9589-b57d-24f7c1820f3f', 'Bebot Lim', 'Bebot', 'bebot.lim@email.com', '+639170000002',
   'active', '4.70', 980, '2023-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -233,7 +233,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('f0be59a4-1186-ebe9-bcbb-8ecab26716bc', 'Carlo Mendoza', 'Carlo', 'carlo.mendoza@email.com', '+63 927 882 4415',
+values ('f0be59a4-1186-ebe9-bcbb-8ecab26716bc', 'Carlo Mendoza', 'Carlo', 'carlo.mendoza@email.com', '+639170000003',
   'active', '4.90', 1530, '2022-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -243,7 +243,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('f4ad1842-a5ff-c9e3-9b43-d141b0f0745e', 'Danny Reyes', 'Danny', 'danny.reyes@email.com', '+63 928 993 5521',
+values ('f4ad1842-a5ff-c9e3-9b43-d141b0f0745e', 'Danny Reyes', 'Danny', 'danny.reyes@email.com', '+639170000005',
   'active', '4.60', 760, '2024-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -253,7 +253,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('e5f153af-2b86-ddcd-3ace-fb16a216a0da', 'Edwin Santillan', 'Edwin', 'edwin.santillan@email.com', '+63 929 104 6632',
+values ('e5f153af-2b86-ddcd-3ace-fb16a216a0da', 'Edwin Santillan', 'Edwin', 'edwin.santillan@email.com', '+639170000006',
   'active', '4.80', 1120, '2023-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -263,7 +263,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('c8c331f0-856a-8315-92b8-25e6a1340d1b', 'Marco Villanueva', 'Marco', 'marco.villanueva@email.com', '+63 931 326 9977',
+values ('c8c331f0-856a-8315-92b8-25e6a1340d1b', 'Marco Villanueva', 'Marco', 'marco.villanueva@email.com', '+639170000013',
   'active', '4.70', 51, '2025-01-01T00:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -273,8 +273,8 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('3a47be71-1288-3dd1-428b-43cd444316d6', 'Junel Ramos', 'Junel', null, null,
-  'active', '4.60', 5, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
+values ('3a47be71-1288-3dd1-428b-43cd444316d6', 'Junel Ramos', 'Junel', null, '+639170000011',
+  'suspended', '4.60', 5, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
   email = excluded.email, phone = excluded.phone,
@@ -283,7 +283,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('41f801ff-8cc1-e8dc-e475-7d174f5ad610', 'Jomar Lim', 'Jomar', null, null,
+values ('41f801ff-8cc1-e8dc-e475-7d174f5ad610', 'Jomar Lim', 'Jomar', null, '+639170000009',
   'active', '4.50', 2, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -293,7 +293,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('55b85eed-6ef1-a9b9-cf5d-8fec8cbfb508', 'Kd Sotto', 'Kd', null, null,
+values ('55b85eed-6ef1-a9b9-cf5d-8fec8cbfb508', 'Kd Sotto', 'Kd', null, '+639170000012',
   'active', '4.25', 4, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -303,7 +303,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('2bd7c3b2-e16c-3484-79fd-a1dc6483ffa2', 'Marlon Uy', 'Marlon', null, null,
+values ('2bd7c3b2-e16c-3484-79fd-a1dc6483ffa2', 'Marlon Uy', 'Marlon', null, '+639170000015',
   'active', '5.00', 1, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -313,7 +313,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('d323a372-5f50-eeb3-8704-934baaca7d82', 'Marisol Cruz', 'Marisol', null, null,
+values ('d323a372-5f50-eeb3-8704-934baaca7d82', 'Marisol Cruz', 'Marisol', null, '+639170000014',
   'active', '5.00', 0, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -323,7 +323,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('d587f6ac-8df2-c405-fa63-451c7b9cde00', 'Rhea Puno', 'Rhea', null, null,
+values ('d587f6ac-8df2-c405-fa63-451c7b9cde00', 'Rhea Puno', 'Rhea', null, '+639170000017',
   'active', '5.00', 0, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -333,7 +333,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('3f6cbb9b-9a43-af30-7d51-03f3a179499f', 'Alex Tan', 'Alex', null, null,
+values ('3f6cbb9b-9a43-af30-7d51-03f3a179499f', 'Alex Tan', 'Alex', null, '+639170000001',
   'active', '4.90', 18, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,
@@ -343,7 +343,7 @@ on conflict (id) do update set
 
 insert into public.profiles
   (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)
-values ('47ca4ef2-7325-73b2-2c37-d802e3595b2e', 'Rico D.', 'Rico', null, null,
+values ('47ca4ef2-7325-73b2-2c37-d802e3595b2e', 'Rico D.', 'Rico', null, '+639170000018',
   'active', '2.50', 112, '2026-11-06T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   full_name = excluded.full_name, first_name = excluded.first_name,

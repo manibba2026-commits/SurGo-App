@@ -12,7 +12,8 @@ declare
     'service_transactions', 'wallet_accounts', 'wallet_transactions',
     'cash_fee_remittances', 'cash_collections', 'cash_payment_disputes',
     'platform_fee_receivables', 'provider_fee_remittances',
-    'notifications', 'device_tokens', 'admin_audit_logs', 'attachments'
+    'notifications', 'device_tokens', 'admin_audit_logs', 'attachments',
+    'rider_presence'
   ];
   missing_tables text[];
   rls_tables integer;
@@ -38,8 +39,8 @@ begin
   );
 
   perform public.test_assert(
-    (select count(*) from pg_tables where schemaname = 'public') = 31,
-    'expected exactly 31 public tables'
+    (select count(*) from pg_tables where schemaname = 'public') = 32,
+    'expected exactly 32 public tables'
   );
 
   select count(*) into rls_tables
@@ -49,7 +50,7 @@ begin
      and c.relkind = 'r'
      and c.relrowsecurity;
 
-  perform public.test_assert(rls_tables = 31, 'RLS must be enabled on all 31 tables');
+  perform public.test_assert(rls_tables = 32, 'RLS must be enabled on all 32 tables');
 
   select count(*) into enum_count
     from pg_type t
@@ -65,8 +66,8 @@ begin
      and tgname like '%_set_updated_at';
 
   perform public.test_assert(
-    updated_at_triggers = 24,
-    'expected 24 updated_at triggers, found ' || updated_at_triggers
+    updated_at_triggers = 25,
+    'expected 25 updated_at triggers, found ' || updated_at_triggers
   );
 
   select count(*) into auth_triggers
@@ -119,8 +120,8 @@ begin
    where pubname = 'supabase_realtime';
 
   perform public.test_assert(
-    realtime_tables = 8,
-    'expected 8 realtime tables, found ' || realtime_tables
+    realtime_tables = 9,
+    'expected 9 realtime tables, found ' || realtime_tables
   );
 
   select count(*) into bucket_count from storage.buckets;
