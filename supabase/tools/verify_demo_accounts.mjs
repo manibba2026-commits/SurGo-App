@@ -22,7 +22,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { REF } from './db_admin.mjs';
-import { isInsideRepo, normalizePhone, toLocalPhone } from './demo_provision_plan.mjs';
+import {
+  SYNTHETIC_DOMAIN,
+  UUID,
+  isInsideRepo,
+  isSyncedFolder,
+  normalizePhone,
+  toLocalPhone,
+} from './demo_provision_plan.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -45,6 +52,9 @@ function credentialsPath(argv) {
   const resolved = path.resolve(explicit);
   if (isInsideRepo(repoRoot, resolved)) {
     throw new Error(`refusing to read credentials from inside the repository: ${resolved}`);
+  }
+  if (isSyncedFolder(resolved)) {
+    throw new Error(`refusing to read plaintext PINs from a synced folder: ${resolved}`);
   }
   return resolved;
 }
@@ -117,11 +127,25 @@ const approvedOf = (roleLabels) =>
 const isRiderCapable = (roles) => [...roles].some((r) => RIDER_CAPABLE.has(r));
 const isEarnerCapable = (roles) => roles.has('earner') || roles.has('rider');
 
-function credentialFields(account) {
+function credentialFields(account, index = 0) {
+  const label = `PIN row ${index + 1}`;
+  if (typeof account?.user_id !== 'string' || !UUID.test(account.user_id)) {
+    throw new Error(`${label} has a malformed user id`);
+  }
   const e164 = normalizePhone(account.phone_e164 ?? account.phone ?? account.phone_local);
+  if (!e164) throw new Error(`${label} has an invalid phone number`);
+  if (
+    typeof account.email !== 'string' ||
+    !account.email.toLowerCase().endsWith(`@${SYNTHETIC_DOMAIN}`)
+  ) {
+    throw new Error(`${label} does not use a reserved @${SYNTHETIC_DOMAIN} email`);
+  }
+  if (!/^\d{6}$/.test(account.pin ?? '')) {
+    throw new Error(`${label} has no six-digit PIN`);
+  }
   const local = toLocalPhone(e164);
   return {
-    name: account.name,
+    name: account.name ?? e164,
     user_id: account.user_id,
     email: account.email,
     phone: e164,
@@ -139,7 +163,10 @@ async function verifySuspended(account) {
   // A wrong PIN must still be a generic 401; the correct PIN must reach the
   // suspension refusal. Together they prove the PIN is valid and the status,
   // not the credentials, is what blocks sign-in.
-  const wrong = await demoLogin(account.phone, '000000');
+  const wrong = await demoLogin(
+    account.phone,
+    account.pin === '000000' ? '000001' : '000000',
+  );
   if (wrong.status !== 401) {
     failures.push(
       `wrong PIN on a suspended account returned ${wrong.status}, expected 401`,
@@ -176,7 +203,10 @@ async function verifyAccount(account, all, options = {}) {
   }
 
   if (options.testWrongPin) {
-    const wrong = await demoLogin(account.phone, '000000');
+    // Never probe with the account's own PIN; the generator avoids trivial
+    // values, but this keeps the assertion correct for any credentials file.
+    const wrongPin = account.pin === '000000' ? '000001' : '000000';
+    const wrong = await demoLogin(account.phone, wrongPin);
     if (wrong.status !== 401) {
       fail(`wrong PIN returned ${wrong.status}, expected 401`);
     }
@@ -200,14 +230,21 @@ async function verifyAccount(account, all, options = {}) {
     if (session.user.email?.toLowerCase() !== account.email.toLowerCase()) {
       fail('session email does not match the credentials row');
     }
-    if (session.user.phone !== account.phone) {
+    // GoTrue returns the session phone without the leading "+"; compare the
+    // subscriber number, not the spelling.
+    if (normalizePhone(session.user.phone) !== account.phone) {
       fail(`session phone is ${session.user.phone ?? '(none)'}, expected ${account.phone}`);
     }
     if (session.user.user_metadata?.surgo_onboarded !== true) {
       fail('surgo_onboarded metadata is missing; the app would send this account to onboarding');
     }
-    if (session.user.user_metadata?.surgo_demo !== true) {
-      warn('surgo_demo metadata is missing; the row was provisioned by an older build');
+    // surgo_demo is trusted only in app_metadata, which the account holder
+    // cannot write. A user_metadata copy is stale output from an older build.
+    if (session.user.app_metadata?.surgo_demo !== true) {
+      fail('app_metadata.surgo_demo is missing; the client cannot recognize this demo account');
+    }
+    if (session.user.user_metadata?.surgo_demo != null) {
+      warn('user_metadata.surgo_demo is still present; the demo flag should live only in app_metadata');
     }
 
     const me = await rows(
@@ -218,6 +255,9 @@ async function verifyAccount(account, all, options = {}) {
     } else {
       const profile = me.rows[0];
       if (profile.id !== account.user_id) fail('own profile id does not match the auth user id');
+      if (String(profile.email ?? '').toLowerCase() !== account.email.toLowerCase()) {
+        fail(`profile email is ${profile.email ?? '(none)'}, expected ${account.email}`);
+      }
       if (normalizePhone(profile.phone) !== account.phone) {
         fail(`profile phone is ${profile.phone ?? '(none)'}, expected ${account.phone}`);
       }
@@ -376,7 +416,7 @@ try {
     throw new Error(`expected 19 PIN rows, found ${rawAccounts?.length ?? 0}`);
   }
 
-  const accounts = rawAccounts.map(credentialFields);
+  const accounts = rawAccounts.map((row, index) => credentialFields(row, index));
   if (new Set(accounts.map((a) => a.user_id)).size !== accounts.length) {
     throw new Error('PIN file contains duplicate user ids');
   }
@@ -387,16 +427,22 @@ try {
   console.log(`Verifying ${accounts.length} demo accounts (read-only)…\n`);
   let failed = 0;
   let wrongPinTested = false;
+  // GoTrue rate-limits session verification per IP. A full run makes three
+  // requests for the first account and two for each of the rest, so pacing
+  // keeps a 19-account check under the limit without skipping any assertion.
+  const paceMs = Number(process.env.SURGO_VERIFY_PACE_MS ?? 0);
+  let firstAccount = true;
   for (const account of accounts) {
-    if (!account.phone || !account.phoneLocal) {
-      failed += 1;
-      console.log(`FAIL  ${account.name}\n        credentials row has an invalid phone number`);
-      continue;
+    if (paceMs > 0 && !firstAccount) {
+      await new Promise((resolve) => setTimeout(resolve, paceMs));
     }
+    firstAccount = false;
     const result = await verifyAccount(account, accounts, {
       testWrongPin: !wrongPinTested,
     });
-    wrongPinTested = true;
+    // The probe only runs on an active account; suspended accounts use their
+    // own wrong-PIN check inside verifySuspended.
+    if (!result.suspended) wrongPinTested = true;
     if (result.failures.length) {
       failed += 1;
       console.log(`FAIL  ${account.name}`);

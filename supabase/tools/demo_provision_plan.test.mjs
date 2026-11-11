@@ -5,14 +5,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  ARCHIVED,
-  ASSIGNED_DEMO_PHONES,
+  DEMO_PHONES,
   E164_PH,
   EMAIL,
   SYNTHETIC_DOMAIN,
   demoPeople,
   generateDemoPins,
   isInsideRepo,
+  isSyncedFolder,
   normalizePhone,
   profileId,
   toLocalPhone,
@@ -51,19 +51,27 @@ test('ids match the deterministic ids supabase/demo-data.sql seeded', () => {
   }
 });
 
-test('the 8 people without an email get a reserved-domain address', () => {
-  const synthetic = people.filter((p) => p.syntheticEmail);
-  assert.deepEqual(
-    synthetic.map((p) => p.name).sort(),
-    [...ARCHIVED].sort(),
+test('every demo account gets a reserved .test email, never a seeded one', () => {
+  const seededEmails = new Set(
+    ['passengers', 'earners', 'owners']
+      .flatMap((group) => users[group])
+      .map((row) => String(row.email ?? '').trim().toLowerCase())
+      .filter(Boolean),
   );
-  for (const person of synthetic) {
-    assert.ok(person.targetEmail.endsWith(`@${SYNTHETIC_DOMAIN}`));
-    assert.match(person.targetEmail, EMAIL);
+  for (const person of people) {
+    assert.equal(person.syntheticEmail, true, person.name);
+    assert.ok(
+      person.targetEmail.endsWith(`@${SYNTHETIC_DOMAIN}`),
+      person.targetEmail,
+    );
+    assert.match(person.targetEmail, EMAIL, person.name);
+    assert.equal(
+      person.targetEmail,
+      `${person.slug.replace(/-/g, '.')}@${SYNTHETIC_DOMAIN}`,
+      person.name,
+    );
+    assert.equal(seededEmails.has(person.targetEmail), false, person.name);
   }
-  const real = people.filter((p) => !p.syntheticEmail);
-  assert.equal(real.length, 11);
-  for (const person of real) assert.equal(person.targetEmail, person.email);
 });
 
 test('every target email is lowercase and unique', () => {
@@ -81,37 +89,29 @@ test('every demo account gets a unique PH mobile number in E.164', () => {
   for (const person of people) {
     assert.match(person.phone, E164_PH, person.name);
     assert.equal(normalizePhone(person.phone), person.phone, person.name);
+    assert.equal(person.phoneAssigned, true, person.name);
+    assert.equal(person.phone, DEMO_PHONES[person.slug], person.name);
   }
 });
 
-test('the 11 seeded numbers are preserved and normalized', () => {
-  const preserved = people.filter((p) => !p.phoneAssigned);
-  assert.equal(preserved.length, 11);
+test('the 19 assigned numbers are the documented sequential block', () => {
+  assert.equal(Object.keys(DEMO_PHONES).length, 19);
   assert.deepEqual(
-    preserved.map((p) => p.name).sort(),
-    ['Jr Derigay', 'Grace Ann Villaflor', 'Nena Villareal', 'Danilo Cruz',
-      'Rosalinda Pajo', 'Isabella Dizon', 'Bebot Lim', 'Carlo Mendoza',
-      'Danny Reyes', 'Edwin Santillan', 'Marco Villanueva'].sort(),
+    people.map((p) => p.phone).sort(),
+    Array.from({ length: 19 }, (_, i) => `+639170000${String(i + 1).padStart(3, '0')}`),
   );
-  for (const person of preserved) {
-    assert.equal(normalizePhone(person.phone), person.phone, person.name);
-    assert.ok(person.phone.startsWith('+639'), person.name);
-  }
 });
 
-test('the 8 archived people get the documented assigned numbers', () => {
-  const assigned = people.filter((p) => p.phoneAssigned);
-  assert.deepEqual(assigned.map((p) => p.name).sort(), [...ARCHIVED].sort());
-  for (const person of assigned) {
-    assert.equal(person.phone, ASSIGNED_DEMO_PHONES[person.slug], person.name);
-  }
-  // Assigned numbers are contiguous, ordered by the archived-name sort, and
-  // never collide with a preserved number.
-  assert.deepEqual(
-    assigned.map((p) => p.phone).sort(),
-    ['+639170000001', '+639170000002', '+639170000003', '+639170000004',
-      '+639170000005', '+639170000006', '+639170000007', '+639170000008'],
+test('no seeded number is retained for any demo person', () => {
+  const seededNumbers = new Set(
+    ['passengers', 'earners', 'owners']
+      .flatMap((group) => users[group])
+      .map((row) => normalizePhone(row.phone))
+      .filter(Boolean),
   );
+  for (const person of people) {
+    assert.equal(seededNumbers.has(person.phone), false, person.name);
+  }
 });
 
 test('normalizePhone accepts 09, +639, 639 and 0063 forms', () => {
@@ -181,4 +181,28 @@ test('credentials may not be written inside the repository', () => {
   );
   assert.equal(isInsideRepo(repoRoot, path.join(repoRoot, '..', 'demo.json')), false);
   assert.equal(isInsideRepo(repoRoot, 'C:\\surgo-demo-credentials\\x.json'), false);
+});
+
+test('credentials may not be written into a synced folder', () => {
+  assert.equal(isSyncedFolder('C:\\Users\\me\\OneDrive\\pins.json'), true);
+  assert.equal(
+    isSyncedFolder('C:\\Users\\me\\OneDrive - SurGo\\pins.json'),
+    true,
+  );
+  assert.equal(
+    isSyncedFolder('C:\\Users\\me\\Dropbox\\surgo\\pins.json'),
+    true,
+  );
+  assert.equal(
+    isSyncedFolder('C:\\Users\\me\\Google Drive\\pins.json'),
+    true,
+  );
+  assert.equal(isSyncedFolder('/Users/me/iCloud Drive/pins.json'), true);
+  assert.equal(
+    isSyncedFolder('C:\\Users\\me\\surgo-demo-credentials\\pins.json'),
+    false,
+  );
+  assert.equal(isSyncedFolder('/home/me/pins/pins.json'), false);
+  // A name that merely contains a sync keyword is not a sync folder.
+  assert.equal(isSyncedFolder('C:\\work\\boxing\\pins.json'), false);
 });

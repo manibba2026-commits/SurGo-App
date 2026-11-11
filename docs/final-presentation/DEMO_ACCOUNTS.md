@@ -10,7 +10,7 @@
 | Surface | Account | How it signs in | Usable for the defense? |
 | --- | --- | --- | --- |
 | Offline demo build | Existing seed identities ACC003 / ACC006 / ACC002 / ACC007 | Account number or phone + OTP `123456`, then a device PIN | **Yes**, with `--dart-define=SURGO_DEMO_AUTH=true` |
-| Flutter app (normal build) | 19 fictional demo people | Philippine mobile number + their own server-verified 6-digit PIN | **Prepared, not applied** |
+| Flutter app (normal build) | 19 fictional demo people | Philippine mobile number + their own server-verified 6-digit PIN | **Yes** — all 19 provisioned and verified 2026-11-11; PINs kept privately |
 | Flutter app (normal build) | Real phone registration | PH mobile number + SMS OTP | **Yes**, after registering on the demo device |
 | Flutter app (normal build) | Google account | Google OAuth through Supabase | **Yes**, once the OAuth redirect URI and test user are configured |
 | Admin dashboard | Operator's account | Email + password in Supabase Auth | **Yes**, password known only to the operator |
@@ -95,18 +95,20 @@ The admin dashboard uses the operator's real Supabase account:
 Do not write this account's email or password into a tracked file. Supply the
 credentials out-of-band at the defense.
 
-## 4. Hosted demo login: phone + PIN (prepared, approval required)
+## 4. Hosted demo login: phone + PIN (deployed and provisioned 2026-11-11)
 
 ### Architecture
 
 | Piece | Location | Role |
 | --- | --- | --- |
 | PIN store | `private.demo_access` in `20261111140000_demo_pin_access.sql` | One PBKDF2-SHA256 hash plus lockout state per auth user |
-| PIN RPCs | same migration: `set_demo_access`, `demo_login_lookup`, `demo_login_record_failure`, `demo_login_record_success` | `SECURITY DEFINER`, `search_path = ''`, service-role-only `EXECUTE`; no browser or `anon` access |
-| Login endpoint | `supabase/functions/demo-login` (`verify_jwt = false`) | Normalizes the phone, verifies the PIN, enforces the lockout, checks account status, and returns a GoTrue session |
+| PIN RPCs | same migration: `set_demo_access`, `demo_login_reserve_attempt`, `demo_login_record_success`, `demo_login_clear_lockout` | `SECURITY DEFINER`, `search_path = ''`, service-role-only `EXECUTE`; no browser or `anon` access |
+| Login endpoint | `supabase/functions/demo-login` (`verify_jwt = false`) | Normalizes the phone, reserves an attempt atomically, verifies the PIN, checks account status, and returns a GoTrue session |
+| SMS hook | `supabase/functions/send-sms` + `demo_numbers.ts` | Refuses every demo number before Semaphore is called; real-user OTP delivery is unchanged |
 | App client | `SupabaseAuthRepository.signInWithDemoPin` | Calls the function and adopts the returned session with `recoverSession` |
 | App screen | **Use demo phone + PIN** on the sign-in screen | Only shown when the hosted provider is installed; the offline demo build keeps its account-number + OTP flow |
 | Provisioning | `supabase/tools/provision_demo_accounts.mjs` | Dry-run by default; updates the 19 existing auth rows and writes each PIN hash |
+| Unlock | same tool, `--unlock --credentials <file>` | Clears a lockout without rotating the PIN; needs the service key and its own confirmation token |
 | Verifier | `supabase/tools/verify_demo_accounts.mjs` | Signs every demo account in and re-checks role and row isolation |
 
 Design rules baked into the pieces above:
@@ -116,46 +118,72 @@ Design rules baked into the pieces above:
 - Hashes are PBKDF2-SHA256, 210,000 iterations, a 16-byte random salt, and a
   32-byte derived key (`pbkdf2-sha256$<iterations>$<salt>$<hash>`). The SQL check
   constraint rejects any other shape.
-- Five wrong PINs lock that account for 15 minutes. A locked account is refused
-  before the hash is checked, and a correct PIN after the lock expires resets
-  the counter.
+- `demo_login_reserve_attempt` consumes one attempt under a row lock **before**
+  the Edge Function verifies the PIN, so parallel requests cannot exceed five
+  verifications per 15-minute window. The reservation that sets the lock still
+  verifies its own PIN; only a later request reports `was_locked` and gets `429`
+  without consuming or extending the window. A correct PIN clears the counter.
 - The endpoint answers unknown numbers with the same generic failure and runs a
   dummy PBKDF2 verification, so response content and timing do not reveal which
-  numbers exist.
+  numbers exist. A real (non-demo) phone never has a reservation row, so it can
+  never produce a `429`.
 - A suspended profile (Junel Ramos) receives `403 account_unavailable` even
-  with the correct PIN. Provisioning never writes `profiles.account_status`.
+  with the correct PIN. Provisioning never writes `profiles.account_status`,
+  never unbans him, and keeps him banned.
 - Failed, locked, suspended, and misconfigured responses never include a
   session, token, or backend SQL text.
-- Emails are preserved or synthesized only to complete the auth row and
-  dashboard. They have **no password** and are not a login path.
+- Every authentication response carries `Cache-Control: no-store`; the session
+  never comes from an intermediary cache.
+- Admin operations use the service key, but the `/auth/v1/verify` token
+  exchange uses the publishable key instead.
+- All 19 auth emails are reserved `@surgo-demo.test` addresses. The domain has
+  no MX, so recovery and magic-link mail cannot reach a real inbox, and no
+  email password exists or is required.
+- `surgo_demo` is trusted only in `app_metadata`, which only the service role
+  can write. The old user-writable `user_metadata` copy is stripped, so a
+  client cannot mark itself as a demo account.
 
 ### What provisioning changes, per existing profile id
 
-- Confirms the email and phone on the existing `auth.users` row and removes the
-  ban (`ban_duration: 'none'`).
+- Re-asserts the ban first, then confirms the synthetic email and assigned
+  phone on the existing `auth.users` row while the account is still banned.
+  The ban is lifted **last**, and only for active profiles.
+- Repairs the seeded auth row before any admin API call: GoTrue only lists
+  users whose `instance_id` is the zero UUID, scans token columns that must not
+  be NULL, and cannot parse an `'infinity'` ban. The repair is idempotent and
+  keeps the ban; only the final unban lifts it.
 - Repairs the missing email identity row that SQL-seeded users need, so the
-  account is complete in GoTrue.
-- Marks the account `surgo_demo: true` and `surgo_onboarded: true` in user
-  metadata. The app reads the first marker to skip the second device PIN (the
-  server PIN is the only credential) and the second to skip onboarding.
-- Keeps the 11 existing `@email.com` addresses; the 8 people without one get a
-  reserved `<name>@surgo-demo.test` address, mirrored onto their profile.
-- Normalizes every phone to E.164 and assigns the 8 people without a number a
-  unique demo number (see the table below).
+  account is complete in GoTrue. This grants no password or email login.
+- Marks the account `surgo_demo: true` in `app_metadata` and
+  `surgo_onboarded: true` in user metadata, and removes any old
+  `surgo_demo` key from user metadata.
+- Replaces every existing address with a unique reserved
+  `<name>@surgo-demo.test` address and mirrors it onto the profile.
+- Replaces every phone with a unique number from the assigned block below and
+  normalizes it to E.164. No seeded number is reused, because ownership of the
+  seeded numbers cannot be verified.
 - Writes a freshly generated, unique 6-digit PIN hash for each account. The
-  plaintext PIN is written only to a file **outside the repository**.
+  plaintext PIN is written only to a file **outside the repository**, is
+  rewritten atomically after every account, and is read back before that
+  account is unbanned. Synced folders (OneDrive, Dropbox, Google Drive, iCloud,
+  Box) and existing files are refused.
+- Any failure re-bans the account. A partly provisioned account is never left
+  usable.
 - Changes no `profiles.account_status`, no role, and no wallet, ride, rental,
   Pasuyo, or transaction row.
 
 ### Deployment and run order (after approval)
 
 ```bash
-# 1. Apply the PIN migration to the hosted project.
-supabase db push            # or the Management API path used for earlier migrations
+# 1. Apply the PIN migration through the Management API SQL channel used for
+#    every earlier migration. Do not use `supabase db push`: the hosted
+#    migration history does not match a fresh local stack.
 
-# 2. Deploy the login endpoint. No extra secrets: the function reads the
-#    platform-provided SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
+# 2. Deploy the login endpoint and the updated SMS hook. The demo-login
+#    function reads SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and the platform's
+#    publishable/anon key; no extra secret is required.
 supabase functions deploy demo-login --project-ref <project-ref>
+supabase functions deploy send-sms --project-ref <project-ref>
 
 # 3. Read-only plan against the hosted project (no writes).
 node supabase/tools/provision_demo_accounts.mjs
@@ -166,14 +194,23 @@ SURGO_DEMO_PROVISION=confirm-19-demo-pins \
 SUPABASE_SERVICE_ROLE_KEY=<server-only key> \
   node supabase/tools/provision_demo_accounts.mjs --apply --verify-login
 
-# 5. Read-only verification of all 19 accounts.
-node supabase/tools/verify_demo_accounts.mjs \
+# 5. Read-only verification of all 19 accounts. GoTrue rate-limits session
+#    verification per IP and a full run makes ~39 calls, so pace it; every
+#    assertion still runs. A full paced run takes about 8-9 minutes.
+SURGO_VERIFY_PACE_MS=28000 node supabase/tools/verify_demo_accounts.mjs \
   --credentials "$USERPROFILE/surgo-demo-credentials/demo-pins-<stamp>.json"
+
+# Lockout recovery, only if an account is locked out during a rehearsal:
+SURGO_DEMO_UNLOCK=confirm-demo-unlock \
+SUPABASE_SERVICE_ROLE_KEY=<server-only key> \
+  node supabase/tools/provision_demo_accounts.mjs --unlock \
+    --credentials "$USERPROFILE/surgo-demo-credentials/demo-pins-<stamp>.json"
 ```
 
 The service-role key is read from the environment only, is never printed, and
 never appears in the app. The PIN file is created with owner-only permissions,
-is refused inside the repository, and is never overwritten.
+is refused inside the repository and in synced folders, and is never
+overwritten.
 
 In the Flutter app, choose **Use demo phone + PIN** on the sign-in screen and
 enter the number in `09XXXXXXXXX` or `+639XXXXXXXXX` form; both normalize to
@@ -181,52 +218,62 @@ E.164. A successful sign-in opens the dashboard directly — demo identities do
 not show a second device PIN. **Profile → Account Settings** therefore omits the
 App PIN tile for them.
 
-### Complete 19-person mapping (audited 2026-11-11, not applied)
+### Complete 19-person mapping (audited and applied 2026-11-11)
 
 `Account` is the offline seed account from `assets/db/accounts.json`; the eight
-archived people have none. `Phone` is the number the hosted account will accept;
-the eight marked *(assigned)* have no seeded phone and receive a demo number.
-Emails marked *(synthetic)* use the reserved `.test` domain.
+archived people have none. Every hosted demo account receives the assigned
+number and the reserved `.test` address below; no seeded phone or `@email.com`
+address is retained.
 
 | Account | Fictional name | Profile / auth UUID | Approved roles | Phone (E.164) | Email after provisioning |
 | --- | --- | --- | --- | --- | --- |
-| *(archived)* | Alex Tan | `3f6cbb9b-9a43-af30-7d51-03f3a179499f` | passenger, vehicle_owner | `+639170000001` *(assigned)* | alex.tan@surgo-demo.test *(synthetic)* |
-| `ACC006` | Bebot Lim | `ed2aa82a-f064-9589-b57d-24f7c1820f3f` | passenger, earner | `+639267713390` | bebot.lim@email.com |
-| `ACC007` | Carlo Mendoza | `f0be59a4-1186-ebe9-bcbb-8ecab26716bc` | passenger, earner | `+639278824415` | carlo.mendoza@email.com |
-| `ACC004` | Danilo Cruz | `043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c` | passenger, vehicle_owner | `+639194478812` | danilo.cruz@email.com |
-| `ACC008` | Danny Reyes | `f4ad1842-a5ff-c9e3-9b43-d141b0f0745e` | passenger, earner | `+639289935521` | danny.reyes@email.com |
-| `ACC009` | Edwin Santillan | `e5f153af-2b86-ddcd-3ace-fb16a216a0da` | passenger | `+639291046632` | edwin.santillan@email.com |
-| `ACC002` | Grace Ann Villaflor | `2db06d3b-a51d-e5a7-f9d7-2b459fc14694` | passenger, vehicle_owner | `+639172204411` | grace.villaflor@email.com |
-| `ACC010` | Isabella Dizon | `d3a8847f-82ba-7ea9-af85-b773c71205fb` | passenger, earner, vehicle_owner | `+639302158888` | isabella.dizon@email.com |
-| *(archived)* | Jomar Lim | `41f801ff-8cc1-e8dc-e475-7d174f5ad610` | passenger, earner | `+639170000002` *(assigned)* | jomar.lim@surgo-demo.test *(synthetic)* |
-| `ACC001` | Jr Derigay | `19aa7137-bdef-93ed-1610-0139c328cf0e` | passenger, earner, rider, vehicle_owner | `+639175124809` | jr.derigay@email.com |
-| *(archived)* | Junel Ramos | `3a47be71-1288-3dd1-428b-43cd444316d6` | passenger, earner | `+639170000003` *(assigned)* | junel.ramos@surgo-demo.test *(synthetic)* |
-| *(archived)* | Kd Sotto | `55b85eed-6ef1-a9b9-cf5d-8fec8cbfb508` | passenger, earner | `+639170000004` *(assigned)* | kd.sotto@surgo-demo.test *(synthetic)* |
-| `ACC011` | Marco Villanueva | `c8c331f0-856a-8315-92b8-25e6a1340d1b` | passenger | `+639313269977` | marco.villanueva@email.com |
-| *(archived)* | Marisol Cruz | `d323a372-5f50-eeb3-8704-934baaca7d82` | passenger | `+639170000005` *(assigned)* | marisol.cruz@surgo-demo.test *(synthetic)* |
-| *(archived)* | Marlon Uy | `2bd7c3b2-e16c-3484-79fd-a1dc6483ffa2` | passenger, earner | `+639170000006` *(assigned)* | marlon.uy@surgo-demo.test *(synthetic)* |
-| `ACC003` | Nena Villareal | `6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79` | passenger | `+639183352290` | nena.villareal@email.com |
-| *(archived)* | Rhea Puno | `d587f6ac-8df2-c405-fa63-451c7b9cde00` | passenger | `+639170000007` *(assigned)* | rhea.puno@surgo-demo.test *(synthetic)* |
-| *(archived)* | Rico D. | `47ca4ef2-7325-73b2-2c37-d802e3595b2e` | passenger, vehicle_owner | `+639170000008` *(assigned)* | rico.d@surgo-demo.test *(synthetic)* |
-| `ACC005` | Rosalinda Pajo | `ead213ad-285a-a69b-6a89-2f587ad3fcf5` | passenger, vehicle_owner | `+639165587734` | rosalinda.pajo@email.com |
+| *(archived)* | Alex Tan | `3f6cbb9b-9a43-af30-7d51-03f3a179499f` | passenger, vehicle_owner | `+639170000001` | alex.tan@surgo-demo.test |
+| `ACC006` | Bebot Lim | `ed2aa82a-f064-9589-b57d-24f7c1820f3f` | passenger, earner | `+639170000002` | bebot.lim@surgo-demo.test |
+| `ACC007` | Carlo Mendoza | `f0be59a4-1186-ebe9-bcbb-8ecab26716bc` | passenger, earner | `+639170000003` | carlo.mendoza@surgo-demo.test |
+| `ACC004` | Danilo Cruz | `043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c` | passenger, vehicle_owner | `+639170000004` | danilo.cruz@surgo-demo.test |
+| `ACC008` | Danny Reyes | `f4ad1842-a5ff-c9e3-9b43-d141b0f0745e` | passenger, earner | `+639170000005` | danny.reyes@surgo-demo.test |
+| `ACC009` | Edwin Santillan | `e5f153af-2b86-ddcd-3ace-fb16a216a0da` | passenger | `+639170000006` | edwin.santillan@surgo-demo.test |
+| `ACC002` | Grace Ann Villaflor | `2db06d3b-a51d-e5a7-f9d7-2b459fc14694` | passenger, vehicle_owner | `+639170000007` | grace.ann.villaflor@surgo-demo.test |
+| `ACC010` | Isabella Dizon | `d3a8847f-82ba-7ea9-af85-b773c71205fb` | passenger, earner, vehicle_owner | `+639170000008` | isabella.dizon@surgo-demo.test |
+| *(archived)* | Jomar Lim | `41f801ff-8cc1-e8dc-e475-7d174f5ad610` | passenger, earner | `+639170000009` | jomar.lim@surgo-demo.test |
+| `ACC001` | Jr Derigay | `19aa7137-bdef-93ed-1610-0139c328cf0e` | passenger, earner, rider, vehicle_owner | `+639170000010` | jr.derigay@surgo-demo.test |
+| *(archived)* | Junel Ramos | `3a47be71-1288-3dd1-428b-43cd444316d6` | passenger, earner | `+639170000011` | junel.ramos@surgo-demo.test |
+| *(archived)* | Kd Sotto | `55b85eed-6ef1-a9b9-cf5d-8fec8cbfb508` | passenger, earner | `+639170000012` | kd.sotto@surgo-demo.test |
+| `ACC011` | Marco Villanueva | `c8c331f0-856a-8315-92b8-25e6a1340d1b` | passenger | `+639170000013` | marco.villanueva@surgo-demo.test |
+| *(archived)* | Marisol Cruz | `d323a372-5f50-eeb3-8704-934baaca7d82` | passenger | `+639170000014` | marisol.cruz@surgo-demo.test |
+| *(archived)* | Marlon Uy | `2bd7c3b2-e16c-3484-79fd-a1dc6483ffa2` | passenger, earner | `+639170000015` | marlon.uy@surgo-demo.test |
+| `ACC003` | Nena Villareal | `6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79` | passenger | `+639170000016` | nena.villareal@surgo-demo.test |
+| *(archived)* | Rhea Puno | `d587f6ac-8df2-c405-fa63-451c7b9cde00` | passenger | `+639170000017` | rhea.puno@surgo-demo.test |
+| *(archived)* | Rico D. | `47ca4ef2-7325-73b2-2c37-d802e3595b2e` | passenger, vehicle_owner | `+639170000018` | rico.d@surgo-demo.test |
+| `ACC005` | Rosalinda Pajo | `ead213ad-285a-a69b-6a89-2f587ad3fcf5` | passenger, vehicle_owner | `+639170000019` | rosalinda.pajo@surgo-demo.test |
 
 No demo account holds the `admin` role. The operator's real account is not part
-of this table and is never touched. **Junel Ramos stays suspended**: his profile
-status is not changed, and the login endpoint refuses his PIN.
+of this table and is never touched. **Junel Ramos stays suspended and banned**:
+his profile status is not changed, he is never unbanned, and the login endpoint
+refuses his PIN.
 
-The four offline presentation identities keep their natural numbers:
-Nena `0918 335 2290`, Bebot `0926 771 3390`, Grace `0917 220 4411`, Carlo
-`0927 882 4415`. Their hosted PINs come from the private credential file, not
-from this document.
+The offline presentation build still uses the seed contact numbers shown in
+section 4 for its four prepared identities (Nena `0918 335 2290`, Bebot
+`0926 771 3390`, Grace `0917 220 4411`, Carlo `0927 882 4415`). That build is
+local-only and sends no SMS; the hosted demo accounts above are separate and
+use the assigned block. Their hosted PINs come from the private credential file,
+not from this document.
 
 ### What the verifier checks
 
-For every active account it signs in twice (E.164 and `09…` form), confirms the
-session user id equals the profile id, then proves the account cannot read
-another demo person's profile, roles, wallet, wallet transactions,
-notifications, or device tokens. It also checks the ride/rental/Pasuyo policies
-(only own participation, plus the documented shared-open visibility) and that no
-demo account is an admin or can read the admin audit log.
+The credentials file is validated before any network call: every `user_id` must
+be a UUID, every phone must normalize to a PH mobile, every PIN must be six
+digits, and every email must be a reserved `@surgo-demo.test` address.
+
+For every active account it first proves a wrong PIN gets a generic `401` (on
+the first active account only, and never using that account's own PIN), then
+signs in twice (E.164 and `09…` form), confirms the session user id equals the
+profile id, checks the synthetic email on the session and profile, and requires
+`app_metadata.surgo_demo`. It then proves the account cannot read another demo
+person's profile, roles, wallet, wallet transactions, notifications, or device
+tokens. It also checks the ride/rental/Pasuyo policies (only own participation,
+plus the documented shared-open visibility) and that no demo account is an admin
+or can read the admin audit log.
 
 For suspended accounts it proves a wrong PIN and the correct PIN both fail, and
 that the profile is still suspended. It writes nothing, prints no PIN or token,
@@ -235,19 +282,22 @@ and needs no service-role key.
 ### Approval checklist
 
 - [ ] The mapping above (phones, emails, roles, suspended status) is accepted.
+- [ ] Confirming that all 19 numbers are freshly assigned and no seeded number
+      is retained.
 - [ ] Confirming that no email password is created or needed for demo login.
-- [ ] Confirming the PIN model: PBKDF2-SHA256 server-side, five attempts, a
-      15-minute lock, no PIN in the bundle.
-- [ ] Confirming the migration and function deployment are allowed on the hosted
-      project.
-- [ ] Confirming the eight assigned demo numbers are acceptable.
-- [ ] Receiving the private PIN file location (outside the repository) so the
-      defense can use it.
+- [ ] Confirming the PIN model: PBKDF2-SHA256 server-side, atomic reservation,
+      five attempts, a 15-minute lock, no PIN in the bundle.
+- [ ] Confirming the SMS denylist deployment alongside `demo-login`.
+- [ ] Confirming the migration and both function deployments are allowed on the
+      hosted project.
+- [ ] Receiving the private PIN file location (outside the repository and any
+      synced folder) so the defense can use it.
 
 ## 5. Private credential template
 
-Keep any filled version **outside the repository** or in a file added to
-`.gitignore`. Never commit it. The provisioning tool writes the demo PINs to
+Keep any filled version **outside the repository** and outside any synced folder
+(OneDrive, Dropbox, Google Drive, iCloud, Box). Never commit it. The
+provisioning tool writes the demo PINs to
 `%USERPROFILE%\surgo-demo-credentials\demo-pins-<stamp>.json`.
 
 ```json
@@ -279,13 +329,14 @@ Keep any filled version **outside the repository** or in a file added to
 - [ ] Each of the four account numbers signs in with OTP `123456` and lands on
       its own dashboard.
 - [ ] The default device PIN `123456` unlocks a reopened offline session.
-- [ ] The migration and `demo-login` function are deployed (hosted path).
+- [ ] The migration and `demo-login` / `send-sms` functions are deployed (hosted path).
 - [ ] The provisioning plan was reviewed, then applied with the exact token.
 - [ ] `verify_demo_accounts.mjs` passes for all 19 accounts.
 - [ ] A demo phone signs in with **Use demo phone + PIN** and opens the
       dashboard without asking for a second PIN.
 - [ ] A suspended demo account is refused even with the correct PIN.
-- [ ] The real demo phone receives the SMS OTP (normal build only).
+- [ ] Requesting an SMS OTP for a demo number fails without sending an SMS,
+      while a real demo phone still receives its OTP.
 - [ ] The Flutter account can unlock Rider and Vehicle Owner in-session.
 - [ ] The admin dashboard login works with the operator account.
 - [ ] Google sign-in reaches the consent screen without
