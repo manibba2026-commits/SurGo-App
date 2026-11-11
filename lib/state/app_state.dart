@@ -361,7 +361,7 @@ class AppState extends ChangeNotifier {
     // already sees requiresPin. The same account refreshing its token keeps
     // the unlock it already earned instead of being relocked. A demo identity
     // never gets the device lock: its PIN was just verified by the server.
-    final isDemo = current.metadata['surgo_demo'] == true;
+    final isDemo = current.isDemoAccount;
     if (devicePinEnabled && !isDemo && identity?.userId != current.id) {
       _pinRequired = true;
     }

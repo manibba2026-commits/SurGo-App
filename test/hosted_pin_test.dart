@@ -30,7 +30,7 @@ class _HostedAuth implements AuthRepository {
   bool needsOnboarding;
 
   /// Marks the identity as one of the provisioned demo accounts, the same
-  /// `surgo_demo` marker the provisioning tool writes to user metadata.
+  /// `surgo_demo` marker the provisioning tool writes to app_metadata.
   final bool demo;
 
   /// When true, [restoreSession] reports no valid session even if an event
@@ -49,8 +49,8 @@ class _HostedAuth implements AuthRepository {
         providers: const {'google'},
         metadata: {
           if (!needsOnboarding) 'surgo_onboarded': true,
-          if (demo) 'surgo_demo': true,
         },
+        isDemoAccount: demo,
       );
 
   /// Delivers the session event a sign-in or relaunch would produce.
@@ -114,7 +114,7 @@ class _HostedAuth implements AuthRepository {
       providers: user.providers,
       profileExists: true,
       needsOnboarding: needsOnboarding,
-      isDemoAccount: demo,
+      isDemoAccount: user.isDemoAccount,
     );
   }
 
@@ -365,7 +365,7 @@ void main() {
         phone: '+639170000001',
         fullName: 'Hosted Tester',
         providers: {'phone'},
-        metadata: {'surgo_demo': true},
+        isDemoAccount: true,
       ),
     );
     state.configureAuth(relaunched);

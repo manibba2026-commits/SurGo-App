@@ -36,10 +36,8 @@ class _HostedFakeAuth implements AuthRepository {
         providers: _signedInWithDemoPin ? const {'phone'} : const {'google'},
         metadata: needsOnboarding
             ? const {}
-            : {
-                'surgo_onboarded': true,
-                if (_signedInWithDemoPin) 'surgo_demo': true,
-              },
+            : const {'surgo_onboarded': true},
+        isDemoAccount: _signedInWithDemoPin,
       );
 
   @override
@@ -90,7 +88,7 @@ class _HostedFakeAuth implements AuthRepository {
       providers: user.providers,
       profileExists: true,
       needsOnboarding: needsOnboarding,
-      isDemoAccount: _signedInWithDemoPin,
+      isDemoAccount: user.isDemoAccount,
     );
   }
 

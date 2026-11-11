@@ -49,7 +49,7 @@ class _HostedPinAuth implements AuthRepository {
       phone: _HostedPinAuth.phone,
       fullName: 'Demo One',
       providers: const {'phone'},
-      metadata: const {'surgo_demo': true},
+      isDemoAccount: true,
     );
   }
 
@@ -73,7 +73,7 @@ class _HostedPinAuth implements AuthRepository {
       roles: const {'passenger'},
       providers: user.providers,
       profileExists: true,
-      isDemoAccount: true,
+      isDemoAccount: user.isDemoAccount,
     );
   }
 

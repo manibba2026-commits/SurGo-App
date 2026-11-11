@@ -66,6 +66,7 @@ class DemoSession {
   final String? email;
   final String? fullName;
   final Set<String> providers;
+  final bool isDemoAccount;
 
   const DemoSession({
     required this.userId,
@@ -73,6 +74,7 @@ class DemoSession {
     this.email,
     this.fullName,
     this.providers = const {'phone'},
+    this.isDemoAccount = false,
   });
 
   factory DemoSession.fromUser(AuthUser user) => DemoSession(
@@ -81,6 +83,7 @@ class DemoSession {
         email: user.email,
         fullName: user.fullName,
         providers: user.providers,
+        isDemoAccount: user.isDemoAccount,
       );
 
   AuthUser toUser() => AuthUser(
@@ -89,6 +92,7 @@ class DemoSession {
         email: email,
         fullName: fullName,
         providers: providers,
+        isDemoAccount: isDemoAccount,
       );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +101,7 @@ class DemoSession {
         'email': email,
         'fullName': fullName,
         'providers': providers.toList(),
+        'isDemoAccount': isDemoAccount,
       };
 
   static DemoSession? fromJson(Object? raw) {
@@ -118,6 +123,9 @@ class DemoSession {
                 if (value is String) value,
             }
           : const {'phone'},
+      // Sessions written before the flag existed are treated as regular
+      // accounts; the demo PIN signs in again with the flag set.
+      isDemoAccount: raw['isDemoAccount'] == true,
     );
   }
 }

@@ -164,7 +164,8 @@ class MockAuthRepository implements AuthRepository {
       email: account.email,
       fullName: account.name,
       providers: const {'phone'},
-      metadata: const {'surgo_demo': true, 'surgo_onboarded': true},
+      metadata: const {'surgo_onboarded': true},
+      isDemoAccount: true,
     );
     _user = user;
     await _persist(user);
@@ -222,7 +223,7 @@ class MockAuthRepository implements AuthRepository {
       roles: _rolesFromCapabilities(capabilities),
       providers: user.providers,
       profileExists: true,
-      isDemoAccount: user.metadata['surgo_demo'] == true,
+      isDemoAccount: user.isDemoAccount,
     );
   }
 

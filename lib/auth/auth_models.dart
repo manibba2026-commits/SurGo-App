@@ -188,6 +188,11 @@ class AuthUser {
   final Map<String, dynamic> metadata;
   final Set<String> providers;
 
+  /// Whether the session belongs to a provisioned fictional demo identity.
+  /// Comes from `app_metadata.surgo_demo`, which only the service role writes;
+  /// user_metadata is not trusted for this decision.
+  final bool isDemoAccount;
+
   const AuthUser({
     required this.id,
     this.phone,
@@ -195,6 +200,7 @@ class AuthUser {
     this.fullName,
     this.metadata = const {},
     this.providers = const {},
+    this.isDemoAccount = false,
   });
 
   bool get hasPhoneIdentity => providers.contains('phone');
@@ -206,6 +212,7 @@ class AuthUser {
     String? fullName,
     Map<String, dynamic>? metadata,
     Set<String>? providers,
+    bool? isDemoAccount,
   }) {
     return AuthUser(
       id: id,
@@ -214,6 +221,7 @@ class AuthUser {
       fullName: fullName ?? this.fullName,
       metadata: metadata ?? this.metadata,
       providers: providers ?? this.providers,
+      isDemoAccount: isDemoAccount ?? this.isDemoAccount,
     );
   }
 }

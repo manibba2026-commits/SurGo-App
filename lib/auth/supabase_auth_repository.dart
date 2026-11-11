@@ -237,7 +237,7 @@ class SupabaseAuthRepository implements AuthRepository {
     // dropped into a dashboard it never finished creating. A provisioned demo
     // identity is already complete and never revisits onboarding.
     final onboarded = user.metadata['surgo_onboarded'] == true;
-    final isDemoAccount = user.metadata['surgo_demo'] == true;
+    final isDemoAccount = user.isDemoAccount;
     final needsOnboarding = !isDemoAccount &&
         profileLoaded &&
         rolesLoaded &&
@@ -349,6 +349,7 @@ class SupabaseAuthRepository implements AuthRepository {
       fullName: fullNameFromMetadata(user.userMetadata ?? const {}),
       metadata: user.userMetadata ?? const {},
       providers: providers,
+      isDemoAccount: user.appMetadata['surgo_demo'] == true,
     );
   }
 }
