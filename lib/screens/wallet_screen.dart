@@ -54,11 +54,21 @@ class WalletScreen extends StatelessWidget {
                     background: Colors.white,
                     foreground: AppColors.primaryDark,
                     glow: false,
-                    onPressed: isPayout && balance < state.minimumWithdrawal
-                        ? null
-                        : () => isPayout
-                            ? _showPayoutSheet(context, state, balance)
-                            : _showTopUpSheet(context, state),
+                    // The hosted build has no top-up or payout function yet;
+                    // offering the seeded simulation here would present a fake
+                    // money movement as real.
+                    onPressed: state.usesHostedIdentity
+                        ? () => SurgoNotice.show(
+                              context,
+                              'Top-ups and cash-outs are not enabled for live accounts yet. '
+                              'Your balance reflects settled transactions only.',
+                              tone: SbNoticeTone.info,
+                            )
+                        : isPayout && balance < state.minimumWithdrawal
+                            ? null
+                            : () => isPayout
+                                ? _showPayoutSheet(context, state, balance)
+                                : _showTopUpSheet(context, state),
                   ),
                 ),
                 loading: _balanceCard(

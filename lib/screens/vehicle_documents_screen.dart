@@ -21,44 +21,74 @@ class VehicleDocumentsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
         children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.secondarySoft,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.secondary.withValues(alpha: 0.3)),
-            ),
-            child: const Row(
+          RepositoryView<List<VehicleDocumentRecord>>(
+            slot: DomainSlot.ownerVehicleDocuments,
+            empty: (_) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.verified_user, color: AppColors.secondaryLight, size: 20),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'All documents are verified and up to date.',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
-                  ),
+                _banner(
+                  'No documents are on file for this fleet yet.',
+                  verified: false,
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'No documents on file yet.',
+                  style: TextStyle(color: AppColors.muted, fontSize: 12),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 18),
-          RepositoryView<List<VehicleDocumentRecord>>(
-            slot: DomainSlot.ownerVehicleDocuments,
-            empty: (_) => const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                'No documents on file yet.',
-                style: TextStyle(color: AppColors.muted, fontSize: 12),
-              ),
-            ),
-            data: (context, documents) => Column(
-              children: [
-                for (final document in documents)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _card(document),
+            data: (context, documents) {
+              // The banner states what the rows actually say; a single pending
+              // or expired paper must not be summarised as "all verified".
+              final allVerified =
+                  documents.every((d) => d.status == 'approved');
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _banner(
+                    allVerified
+                        ? 'All documents are verified and up to date.'
+                        : 'Some documents still need review or have expired.',
+                    verified: allVerified,
                   ),
-              ],
+                  const SizedBox(height: 18),
+                  for (final document in documents)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _card(document),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _banner(String message, {required bool verified}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: verified ? AppColors.secondarySoft : AppColors.panel2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: (verified ? AppColors.secondary : AppColors.border)
+                .withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            verified ? Icons.verified_user : Icons.info_outline,
+            color: verified ? AppColors.secondaryLight : AppColors.muted,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
             ),
           ),
         ],

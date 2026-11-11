@@ -63,9 +63,9 @@ class RepositoryRegistry {
       profiles: SupabaseProfileRepository(backend),
       catalog: SupabaseCatalogRepository(backend),
       vehicles: SupabaseVehicleRepository(backend),
-      rides: SupabaseRideRepository(backend),
-      rentals: SupabaseRentalRepository(backend),
-      pasuyo: SupabasePasuyoRepository(backend),
+      rides: SupabaseRideRepository(backend, writer: writer),
+      rentals: SupabaseRentalRepository(backend, writer: writer),
+      pasuyo: SupabasePasuyoRepository(backend, writer: writer),
       notifications: SupabaseNotificationRepository(backend),
       wallet: SupabaseWalletRepository(backend),
       verifications: SupabaseVerificationRepository(

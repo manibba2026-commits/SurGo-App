@@ -1,14 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_failure.dart';
 import '../services/money.dart';
+import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
 
 /// Passenger-side Map V1: real OpenStreetMap centered on the user's live
-/// GPS, with fixed mock riders (motorcycles/tricycles) and rental vehicles
-/// shown as tappable purple pins. Reachable from the passenger Home tab's
-/// map icon.
+/// GPS, with riders and rental vehicles shown as tappable pins.
+///
+/// A hosted build reads online riders from the database's discovery function,
+/// so the map shows exactly who can receive a request. Their coordinates are
+/// the simulated demo fixes stored in `rider_presence`, and the marker says so.
+/// A seeded build keeps the fixed `mapRiders` fleet.
 class PassengerMapScreen extends StatefulWidget {
   const PassengerMapScreen({super.key});
 
@@ -19,31 +28,82 @@ class PassengerMapScreen extends StatefulWidget {
 class _PassengerMapScreenState extends State<PassengerMapScreen> {
   String filter = 'All'; // All, Riders, Rentals
 
+  Timer? _refreshTimer;
+  List<RiderCandidateRecord> _candidates = const [];
+  bool _loadingRiders = false;
+  String? _riderError;
+
+  bool get _hosted => AppState.instance.usesHostedIdentity;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_hosted) {
+      unawaited(_loadRiders());
+      // Presence changes happen on the rider's device. A short poll keeps the
+      // passenger map honest without pretending a Realtime subscription is
+      // available for this read.
+      _refreshTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => unawaited(_loadRiders(silent: true)),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadRiders({bool silent = false}) async {
+    if (_loadingRiders) return;
+    if (!silent) setState(() => _loadingRiders = true);
+    try {
+      final candidates =
+          await AppState.instance.repositories.rides.findAvailableRiders();
+      if (!mounted) return;
+      setState(() {
+        _candidates = candidates;
+        _riderError = null;
+        _loadingRiders = false;
+      });
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _riderError = failure.message;
+        _loadingRiders = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = DbService.instance;
 
     final riderMarkers = filter == 'Rentals'
         ? const <SurgoMapMarker>[]
-        : db.mapRiders.map((r) => SurgoMapMarker(
-              id: r.id,
-              position: r.position,
-              icon: surgoMarkerIcon(r.markerType),
-              title: r.name,
-              subtitle:
-                  '${_titleCase(r.vehicleType)} · ${r.purok}, ${r.barangay}',
-              faded: !r.available,
-              details: [
-                MapEntry('Vehicle', r.vehicleModel),
-                MapEntry('Rating', '⭐ ${r.rating.toStringAsFixed(1)}'),
-                MapEntry('Est. fare', Money.format(r.estimatedFare)),
-                MapEntry('Status', r.available ? 'Available' : 'Offline'),
-              ],
-              actionLabel: r.available ? 'Book a Ride' : null,
-              onAction: r.available
-                  ? () => Navigator.pushNamed(context, '/booking')
-                  : null,
-            ));
+        : _hosted
+            ? _hostedRiderMarkers()
+            : db.mapRiders.map((r) => SurgoMapMarker(
+                  id: r.id,
+                  position: r.position,
+                  icon: surgoMarkerIcon(r.markerType),
+                  title: r.name,
+                  subtitle:
+                      '${_titleCase(r.vehicleType)} · ${r.purok}, ${r.barangay}',
+                  faded: !r.available,
+                  details: [
+                    MapEntry('Vehicle', r.vehicleModel),
+                    MapEntry('Rating', '⭐ ${r.rating.toStringAsFixed(1)}'),
+                    MapEntry('Est. fare', Money.format(r.estimatedFare)),
+                    MapEntry('Status', r.available ? 'Available' : 'Offline'),
+                  ],
+                  actionLabel: r.available ? 'Book a Ride' : null,
+                  onAction: r.available
+                      ? () => Navigator.pushNamed(context, '/booking')
+                      : null,
+                ));
 
     final rentalMarkers = filter == 'Riders'
         ? const <SurgoMapMarker>[]
@@ -109,8 +169,96 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
                       ),
                     ),
                   ),
+                  if (_hosted) ...[
+                    const SizedBox(width: 8),
+                    SbIconButton(
+                      icon: Icons.refresh,
+                      onTap: () => unawaited(_loadRiders()),
+                    ),
+                  ],
                 ],
               ),
+            ),
+          ),
+          if (_hosted)
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 18,
+              child: SafeArea(top: false, child: _hostedStatusPill()),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<SurgoMapMarker> _hostedRiderMarkers() {
+    return [
+      for (final rider in _candidates)
+        if (rider.hasPosition)
+          SurgoMapMarker(
+            id: rider.profileId,
+            position: MapPoint(rider.latitude!, rider.longitude!),
+            icon: surgoMarkerIcon(
+              (rider.vehicleType ?? '').toLowerCase().contains('tricycle')
+                  ? 'tricycle'
+                  : 'motorcycle',
+            ),
+            title: rider.fullName,
+            subtitle:
+                '${_titleCase(rider.vehicleType ?? 'Rider')} · ${rider.barangayName ?? 'Tandag City'}',
+            details: [
+              if (rider.vehicleLabel != null)
+                MapEntry('Vehicle', rider.vehicleLabel!),
+              if (rider.vehiclePlate != null)
+                MapEntry('Plate', rider.vehiclePlate!),
+              MapEntry('Rating', '⭐ ${rider.rating.toStringAsFixed(1)}'),
+              MapEntry('Trips', '${rider.totalTrips}'),
+              MapEntry(
+                'Position',
+                rider.isSimulated
+                    ? 'Simulated demo location'
+                    : 'Reported by rider device',
+              ),
+            ],
+            actionLabel: 'Book a Ride',
+            onAction: () => Navigator.pushNamed(context, '/booking'),
+          ),
+    ];
+  }
+
+  Widget _hostedStatusPill() {
+    final count = _candidates.length;
+    final message = _riderError != null
+        ? _riderError!
+        : _loadingRiders
+            ? 'Refreshing demo riders…'
+            : count == 1
+                ? '1 demo rider online · simulated positions'
+                : '$count demo riders online · simulated positions';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.panel.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _riderError == null ? AppColors.border : AppColors.danger,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _riderError == null
+                ? Icons.science_outlined
+                : Icons.cloud_off_outlined,
+            size: 16,
+            color: _riderError == null ? AppColors.primary : AppColors.danger,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
             ),
           ),
         ],

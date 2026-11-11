@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
+import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
 import 'pasuyo_task_screen.dart';
 
@@ -72,6 +76,34 @@ class _ActivityScreenState extends State<ActivityScreen> {
       };
 
   Widget _rideList(AppState state) {
+    if (state.usesHostedIdentity) {
+      // A hosted build lists the database's terminal rides, newest first.
+      return RepositoryView<List<RideRecord>>(
+        slot: DomainSlot.passengerRideHistory,
+        loading: const Center(child: CircularProgressIndicator()),
+        empty: (_) => const Center(
+            child:
+                Text('No rides yet', style: TextStyle(color: AppColors.muted))),
+        failure: (_, failure) => Center(
+            child: Text(failure.message,
+                style: const TextStyle(color: AppColors.muted))),
+        data: (context, records) {
+          if (records.isEmpty) {
+            return const Center(
+                child: Text('No rides yet',
+                    style: TextStyle(color: AppColors.muted)));
+          }
+          return ListView.separated(
+            padding:
+                EdgeInsets.fromLTRB(18, 10, 18, widget.embedded ? 90 : 24),
+            itemCount: records.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, i) =>
+                _rideCard(rideHistoryFromRow(records[i])),
+          );
+        },
+      );
+    }
     final live = state.liveRideRequest;
     final rides = state.rideHistory;
     if (live == null && rides.isEmpty) {
@@ -156,59 +188,92 @@ class _ActivityScreenState extends State<ActivityScreen> {
   }
 
   Widget _rentalList(AppState state) {
-    final rentals = state.rentalHistory;
-    if (rentals.isEmpty) {
-      return const Center(
-          child:
-              Text('No rentals yet', style: TextStyle(color: AppColors.muted)));
+    if (state.usesHostedIdentity) {
+      return RepositoryView<List<RentalRecord>>(
+        slot: DomainSlot.passengerRentalBookings,
+        loading: const Center(child: CircularProgressIndicator()),
+        empty: (_) => _empty('No rentals yet'),
+        failure: (_, failure) => Center(
+            child: Text(failure.message,
+                style: const TextStyle(color: AppColors.muted))),
+        data: (context, records) {
+          if (records.isEmpty) return _empty('No rentals yet');
+          return ListView.separated(
+            padding:
+                EdgeInsets.fromLTRB(18, 10, 18, widget.embedded ? 90 : 24),
+            itemCount: records.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, i) =>
+                _rentalCard(rentalHistoryFromRecord(records[i])),
+          );
+        },
+      );
     }
+    final rentals = state.rentalHistory;
+    if (rentals.isEmpty) return _empty('No rentals yet');
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(18, 10, 18, widget.embedded ? 90 : 24),
       itemCount: rentals.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, i) {
-        final r = rentals[i];
-        return SbTintedCard(
-          tone: SbTone.rent,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      itemBuilder: (context, i) => _rentalCard(rentals[i]),
+    );
+  }
+
+  Widget _rentalCard(RentalHistoryItem r) {
+    return SbTintedCard(
+      tone: SbTone.rent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(r.vehicleName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 13)),
-                  ),
-                  SbTag(r.status, secondary: true),
-                ],
+              Expanded(
+                child: Text(r.vehicleName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 13)),
               ),
-              const SizedBox(height: 6),
-              Text('Owner: ${r.ownerName}',
-                  style:
-                      const TextStyle(color: AppColors.muted, fontSize: 11.5)),
-              const SizedBox(height: 2),
-              Text('${r.startDate} → ${r.endDate}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-              const SizedBox(height: 8),
-              Text('${Money.format(r.totalFare)} total',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primaryLight)),
+              SbTag(r.status, secondary: true),
             ],
           ),
-        );
-      },
+          const SizedBox(height: 6),
+          Text('Owner: ${r.ownerName}',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          const SizedBox(height: 2),
+          Text('${r.startDate} → ${r.endDate}',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          const SizedBox(height: 8),
+          Text('${Money.format(r.totalFare)} total',
+              style: const TextStyle(
+                  fontWeight: FontWeight.w800, color: AppColors.primaryLight)),
+        ],
+      ),
     );
   }
 
   Widget _pasuyoList(AppState state) {
-    final orders = state.myPasuyoOrders;
-    if (orders.isEmpty) {
-      return const Center(
-          child:
-              Text('No errands yet', style: TextStyle(color: AppColors.muted)));
+    if (state.usesHostedIdentity) {
+      return RepositoryView<List<ServiceRequestRecord>>(
+        slot: DomainSlot.customerErrands,
+        loading: const Center(child: CircularProgressIndicator()),
+        empty: (_) => _empty('No errands yet'),
+        failure: (_, failure) => Center(
+            child: Text(failure.message,
+                style: const TextStyle(color: AppColors.muted))),
+        data: (context, records) {
+          if (records.isEmpty) return _empty('No errands yet');
+          return ListView.separated(
+            padding:
+                EdgeInsets.fromLTRB(18, 10, 18, widget.embedded ? 90 : 24),
+            itemCount: records.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, i) =>
+                _pasuyoCard(context, pasuyoTaskFromRecord(records[i])),
+          );
+        },
+      );
     }
+    final orders = state.myPasuyoOrders;
+    if (orders.isEmpty) return _empty('No errands yet');
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(18, 10, 18, widget.embedded ? 90 : 24),
       itemCount: orders.length,
@@ -216,6 +281,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
       itemBuilder: (context, i) => _pasuyoCard(context, orders[i]),
     );
   }
+
+  Widget _empty(String message) => Center(
+      child: Text(message, style: const TextStyle(color: AppColors.muted)));
 
   Widget _pasuyoCard(BuildContext context, PasuyoTask t) {
     final done = t.status.isTerminal;

@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../repositories/backend_rows.dart';
+import '../repositories/repository_failure.dart';
 import '../repositories/repository_mappers.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
 import '../state/domain_cache.dart';
+import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
@@ -13,6 +17,7 @@ import '../widgets/pasuyo_stepper.dart';
 import '../widgets/repository_states.dart';
 import '../widgets/ride_request_card.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/surgo_notice.dart';
 import 'notifications_screen.dart';
 import 'pasuyo_task_screen.dart';
 
@@ -20,9 +25,38 @@ import 'pasuyo_task_screen.dart';
 /// [RiderShell]) this renders without its own Scaffold/bottom nav — the
 /// shell supplies those and handles the sliding Home/Trips/Earnings/Profile
 /// tab transitions.
-class RiderHomeScreen extends StatelessWidget {
+class RiderHomeScreen extends StatefulWidget {
   final bool embedded;
   const RiderHomeScreen({super.key, this.embedded = true});
+
+  @override
+  State<RiderHomeScreen> createState() => _RiderHomeScreenState();
+}
+
+class _RiderHomeScreenState extends State<RiderHomeScreen> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Requests are assigned from the passenger side, so the rider's inbox has
+    // to be re-read while this screen is open. Fifteen seconds keeps a demo
+    // assignment visible without hammering the database.
+    _refreshTimer =
+        Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _refresh() {
+    final state = AppState.instance;
+    if (!state.usesHostedIdentity || !state.isSignedIn) return;
+    unawaited(state.refreshRiderWorkspace().catchError((Object _) {}));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,113 +121,38 @@ class RiderHomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            SbTintedCard(
-              tone: state.riderOnline ? SbTone.success : SbTone.neutral,
-              child: Row(
+            _onlineCard(context, state),
+            const SizedBox(height: 14),
+            if (state.usesHostedIdentity)
+              _hostedStats()
+            else
+              Row(
                 children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: state.riderOnline
-                          ? AppColors.secondary
-                          : AppColors.muted2,
-                      shape: BoxShape.circle,
-                      boxShadow: state.riderOnline
-                          ? [
-                              const BoxShadow(
-                                  color: AppColors.secondarySoft,
-                                  blurRadius: 0,
-                                  spreadRadius: 3)
-                            ]
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                            state.riderOnline
-                                ? "You're Online"
-                                : "You're Offline",
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 13)),
-                        const Text('Visible for new ride requests',
-                            style: TextStyle(
-                                color: AppColors.muted, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: state.riderOnline,
-                    activeColor: Colors.white,
-                    activeTrackColor: AppColors.secondary,
-                    inactiveTrackColor: AppColors.panel2,
-                    onChanged: (_) => state.toggleRiderOnline(),
-                  ),
+                      child: _statBox(
+                          Money.format(state.earningsToday), 'Earnings')),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _statBox(
+                          '${state.riderTrips.where((t) => t.status == 'Completed').length}',
+                          'Trips')),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _statBox(
+                          Money.format(state.earningsWeek), 'This Week')),
                 ],
               ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                    child: _statBox(
-                        Money.format(state.earningsToday), 'Earnings')),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: _statBox(
-                        '${state.riderTrips.where((t) => t.status == 'Completed').length}',
-                        'Trips')),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: _statBox(
-                        Money.format(state.earningsWeek), 'This Week')),
-              ],
-            ),
             const SizedBox(height: 18),
             if (state.activeRide != null)
               SbActiveRideBanner(ride: state.activeRide!),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Incoming Requests',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
-                SbTag('${state.pendingRequests.length} New', secondary: true),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (!state.riderOnline)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text(
-                  "You're offline — go online to receive ride requests.",
-                  style: TextStyle(color: AppColors.muted, fontSize: 12.5),
-                ),
-              )
-            else if (state.pendingRequests.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('No pending requests right now.',
-                    style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
-              )
-            else
-              ...state.pendingRequests.map(
-                (r) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: SbRideRequestCard(request: r),
-                ),
-              ),
+            _incomingSection(context, state),
             _pasuyoSection(context, state),
           ],
         );
       },
     );
 
-    if (embedded) return SafeArea(bottom: false, child: content);
+    if (widget.embedded) return SafeArea(bottom: false, child: content);
 
     return PopScope(
       canPop: false,
@@ -202,6 +161,271 @@ class RiderHomeScreen extends StatelessWidget {
             automaticallyImplyLeading: false, title: const Text('Rider Mode')),
         body: content,
       ),
+    );
+  }
+
+  /// The online switch. A hosted build reads the presence row from Postgres;
+  /// a seeded build keeps the in-memory flag the prototype has always used.
+  Widget _onlineCard(BuildContext context, AppState state) {
+    if (!state.usesHostedIdentity) {
+      return _presenceCard(
+        online: state.riderOnline,
+        subtitle: 'Visible for new ride requests',
+        onChanged: (_) => state.toggleRiderOnline(),
+      );
+    }
+    return RepositoryView<RiderPresenceRecord>(
+      slot: DomainSlot.riderPresence,
+      loading: const SbListLoading(label: 'Loading your online status…'),
+      empty: (_) => _presenceCard(
+        online: false,
+        subtitle: 'Go online to receive demo ride requests',
+        onChanged: (value) => _setOnline(context, state, value),
+      ),
+      failure: (_, failure) => _presenceCard(
+        online: false,
+        subtitle: failure.message,
+        onChanged: (value) => _setOnline(context, state, value),
+      ),
+      data: (context, presence) => _presenceCard(
+        online: presence.isOnline,
+        subtitle: presence.isOnline
+            ? (presence.isSimulated
+                ? 'Online · simulated demo position'
+                : 'Visible for new ride requests')
+            : 'You are hidden from passengers',
+        onChanged: (value) => _setOnline(context, state, value),
+      ),
+    );
+  }
+
+  Widget _presenceCard({
+    required bool online,
+    required String subtitle,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return SbTintedCard(
+      tone: online ? SbTone.success : SbTone.neutral,
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: online ? AppColors.secondary : AppColors.muted2,
+              shape: BoxShape.circle,
+              boxShadow: online
+                  ? [
+                      const BoxShadow(
+                          color: AppColors.secondarySoft,
+                          blurRadius: 0,
+                          spreadRadius: 3)
+                    ]
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  online ? "You're Online" : "You're Offline",
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                Text(subtitle,
+                    style: const TextStyle(
+                        color: AppColors.muted, fontSize: 11)),
+              ],
+            ),
+          ),
+          Switch(
+            value: online,
+            activeColor: Colors.white,
+            activeTrackColor: AppColors.secondary,
+            inactiveTrackColor: AppColors.panel2,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setOnline(
+    BuildContext context,
+    AppState state,
+    bool online,
+  ) async {
+    try {
+      await state.setHostedRiderOnline(online);
+    } on RepositoryFailure catch (failure) {
+      if (!context.mounted) return;
+      SurgoNotice.show(
+        context,
+        failure.message,
+        tone: SbNoticeTone.warning,
+        title: 'Online status not changed',
+      );
+    }
+  }
+
+  Widget _incomingSection(BuildContext context, AppState state) {
+    if (!state.usesHostedIdentity) return _mockIncoming(state);
+    return RepositoryView<List<RideRecord>>(
+      slot: DomainSlot.riderIncomingRides,
+      loading: const SbListLoading(label: 'Loading ride requests…'),
+      empty: (_) =>
+          _incomingList(state, const [], const [], showOfflineHint: false),
+      failure: (_, failure) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _incomingHeader(0),
+          const SizedBox(height: 10),
+          Text(failure.message,
+              style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+        ],
+      ),
+      data: (context, records) {
+        final pending = [
+          for (final record in records)
+            if (record.status == RideStatus.awaitingAcceptance) record,
+        ];
+        final active = [
+          for (final record in records)
+            if (record.status == RideStatus.accepted ||
+                record.status == RideStatus.headingToPickup ||
+                record.status == RideStatus.arrived ||
+                record.status == RideStatus.inProgress)
+              record,
+        ];
+        return _incomingList(state, pending, active, showOfflineHint: false);
+      },
+    );
+  }
+
+  Widget _incomingList(
+    AppState state,
+    List<RideRecord> pending,
+    List<RideRecord> active, {
+    bool showOfflineHint = true,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _incomingHeader(pending.length),
+        const SizedBox(height: 10),
+        if (showOfflineHint && !state.riderOnline)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              "You're offline — go online to receive ride requests.",
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
+          )
+        else if (pending.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No pending requests right now.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          )
+        else
+          for (final record in pending)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Builder(builder: (context) {
+                final request = rideRequestFromRecord(record);
+                return SbRideRequestCard(
+                  request: request,
+                  onRespond: (accepted) => state.respondToHostedRequest(
+                    request,
+                    accepted: accepted,
+                  ),
+                );
+              }),
+            ),
+        if (active.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          const Text('Active trip',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          const SizedBox(height: 8),
+          for (final record in active)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SbCard(
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline,
+                        color: AppColors.secondary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record.passengerName == null
+                                ? 'Accepted ride'
+                                : '${record.passengerName} · ${record.status.label}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 12.5),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${record.pickupAddress} → ${record.dropoffAddress}',
+                            style: const TextStyle(
+                                color: AppColors.muted, fontSize: 11.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  Widget _incomingHeader(int count) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Incoming Requests',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+        SbTag('$count New', secondary: true),
+      ],
+    );
+  }
+
+  Widget _mockIncoming(AppState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _incomingHeader(state.pendingRequests.length),
+        const SizedBox(height: 10),
+        if (!state.riderOnline)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              "You're offline — go online to receive ride requests.",
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
+          )
+        else if (state.pendingRequests.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No pending requests right now.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          )
+        else
+          ...state.pendingRequests.map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: SbRideRequestCard(request: r),
+            ),
+          ),
+      ],
     );
   }
 
@@ -271,6 +495,7 @@ class RiderHomeScreen extends StatelessWidget {
   /// under the incoming ride requests. An active task takes over the list —
   /// finishing an errand in progress matters more than chasing a new one.
   Widget _pasuyoSection(BuildContext context, AppState state) {
+    if (state.usesHostedIdentity) return _hostedPasuyoSection(context, state);
     final active = state.activePasuyoTask;
     final nearby = state.nearbyPasuyoTasks;
     // The feed is gated on capabilities, so an empty list is ambiguous: it can
@@ -319,6 +544,141 @@ class RiderHomeScreen extends StatelessWidget {
     );
   }
 
+  /// Hosted stat row: money comes from the earner's wallet ledger and trips
+  /// from the rides actually assigned to this account.
+  Widget _hostedStats() {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+    int earnedSince(List<WalletEntryRecord> entries, DateTime from) => entries
+        .where((e) =>
+            e.isCredit && e.createdAt != null && !e.createdAt!.isBefore(from))
+        .fold(0, (sum, e) => sum + e.amountCentavos);
+
+    return Row(
+      children: [
+        Expanded(
+          child: RepositoryInline<List<WalletEntryRecord>>(
+            slot: DomainSlot.earnerWalletEntries,
+            placeholder: _statBox('—', 'Earnings'),
+            data: (context, entries) =>
+                _statBox(Money.format(earnedSince(entries, todayStart)), 'Earnings'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RepositoryInline<List<RideRecord>>(
+            slot: DomainSlot.riderIncomingRides,
+            placeholder: _statBox('—', 'Trips'),
+            data: (context, rides) => _statBox(
+                '${rides.where((r) => r.status == RideStatus.completed).length}',
+                'Trips'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RepositoryInline<List<WalletEntryRecord>>(
+            slot: DomainSlot.earnerWalletEntries,
+            placeholder: _statBox('—', 'This Week'),
+            data: (context, entries) =>
+                _statBox(Money.format(earnedSince(entries, weekStart)), 'This Week'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Hosted Pasuyo: the helper's claimed errands come from the provider slot
+  /// and the unclaimed feed from the open slot. Both are RLS-filtered reads,
+  /// so an account without errand capability simply sees an empty feed.
+  Widget _hostedPasuyoSection(BuildContext context, AppState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 22),
+        RepositoryView<List<ServiceRequestRecord>>(
+          slot: DomainSlot.providerErrands,
+          loading: const SizedBox.shrink(),
+          empty: (_) => const SizedBox.shrink(),
+          failure: (_, failure) => Text(failure.message,
+              style:
+                  const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          data: (context, records) {
+            final active = [
+              for (final record in records)
+                if (record.status.isActive) pasuyoTaskFromRecord(record),
+            ];
+            if (active.isEmpty) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final task in active)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _ActivePasuyoCard(task: task, state: state),
+                  ),
+              ],
+            );
+          },
+        ),
+        RepositoryView<List<ServiceRequestRecord>>(
+          slot: DomainSlot.openErrands,
+          loading: const SbListLoading(label: 'Loading nearby errands…'),
+          empty: (_) => _openPasuyoList(const []),
+          failure: (_, failure) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _pasuyoHeader(0),
+              const SizedBox(height: 10),
+              Text(failure.message,
+                  style: const TextStyle(
+                      color: AppColors.muted, fontSize: 12.5)),
+            ],
+          ),
+          data: (context, records) {
+            final open = [
+              for (final record in records)
+                if (record.status.isOpen) pasuyoTaskFromRecord(record),
+            ];
+            return _openPasuyoList(open);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _openPasuyoList(List<PasuyoTask> open) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _pasuyoHeader(open.length),
+        const SizedBox(height: 10),
+        if (open.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No open errands nearby right now.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          )
+        else
+          ...open.map((task) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _NearbyPasuyoCard(task: task, state: AppState.instance),
+              )),
+      ],
+    );
+  }
+
+  Widget _pasuyoHeader(int count) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text('Nearby Pasuyo',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+        SbTag('$count Open', secondary: true),
+      ],
+    );
+  }
+
   Widget _statBox(String value, String label) {
     return SbTintedCard(
       tone: SbTone.wallet,
@@ -348,7 +708,15 @@ class _NearbyPasuyoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final b = FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
+    // A hosted errand carries its own fixed platform fee and pays the helper
+    // the fee whole; a seeded errand still uses the legacy percentage split.
+    final b = task.platformFee > 0
+        ? FeeBreakdown.fixedAddon(
+            service: ServiceType.pasuyo,
+            providerFare: task.budget,
+            platformFee: task.platformFee,
+          )
+        : FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
     // Tapping anywhere on the card opens the errand. The whole card is the
     // affordance rather than a small button inside it, so the feed reads as a
     // list and the details screen owns every action.

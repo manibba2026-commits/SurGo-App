@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
 import '../widgets/pasuyo_stepper.dart';
+import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
 import 'pasuyo_post_screen.dart';
 import 'pasuyo_task_screen.dart';
@@ -20,59 +24,77 @@ class PasuyoScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    if (state.usesHostedIdentity) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Pasuyo')),
+        body: RepositoryView<List<ServiceRequestRecord>>(
+          slot: DomainSlot.customerErrands,
+          data: (context, records) {
+            final orders = [for (final record in records) pasuyoTaskFromRecord(record)];
+            return _buildBody(context, orders);
+          },
+          empty: (_) => _buildBody(context, const []),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Pasuyo')),
       body: ListenableBuilder(
         listenable: state,
-        builder: (context, _) {
-          final orders = state.myPasuyoOrders;
-          final active = orders.where((t) => t.isActive).toList();
-          final done = orders.where((t) => !t.isActive).toList();
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
-            children: [
-              SbPrimaryButton(
-                label: 'Post a Pasuyo',
-                icon: Icons.add_rounded,
-                background: AppColors.yellow,
-                onAccent: true,
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const PasuyoPostScreen()),
-                ),
-              ),
-              const SizedBox(height: 22),
-              const SbSectionHeader(title: 'In progress'),
-              const SizedBox(height: 10),
-              if (active.isEmpty)
-                _empty('No errands in progress', 'Post one and a helper nearby will pick it up.')
-              else
-                ...active.map((t) => _TaskRow(
-                      task: t,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => PasuyoTaskScreen(taskId: t.id)),
-                      ),
-                    )),
-              if (done.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                const SbSectionHeader(title: 'History'),
-                const SizedBox(height: 10),
-                ...done.map((t) => _TaskRow(
-                      task: t,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => PasuyoTaskScreen(taskId: t.id)),
-                      ),
-                    )),
-              ],
-            ],
-          );
-        },
+        builder: (context, _) => _buildBody(context, state.myPasuyoOrders),
       ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, List<PasuyoTask> orders) {
+    final active = orders.where((t) => t.isActive).toList();
+    final done = orders.where((t) => !t.isActive).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+      children: [
+        SbPrimaryButton(
+          label: 'Post a Pasuyo',
+          icon: Icons.add_rounded,
+          background: AppColors.yellow,
+          onAccent: true,
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PasuyoPostScreen()),
+            );
+            await AppState.instance.refreshHostedErrands();
+          },
+        ),
+        const SizedBox(height: 22),
+        const SbSectionHeader(title: 'In progress'),
+        const SizedBox(height: 10),
+        if (active.isEmpty)
+          _empty('No errands in progress',
+              'Post one and a helper nearby will pick it up.')
+        else
+          ...active.map((t) => _TaskRow(
+                task: t,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => PasuyoTaskScreen(taskId: t.id)),
+                ),
+              )),
+        if (done.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          const SbSectionHeader(title: 'History'),
+          const SizedBox(height: 10),
+          ...done.map((t) => _TaskRow(
+                task: t,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => PasuyoTaskScreen(taskId: t.id)),
+                ),
+              )),
+        ],
+      ],
     );
   }
 
@@ -104,7 +126,11 @@ class _TaskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final b = FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
+    // A hosted errand carries the fixed fee the database charged; a seeded one
+    // is still priced by the legacy percentage rule.
+    final fee = task.platformFee > 0
+        ? task.platformFee
+        : FeeCalculator.surgoShare(ServiceType.pasuyo, task.budget);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: SbTintedCard(
@@ -151,7 +177,7 @@ class _TaskRow extends StatelessWidget {
                     Text(Money.format(task.budget),
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13)),
-                    Text('fee ${b.surgoKeepsLabel}',
+                    Text('fee ${Money.format(fee)}',
                         style: const TextStyle(
                             color: AppColors.muted2, fontSize: 9.5)),
                   ],

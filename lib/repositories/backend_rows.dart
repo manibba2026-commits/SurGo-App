@@ -104,6 +104,19 @@ RideStatus rideStatusFromDb(String token) => switch (token) {
       _ => throw RepositoryFailure.invalidData('Unknown ride status "$token".'),
     };
 
+/// The server's spelling of a rental status; the enum's Dart name is already
+/// the wire value except for `awaitingOwner`.
+String rentalStatusToDb(RentalStatus status) => switch (status) {
+      RentalStatus.awaitingOwner => 'awaiting_owner',
+      RentalStatus.requested => 'requested',
+      RentalStatus.accepted => 'accepted',
+      RentalStatus.active => 'active',
+      RentalStatus.returned => 'returned',
+      RentalStatus.completed => 'completed',
+      RentalStatus.declined => 'declined',
+      RentalStatus.cancelled => 'cancelled',
+    };
+
 RentalStatus rentalStatusFromDb(String token) => switch (token) {
       'requested' => RentalStatus.requested,
       'awaiting_owner' => RentalStatus.awaitingOwner,
@@ -115,6 +128,20 @@ RentalStatus rentalStatusFromDb(String token) => switch (token) {
       'cancelled' => RentalStatus.cancelled,
       _ =>
         throw RepositoryFailure.invalidData('Unknown rental status "$token".'),
+    };
+
+/// The server's spelling of an errand status; the enum's Dart name is already
+/// the wire value except for the camel-cased middle steps.
+String pasuyoStatusToDb(PasuyoStatus status) => switch (status) {
+      PasuyoStatus.available => 'available',
+      PasuyoStatus.accepted => 'accepted',
+      PasuyoStatus.goingToPickup => 'going_to_pickup',
+      PasuyoStatus.atPickup => 'at_pickup',
+      PasuyoStatus.pickedUp => 'picked_up',
+      PasuyoStatus.delivering => 'delivering',
+      PasuyoStatus.atCustomer => 'at_customer',
+      PasuyoStatus.delivered => 'delivered',
+      PasuyoStatus.cancelled => 'cancelled',
     };
 
 PasuyoStatus pasuyoStatusFromDb(String token) => switch (token) {
@@ -420,6 +447,7 @@ class VehicleRecord {
     this.rating = 5,
     this.totalRentals = 0,
     this.ownerName,
+    this.serviceAreaName,
   });
 
   final String id;
@@ -447,6 +475,9 @@ class VehicleRecord {
   /// listings cannot see the owner's name and no placeholder is substituted.
   final String? ownerName;
 
+  /// The service area's display name, when the read joined it.
+  final String? serviceAreaName;
+
   /// A listing the rental catalogue may show. `rented` is a mock-only token:
   /// the seed marks a listed vehicle that is out on rental in this column, while
   /// the schema leaves that to `rental_bookings`. Both are listings.
@@ -467,6 +498,7 @@ class VehicleRecord {
 
   factory VehicleRecord.fromRow(Map<String, dynamic> row) {
     final owner = embeddedRow(row, 'owner');
+    final serviceArea = embeddedRow(row, 'service_area');
     return VehicleRecord(
       id: requireText(row, 'id'),
       ownerProfileId: requireText(row, 'owner_profile_id'),
@@ -486,6 +518,8 @@ class VehicleRecord {
       rating: optionalDouble(row, 'rating') ?? 5,
       totalRentals: optionalInt(row, 'total_rentals'),
       ownerName: owner == null ? null : optionalText(owner, 'full_name'),
+      serviceAreaName:
+          serviceArea == null ? null : optionalText(serviceArea, 'name'),
     );
   }
 }
@@ -754,6 +788,10 @@ class RentalRecord {
     this.cancellationReason,
     this.vehicleName,
     this.vehiclePlateNumber,
+    this.vehicleType,
+    this.vehicleCategory,
+    this.renterName,
+    this.ownerName,
   });
 
   final String id;
@@ -797,9 +835,19 @@ class RentalRecord {
 
   final String? vehicleName;
   final String? vehiclePlateNumber;
+  final String? vehicleType;
+  final String? vehicleCategory;
+
+  /// Counterparty names are only filled when the profile row is visible under
+  /// RLS. Renters cannot read an owner's profile and owners cannot read a
+  /// renter's, so a null here is the honest answer rather than a placeholder.
+  final String? renterName;
+  final String? ownerName;
 
   factory RentalRecord.fromRow(Map<String, dynamic> row) {
     final vehicle = embeddedRow(row, 'vehicle');
+    final renter = embeddedRow(row, 'renter');
+    final owner = embeddedRow(row, 'owner');
     return RentalRecord(
       id: requireText(row, 'id'),
       renterId: requireText(row, 'renter_id'),
@@ -833,6 +881,11 @@ class RentalRecord {
       vehicleName: vehicle == null ? null : optionalText(vehicle, 'name'),
       vehiclePlateNumber:
           vehicle == null ? null : optionalText(vehicle, 'plate_number'),
+      vehicleType:
+          vehicle == null ? null : optionalText(vehicle, 'vehicle_type'),
+      vehicleCategory: vehicle == null ? null : optionalText(vehicle, 'category'),
+      renterName: renter == null ? null : optionalText(renter, 'full_name'),
+      ownerName: owner == null ? null : optionalText(owner, 'full_name'),
     );
   }
 }
@@ -916,6 +969,9 @@ class ServiceRequestRecord {
     this.items = const [],
     this.customerName,
     this.providerName,
+    this.bookedForSomeone = false,
+    this.recipientName,
+    this.recipientPhone,
   });
 
   final String id;
@@ -957,6 +1013,13 @@ class ServiceRequestRecord {
 
   final String? customerName;
   final String? providerName;
+
+  /// True when the customer ordered the errand for another person. The
+  /// recipient is the person the helper hands the goods to, not the account
+  /// that pays for them.
+  final bool bookedForSomeone;
+  final String? recipientName;
+  final String? recipientPhone;
 
   bool get isOpen => status.isOpen;
   bool get isActive => status.isActive;
@@ -1009,6 +1072,9 @@ class ServiceRequestRecord {
           customer == null ? null : optionalText(customer, 'full_name'),
       providerName:
           provider == null ? null : optionalText(provider, 'full_name'),
+      bookedForSomeone: optionalBool(row, 'booked_for_someone'),
+      recipientName: optionalText(row, 'recipient_name'),
+      recipientPhone: optionalText(row, 'recipient_phone'),
     );
   }
 }
@@ -1501,6 +1567,126 @@ class AttachmentRecord {
         label: optionalText(row, 'label'),
         uploadedBy: requireText(row, 'uploaded_by'),
         createdAt: optionalTime(row, 'created_at'),
+        updatedAt: optionalTime(row, 'updated_at'),
+      );
+}
+
+// ---------------------------------------------------------------------------
+// Rider presence and discovery
+// ---------------------------------------------------------------------------
+
+/// One online, available rider returned by the discovery function.
+///
+/// The function returns only the fields a passenger needs to choose a rider;
+/// contact details and account columns stay server-side.
+class RiderCandidateRecord {
+  const RiderCandidateRecord({
+    required this.profileId,
+    required this.fullName,
+    this.avatarPath,
+    this.rating = 5,
+    this.totalTrips = 0,
+    this.vehicleType,
+    this.vehicleLabel,
+    this.vehiclePlate,
+    this.barangayId,
+    this.barangayName,
+    this.latitude,
+    this.longitude,
+    this.headingDegrees,
+    this.isSimulated = false,
+    this.distanceKm,
+    this.updatedAt,
+  });
+
+  final String profileId;
+  final String fullName;
+  final String? avatarPath;
+  final double rating;
+  final int totalTrips;
+  final String? vehicleType;
+  final String? vehicleLabel;
+  final String? vehiclePlate;
+  final String? barangayId;
+  final String? barangayName;
+  final double? latitude;
+  final double? longitude;
+  final double? headingDegrees;
+  final bool isSimulated;
+  final double? distanceKm;
+  final DateTime? updatedAt;
+
+  bool get hasPosition => latitude != null && longitude != null;
+
+  factory RiderCandidateRecord.fromRow(Map<String, dynamic> row) =>
+      RiderCandidateRecord(
+        profileId: requireText(row, 'profile_id'),
+        fullName: requireText(row, 'full_name'),
+        avatarPath: optionalText(row, 'avatar_path'),
+        rating: optionalDouble(row, 'rating') ?? 5,
+        totalTrips: optionalInt(row, 'total_trips'),
+        vehicleType: optionalText(row, 'vehicle_type'),
+        vehicleLabel: optionalText(row, 'vehicle_label'),
+        vehiclePlate: optionalText(row, 'vehicle_plate'),
+        barangayId: optionalText(row, 'barangay_id'),
+        barangayName: optionalText(row, 'barangay_name'),
+        latitude: optionalDouble(row, 'latitude'),
+        longitude: optionalDouble(row, 'longitude'),
+        headingDegrees: optionalDouble(row, 'heading_degrees'),
+        isSimulated: optionalBool(row, 'is_simulated'),
+        distanceKm: optionalDouble(row, 'distance_km'),
+        updatedAt: optionalTime(row, 'updated_at'),
+      );
+}
+
+/// The signed-in rider's own online/available state and last position.
+class RiderPresenceRecord {
+  const RiderPresenceRecord({
+    required this.profileId,
+    required this.isOnline,
+    required this.isAvailable,
+    this.latitude,
+    this.longitude,
+    this.headingDegrees,
+    this.barangayId,
+    this.vehicleType,
+    this.vehicleLabel,
+    this.vehiclePlate,
+    this.isSimulated = false,
+    this.source = 'app',
+    this.updatedAt,
+  });
+
+  final String profileId;
+  final bool isOnline;
+  final bool isAvailable;
+  final double? latitude;
+  final double? longitude;
+  final double? headingDegrees;
+  final String? barangayId;
+  final String? vehicleType;
+  final String? vehicleLabel;
+  final String? vehiclePlate;
+  final bool isSimulated;
+  final String source;
+  final DateTime? updatedAt;
+
+  bool get hasPosition => latitude != null && longitude != null;
+
+  factory RiderPresenceRecord.fromRow(Map<String, dynamic> row) =>
+      RiderPresenceRecord(
+        profileId: requireText(row, 'profile_id'),
+        isOnline: optionalBool(row, 'is_online'),
+        isAvailable: optionalBool(row, 'is_available'),
+        latitude: optionalDouble(row, 'latitude'),
+        longitude: optionalDouble(row, 'longitude'),
+        headingDegrees: optionalDouble(row, 'heading_degrees'),
+        barangayId: optionalText(row, 'barangay_id'),
+        vehicleType: optionalText(row, 'vehicle_type'),
+        vehicleLabel: optionalText(row, 'vehicle_label'),
+        vehiclePlate: optionalText(row, 'vehicle_plate'),
+        isSimulated: optionalBool(row, 'is_simulated'),
+        source: optionalText(row, 'source') ?? 'app',
         updatedAt: optionalTime(row, 'updated_at'),
       );
 }

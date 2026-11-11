@@ -10,6 +10,25 @@ class PaymentMethodsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // Cash-only live accounts have no stored methods; the seeded GCash card
+    // would otherwise read as a real saved payment method.
+    if (state.usesHostedIdentity) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Payment Methods')),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          children: const [
+            SbCard(
+              child: Text(
+                'Trips on a live account are paid in cash. Saved payment '
+                'methods aren\'t synced yet, so the demo list is hidden here.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Payment Methods')),
       body: ListenableBuilder(

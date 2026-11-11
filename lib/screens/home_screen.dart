@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../data/models.dart';
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
@@ -229,85 +230,58 @@ class _HomeContent extends StatelessWidget {
               );
             },
           ),
-          ListenableBuilder(
-            listenable: state,
-            builder: (context, _) {
-              final booking = state.activeRentalBooking;
-              if (booking == null) return const SizedBox.shrink();
-              final isPending = booking.status.isPending;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: SbTintedCard(
-                  tone: SbTone.rent,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ActiveRentalScreen()),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          SbToneIcon(
-                            tone: SbTone.rent,
-                            icon: booking.icon,
-                            size: 38,
-                            iconSize: 18,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(booking.vehicleName,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12.5)),
-                                Text('Owned by ${booking.ownerName}',
-                                    style: const TextStyle(
-                                        color: AppColors.muted, fontSize: 11)),
-                              ],
-                            ),
-                          ),
-                          SbTag(booking.status.shortLabel,
-                              secondary: !isPending),
-                        ],
+          if (state.usesHostedIdentity)
+            // The signed-in renter's own rental, read from Postgres. Only an
+            // unfinished booking is shown; a finished one belongs in history.
+            RepositoryView<List<RentalRecord>>(
+              slot: DomainSlot.passengerRentalBookings,
+              loading: const SizedBox.shrink(),
+              empty: (_) => const SizedBox.shrink(),
+              failure: (_, __) => const SizedBox.shrink(),
+              data: (context, records) {
+                final live = [
+                  for (final record in records)
+                    if (!record.status.isTerminal) record,
+                ];
+                if (live.isEmpty) return const SizedBox.shrink();
+                return _rentalCard(
+                    context, rentalBookingFromRecord(live.first));
+              },
+            )
+          else
+            ListenableBuilder(
+              listenable: state,
+              builder: (context, _) {
+                final booking = state.activeRentalBooking;
+                if (booking == null) return const SizedBox.shrink();
+                return _rentalCard(context, booking);
+              },
+            ),
+          if (state.usesHostedIdentity)
+            // The customer's own open errands; a delivered or cancelled one is
+            // history, not a live card.
+            RepositoryView<List<ServiceRequestRecord>>(
+              slot: DomainSlot.customerErrands,
+              loading: const SizedBox.shrink(),
+              empty: (_) => const SizedBox.shrink(),
+              failure: (_, __) => const SizedBox.shrink(),
+              data: (context, records) {
+                final live = [
+                  for (final record in records)
+                    if (!record.status.isTerminal) pasuyoTaskFromRecord(record),
+                ];
+                if (live.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  children: [
+                    for (final task in live)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _livePasuyoCard(context, task),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          if (isPending)
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(
-                                    AppColors.primaryLight),
-                              ),
-                            )
-                          else
-                            const Icon(Icons.check_circle,
-                                size: 14, color: AppColors.secondaryLight),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              isPending
-                                  ? 'Waiting for ${booking.ownerName} to approve your rental request…'
-                                  : 'Your rental is active — tap to view details.',
-                              style: const TextStyle(
-                                  color: AppColors.muted, fontSize: 11.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
+                  ],
+                );
+              },
+            ),
           const SizedBox(height: 4),
           SbTintedCard(
             tone: SbTone.brand,
@@ -367,6 +341,79 @@ class _HomeContent extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The renter's current rental, whether it came from the seed or Postgres.
+  Widget _rentalCard(BuildContext context, RentalBooking booking) {
+    final isPending = booking.status.isPending;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: SbTintedCard(
+        tone: SbTone.rent,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ActiveRentalScreen()),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SbToneIcon(
+                  tone: SbTone.rent,
+                  icon: booking.icon,
+                  size: 38,
+                  iconSize: 18,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(booking.vehicleName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 12.5)),
+                      Text('Owned by ${booking.ownerName}',
+                          style: const TextStyle(
+                              color: AppColors.muted, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                SbTag(booking.status.shortLabel, secondary: !isPending),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (isPending)
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation(AppColors.primaryLight),
+                    ),
+                  )
+                else
+                  const Icon(Icons.check_circle,
+                      size: 14, color: AppColors.secondaryLight),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isPending
+                        ? 'Waiting for ${booking.ownerName} to approve your rental request…'
+                        : 'Your rental is active — tap to view details.',
+                    style:
+                        const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

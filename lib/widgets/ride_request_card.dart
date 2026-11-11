@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../repositories/repository_failure.dart';
 import '../services/money.dart';
 import '../services/ride_pricing.dart';
 import '../state/app_state.dart';
@@ -18,7 +19,16 @@ import 'surgo_notice.dart';
 /// that opens a bottom sheet with a mock route map.
 class SbRideRequestCard extends StatefulWidget {
   final RideRequestItem request;
-  const SbRideRequestCard({super.key, required this.request});
+
+  /// Hosted builds pass their own accept/decline handler. A null handler keeps
+  /// the seeded in-memory flow the demo screens have always used.
+  final Future<void> Function(bool accepted)? onRespond;
+
+  const SbRideRequestCard({
+    super.key,
+    required this.request,
+    this.onRespond,
+  });
 
   @override
   State<SbRideRequestCard> createState() => _SbRideRequestCardState();
@@ -26,11 +36,11 @@ class SbRideRequestCard extends StatefulWidget {
 
 class _SbRideRequestCardState extends State<SbRideRequestCard> {
   bool expanded = false;
+  bool _responding = false;
 
   @override
   Widget build(BuildContext context) {
     final r = widget.request;
-    final state = AppState.instance;
     return SbCard(
       onTap: () => setState(() => expanded = !expanded),
       child: Column(
@@ -92,7 +102,9 @@ class _SbRideRequestCardState extends State<SbRideRequestCard> {
                     style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 9)),
-                    onPressed: () => state.respondToRequest(r, accepted: false),
+                    onPressed: _responding
+                        ? null
+                        : () => _respond(context, r, accepted: false),
                     child: const Text('Decline'),
                   ),
                   const SizedBox(width: 8),
@@ -102,15 +114,10 @@ class _SbRideRequestCardState extends State<SbRideRequestCard> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 9),
                     ),
-                    onPressed: () {
-                      state.respondToRequest(r, accepted: true);
-                      SurgoNotice.show(
-                        context,
-                        "Accepted ${r.passengerName}'s ride (simulated)",
-                        tone: SbNoticeTone.success,
-                      );
-                    },
-                    child: const Text('Accept'),
+                    onPressed: _responding
+                        ? null
+                        : () => _respond(context, r, accepted: true),
+                    child: Text(_responding ? 'Sending…' : 'Accept'),
                   ),
                 ],
               ),
@@ -119,6 +126,40 @@ class _SbRideRequestCardState extends State<SbRideRequestCard> {
         ],
       ),
     );
+  }
+
+  Future<void> _respond(
+    BuildContext context,
+    RideRequestItem r, {
+    required bool accepted,
+  }) async {
+    setState(() => _responding = true);
+    try {
+      final handler = widget.onRespond;
+      if (handler == null) {
+        AppState.instance.respondToRequest(r, accepted: accepted);
+      } else {
+        await handler(accepted);
+      }
+      if (!context.mounted) return;
+      SurgoNotice.show(
+        context,
+        accepted
+            ? "Accepted ${r.passengerName}'s ride"
+            : 'Declined ${r.passengerName}\'s ride',
+        tone: accepted ? SbNoticeTone.success : SbNoticeTone.warning,
+      );
+    } on RepositoryFailure catch (failure) {
+      if (!context.mounted) return;
+      SurgoNotice.show(
+        context,
+        failure.message,
+        tone: SbNoticeTone.warning,
+        title: 'Request not answered',
+      );
+    } finally {
+      if (mounted) setState(() => _responding = false);
+    }
   }
 
   Widget _routeLine(RideRequestItem r) {

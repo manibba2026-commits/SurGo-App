@@ -5,6 +5,27 @@ import '../theme/app_colors.dart';
 import 'common.dart';
 import 'repository_states.dart';
 
+/// A location chosen in the picker, with the ids a hosted write needs.
+///
+/// [label] is the same "Purok 3, San Isidro" text the legacy picker returns,
+/// so screens that only display the choice do not have to re-format it.
+class PickedLocation {
+  const PickedLocation({
+    required this.barangayId,
+    required this.barangayName,
+    this.purokId,
+    this.purokName,
+  });
+
+  final String barangayId;
+  final String barangayName;
+  final String? purokId;
+  final String? purokName;
+
+  String get label =>
+      purokName == null ? barangayName : '$purokName, $barangayName';
+}
+
 /// Opens a bottom sheet that lets the user choose a Barangay, then a Purok
 /// within it (the purok list only appears once a barangay is picked). Used
 /// wherever a rider needs to specify a pickup or destination inside Tandag
@@ -25,9 +46,28 @@ Future<String?> showLocationPicker(
   );
 }
 
+/// Same sheet, but returns the barangay and purok ids as well so a hosted
+/// request can store them. A hosted write cannot accept a bare label: the
+/// database needs the id to enforce the service area.
+Future<PickedLocation?> showHostedLocationPicker(
+  BuildContext context, {
+  required String title,
+}) {
+  return showModalBottomSheet<PickedLocation>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppColors.panel,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _LocationPickerSheet(title: title, structured: true),
+  );
+}
+
 class _LocationPickerSheet extends StatefulWidget {
   final String title;
-  const _LocationPickerSheet({required this.title});
+  final bool structured;
+  const _LocationPickerSheet({required this.title, this.structured = false});
 
   @override
   State<_LocationPickerSheet> createState() => _LocationPickerSheetState();
@@ -39,6 +79,7 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
   /// for the same barangay.
   String? _barangayId;
   String? _purok;
+  String? _purokId;
   String _query = '';
 
   @override
@@ -152,6 +193,7 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                   onTap: () => setState(() {
                     _barangayId = null;
                     _purok = null;
+                    _purokId = null;
                   }),
                 ),
                 const SizedBox(width: 10),
@@ -178,7 +220,10 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                   return SbCard(
                     padding: EdgeInsets.zero,
                     borderColor: selected ? AppColors.primary : null,
-                    onTap: () => setState(() => _purok = p.name),
+                    onTap: () => setState(() {
+                      _purok = p.name;
+                      _purokId = p.id;
+                    }),
                     child: Center(
                       child: Text(
                         p.name,
@@ -200,7 +245,17 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                   : 'Confirm · $_purok, ${barangay.name}',
               onPressed: _purok == null
                   ? null
-                  : () => Navigator.pop(context, '$_purok, ${barangay.name}'),
+                  : () => Navigator.pop(
+                        context,
+                        widget.structured
+                            ? PickedLocation(
+                                barangayId: barangay.id,
+                                barangayName: barangay.name,
+                                purokId: _purokId,
+                                purokName: _purok,
+                              )
+                            : '$_purok, ${barangay.name}',
+                      ),
             ),
           ],
         ],

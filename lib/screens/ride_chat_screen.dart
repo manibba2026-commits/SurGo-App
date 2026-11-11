@@ -50,6 +50,15 @@ class _RideChatScreenState extends State<RideChatScreen> {
   /// Decides whether the thread can be opened, and says why not if it cannot.
   void _evaluate() {
     final state = AppState.instance;
+    // Chat messages have no hosted table or RPC yet; a local thread here would
+    // show a conversation the other side never received.
+    if (state.usesHostedIdentity) {
+      _closedReason =
+          'In-app chat is not connected for live accounts yet. Call or text '
+          'your rider directly.';
+      setState(() {});
+      return;
+    }
     if (state.openRideChat() != null) {
       _scrollToEnd();
       return;
@@ -114,7 +123,7 @@ class _RideChatScreenState extends State<RideChatScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
-    final thread = state.rideChat;
+    final thread = state.usesHostedIdentity ? null : state.rideChat;
 
     if (thread == null) {
       return _closed(_closedReason ?? _reasonFor(state.chatAvailability));

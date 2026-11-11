@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
+import '../widgets/repository_states.dart';
 import 'wallet_screen.dart';
 
 class RiderEarningsScreen extends StatelessWidget {
@@ -17,6 +21,7 @@ class RiderEarningsScreen extends StatelessWidget {
     final body = ListenableBuilder(
       listenable: Listenable.merge([state, PlatformLedger.instance]),
       builder: (context, _) {
+        if (state.usesHostedIdentity) return _hostedBody(context, state);
         final dailyEarnings = state.dailyEarnings;
         final maxAmount = dailyEarnings.isEmpty
             ? 0
@@ -130,6 +135,143 @@ class RiderEarningsScreen extends StatelessWidget {
       );
     if (embedded) return SafeArea(bottom: false, child: body);
     return Scaffold(appBar: AppBar(title: const Text('Earnings')), body: body);
+  }
+
+  /// Hosted earnings: the wallet balance and ledger are the database's own
+  /// rows. Cash-out and top-up are not wired to a hosted function yet, so the
+  /// screen sends the reader to the wallet instead of simulating a payout.
+  Widget _hostedBody(BuildContext context, AppState state) {
+    final now = DateTime.now();
+    final weekStart =
+        DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    return ListView(
+      padding:
+          EdgeInsets.fromLTRB(18, embedded ? 0 : 12, 18, embedded ? 90 : 24),
+      children: [
+        if (embedded) const SbTabHeader(title: 'Earnings'),
+        Row(
+          children: [
+            Expanded(
+              child: RepositoryView<int>(
+                slot: DomainSlot.earnerWalletBalance,
+                loading: _statCard('—', 'Available'),
+                empty: (_) => _statCard(Money.format(0), 'Available'),
+                failure: (_, __) => _statCard('—', 'Available'),
+                data: (context, balance) =>
+                    _statCard(Money.format(balance), 'Available'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RepositoryView<List<WalletEntryRecord>>(
+                slot: DomainSlot.earnerWalletEntries,
+                loading: _statCard('—', 'This Week'),
+                empty: (_) => _statCard(Money.format(0), 'This Week'),
+                failure: (_, __) => _statCard('—', 'This Week'),
+                data: (context, entries) {
+                  final earned = entries
+                      .where((e) =>
+                          e.isCredit &&
+                          e.createdAt != null &&
+                          !e.createdAt!.isBefore(weekStart))
+                      .fold(0, (sum, e) => sum + e.amountCentavos);
+                  return _statCard(Money.format(earned), 'This Week');
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        SbCard(
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Where your earnings come from',
+                  style:
+                      TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+              SizedBox(height: 8),
+              Text(
+                'Completed rides and delivered errands credit the service transaction in the database. '
+                'Your ledger below is the record of those credits.',
+                style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text('Transaction History',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+        const SizedBox(height: 10),
+        RepositoryView<List<WalletEntryRecord>>(
+          slot: DomainSlot.earnerWalletEntries,
+          empty: (_) => const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No transactions yet',
+                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          ),
+          data: (context, entries) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final entry in entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SbCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.secondarySoft,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                              entry.isCredit
+                                  ? Icons.arrow_downward_rounded
+                                  : Icons.arrow_upward_rounded,
+                              size: 16,
+                              color: AppColors.secondaryLight),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(entry.description ?? entry.type,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12.5)),
+                              Text(displayTimestamp(entry.createdAt),
+                                  style: const TextStyle(
+                                      color: AppColors.muted, fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                        Text(
+                            '${entry.isCredit ? '+' : '-'}${Money.format(entry.amountCentavos)}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SbOutlineButton(
+          label: 'Open Wallet',
+          icon: Icons.account_balance_wallet,
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const WalletScreen(isRider: true)),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Earnings split by what earned them. A ride's fare is kept whole and the

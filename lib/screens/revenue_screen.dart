@@ -24,6 +24,46 @@ class RevenueScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // This screen reports the in-memory ledger, which a hosted build only ever
+    // seeds from demo history. Live platform fees, remittances and provider
+    // earnings belong to the Admin dashboard, so showing ledger numbers here
+    // would pass demo arithmetic off as real revenue.
+    if (AppState.instance.usesHostedIdentity) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Platform Revenue')),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+          children: [
+            SbCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.admin_panel_settings_outlined,
+                          size: 18, color: AppColors.yellow),
+                      const SizedBox(width: 8),
+                      const Text('Reviewed in the Admin dashboard',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 13.5)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Platform fees, remittances and provider earnings for live '
+                    'accounts are recorded in the database and reviewed in the '
+                    'Admin dashboard, where demo activity is reported '
+                    'separately. Your own wallet shows only the transactions '
+                    'that settled for your account.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Platform Revenue')),
       body: ListenableBuilder(

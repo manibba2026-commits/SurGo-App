@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/surgo_notice.dart';
 
 /// Shared notifications list. `isRider` picks which feed (passenger or rider)
 /// the notification repository reads for; both are the same read keyed by a
@@ -22,14 +23,24 @@ class NotificationsScreen extends StatelessWidget {
     final slot = isRider
         ? DomainSlot.earnerNotificationFeed
         : DomainSlot.passengerNotificationFeed;
+    // Read state lives in the seed; there is no hosted RPC for it yet, so the
+    // actions say that instead of flipping a local flag the database never saw.
+    final hosted = state.usesHostedIdentity;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
         actions: [
           TextButton(
-            onPressed: () => isRider
-                ? state.clearRiderNotifications()
-                : state.clearNotifications(),
+            onPressed: hosted
+                ? () => SurgoNotice.show(
+                      context,
+                      'Marking notifications read is not synced for live '
+                      'accounts yet.',
+                      tone: SbNoticeTone.info,
+                    )
+                : () => isRider
+                    ? state.clearRiderNotifications()
+                    : state.clearNotifications(),
             child: const Text('Mark all read',
                 style: TextStyle(color: AppColors.primaryLight, fontWeight: FontWeight.w700)),
           ),
@@ -44,18 +55,19 @@ class NotificationsScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
           itemCount: items.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, i) => _tile(state, items[i]),
+          itemBuilder: (context, i) =>
+              _tile(state, items[i], markRead: !hosted),
         ),
       ),
     );
   }
 
-  Widget _tile(AppState state, NotificationRecord n) {
+  Widget _tile(AppState state, NotificationRecord n, {required bool markRead}) {
     return SbTintedCard(
       tone: n.isRead ? SbTone.neutral : SbTone.notification,
       wash: !n.isRead,
       borderColor: n.isRead ? AppColors.border : SbTone.notification.border,
-      onTap: () => state.markNotificationReadById(n.id),
+      onTap: markRead ? () => state.markNotificationReadById(n.id) : null,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
+import '../repositories/repository_failure.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -9,8 +10,15 @@ import '../widgets/surfaces.dart';
 import '../widgets/surgo_map.dart';
 import '../widgets/surgo_notice.dart';
 
-class BookingScreen extends StatelessWidget {
+class BookingScreen extends StatefulWidget {
   const BookingScreen({super.key});
+
+  @override
+  State<BookingScreen> createState() => _BookingScreenState();
+}
+
+class _BookingScreenState extends State<BookingScreen> {
+  bool _submitting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -73,26 +81,38 @@ class BookingScreen extends StatelessWidget {
                     SbPrimaryButton(
                       label: 'Find a Ride',
                       icon: Icons.electric_rickshaw_rounded,
+                      feedback: _submitting
+                          ? SbButtonFeedback.loading
+                          : SbButtonFeedback.idle,
                       // Creates the request first, then matches it. Navigating on
                       // its own would leave the matching screen with nothing to
                       // match against, and no trace of the trip afterwards.
-                      onPressed: () {
-                        if (state.usesHostedIdentity) {
-                          // There is no rider presence or dispatch service for
-                          // a real account yet, so a request created here would
-                          // be a local row presented as a booking.
-                          SurgoNotice.show(
-                            context,
-                            'Live ride requests are not connected to this '
-                            'account yet, so nothing was sent.',
-                            tone: SbNoticeTone.warning,
-                            title: 'Matching unavailable',
-                          );
-                          return;
-                        }
-                        state.createRideRequest();
-                        Navigator.pushNamed(context, '/matching');
-                      },
+                      onPressed: _submitting
+                          ? null
+                          : () async {
+                              setState(() => _submitting = true);
+                              try {
+                                if (state.usesHostedIdentity) {
+                                  await state.createHostedRideRequest();
+                                } else {
+                                  state.createRideRequest();
+                                }
+                                if (!context.mounted) return;
+                                Navigator.pushNamed(context, '/matching');
+                              } on RepositoryFailure catch (failure) {
+                                if (!context.mounted) return;
+                                SurgoNotice.show(
+                                  context,
+                                  failure.message,
+                                  tone: SbNoticeTone.warning,
+                                  title: 'Request not sent',
+                                );
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _submitting = false);
+                                }
+                              }
+                            },
                     ),
                   ],
                 ),

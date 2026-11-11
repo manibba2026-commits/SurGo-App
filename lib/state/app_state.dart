@@ -12,6 +12,7 @@ import '../data/db_service.dart';
 import '../data/verification_policy.dart';
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_failure.dart';
+import '../repositories/repository_mappers.dart';
 import '../repositories/repository_registry.dart';
 import '../repositories/ride_location_repository.dart';
 import '../repositories/verification_repository.dart';
@@ -1236,6 +1237,232 @@ class AppState extends ChangeNotifier {
     return request;
   }
 
+  // ---- hosted ride dispatch ----
+  //
+  // A hosted build has no local request list to mutate. These methods write
+  // through the repository functions and keep the presentation model pointed at
+  // the row the database returned. They deliberately do not fall back to the
+  // seed: a failed write is shown as a failure, never as a fake local booking.
+
+  /// Creates the request in Postgres for the signed-in passenger.
+  ///
+  /// Returns the presentation model for the inserted row. Throws a
+  /// [RepositoryFailure] when the database refused the request, so the booking
+  /// screen can show the database's own reason.
+  Future<RideRequestItem> createHostedRideRequest({String? forPassenger}) async {
+    final option = selectedRide;
+    final pickup = pickupLabel;
+    final destination = destinationLabel;
+    final price = bookingPrice;
+    final distance = bookingDistance;
+
+    final assistedName = forPassenger?.trim();
+    final note = (assistedName == null || assistedName.isEmpty)
+        ? null
+        : 'Booking for $assistedName';
+
+    final record = await repositories.rides.createRideRequest(
+      pickupAddress: pickup,
+      // The full label is passed as the barangay hint. The database function
+      // strips a leading "Barangay" and matches the known barangay name inside
+      // the label, so "Purok 3, San Isidro" still resolves to San Isidro.
+      pickupBarangay: pickup,
+      pickupPurok: _purokFrom(pickup),
+      pickupLatitude: _coordinatesFor(pickup)?.latitude,
+      pickupLongitude: _coordinatesFor(pickup)?.longitude,
+      dropoffAddress: destination,
+      dropoffBarangay: destination,
+      dropoffPurok: _purokFrom(destination),
+      dropoffLatitude: _coordinatesFor(destination)?.latitude,
+      dropoffLongitude: _coordinatesFor(destination)?.longitude,
+      distanceKm: distance.kilometres,
+      etaMinutes: option.etaMinutes,
+      fareCentavos: price.providerFare,
+      platformFeeCentavos: price.platformFee,
+      note: note,
+    );
+
+    final request = rideRequestFromRecord(record);
+    myRideRequest = request;
+    rideProposal = null;
+    notifyListeners();
+    return request;
+  }
+
+  /// Finds an online, available rider for a hosted request.
+  ///
+  /// The database ranks candidates by distance from the pickup, then rating.
+  /// The exclusion set is applied client-side so "Find Another" walks down that
+  /// order without a second query shape.
+  Future<MatchOutcome> proposeHostedRider(
+    RideRequestItem request, {
+    Set<String> excludeRiderIds = const {},
+  }) async {
+    if (request.status != RideStatus.searching) {
+      return MatchOutcome.noRidersAvailable;
+    }
+
+    final candidates = await repositories.rides.findAvailableRiders(
+      pickupLatitude: request.pickupLatitude,
+      pickupLongitude: request.pickupLongitude,
+      excludeProfileId: currentAccount?.riderId,
+    );
+
+    final available = [
+      for (final candidate in candidates)
+        if (!excludeRiderIds.contains(candidate.profileId) &&
+            candidate.hasPosition)
+          candidate,
+    ];
+
+    if (available.isEmpty) {
+      if (rideProposal != null) {
+        rideProposal = null;
+        notifyListeners();
+      }
+      return MatchOutcome.noRidersAvailable;
+    }
+
+    final best = available.first;
+    final rider = mapRiderFromCandidate(best);
+    final distance = best.distanceKm;
+    rideProposal = RideMatchProposal(
+      rider: rider,
+      requestId: request.id,
+      etaMinutes: _etaMinutesFor(distance, rider),
+      fare: request.fare,
+      distanceKm: distance,
+    );
+    notifyListeners();
+    return MatchOutcome.proposed;
+  }
+
+  /// Sends the hosted request to the proposed rider.
+  ///
+  /// Throws a [RepositoryFailure] when the rider went offline between the
+  /// proposal and the tap, so the matching screen can refresh instead of
+  /// pretending the offer landed.
+  Future<bool> confirmHostedRideMatch() async {
+    final request = myRideRequest;
+    final proposal = rideProposal;
+    if (request == null || proposal == null) return false;
+
+    final record = await repositories.rides.assignRider(
+      rideId: request.id,
+      riderId: proposal.rider.id,
+    );
+
+    request.status = record.status;
+    request.riderId = record.riderId ?? proposal.rider.id;
+    rideProposal = null;
+    notifyListeners();
+    return true;
+  }
+
+  /// Cancels the hosted request as the passenger.
+  ///
+  /// A request that has already ended is left alone: cancellation is not a way
+  /// to rewrite a completed trip's history.
+  Future<void> cancelHostedRideRequest({String? reason}) async {
+    final request = myRideRequest;
+    if (request == null || request.status.isTerminal) return;
+    try {
+      await repositories.rides.cancelRide(
+        rideId: request.id,
+        reason: reason ?? 'Cancelled from matching',
+      );
+    } on RepositoryFailure {
+      // The row may already have been cancelled on the other side. Clearing the
+      // local pointer is still the right screen state.
+    }
+    myRideRequest = null;
+    rideProposal = null;
+    notifyListeners();
+  }
+
+  /// Refreshes the rider's presence and inbox from Postgres.
+  ///
+  /// The rider home calls this on a timer so a request assigned while the
+  /// screen was open appears without the rider toggling online or reopening
+  /// the tab. Failures stay in the cache and are shown by the slots' own
+  /// failure states; a refresh must not throw from a timer.
+  Future<void> refreshRiderWorkspace() async {
+    if (!usesHostedIdentity || !isSignedIn) return;
+    await cache.refresh(DomainSlot.riderPresence);
+    await cache.refresh(DomainSlot.riderIncomingRides);
+    // Helper mode shares the rider account, so the errand slots are part of
+    // the same workspace refresh.
+    await cache.refresh(DomainSlot.providerErrands);
+    await cache.refresh(DomainSlot.openErrands);
+  }
+
+  /// Moves the signed-in participant's hosted trip to its next state.
+  ///
+  /// The database owns the transition table, so this asks for the enum's next
+  /// state and lets the RPC refuse anything else. Completion also releases the
+  /// rider's availability and increments the passenger's trip count inside the
+  /// database; no money or history is written here. Returns the new status, or
+  /// null when there is nothing legal to do.
+  Future<RideStatus?> advanceHostedRide() async {
+    final request = activeRide ?? myRideRequest;
+    if (request == null) return null;
+    final next = request.nextStatus;
+    if (next == null) return null;
+
+    final record = await repositories.rides.advanceRideStatus(
+      rideId: request.id,
+      status: next.wireValue,
+    );
+    final full = await repositories.rides.fetchRide(record.id) ?? record;
+    final updated = rideRequestFromRecord(full);
+
+    if (activeRide?.id == updated.id) {
+      activeRide = updated.status.isTerminal ? null : updated;
+    }
+    if (myRideRequest?.id == updated.id) {
+      myRideRequest = updated;
+    }
+    notifyListeners();
+    await cache.refresh(DomainSlot.riderPresence);
+    await cache.refresh(DomainSlot.riderIncomingRides);
+    return updated.status;
+  }
+
+  /// Turns the signed-in rider online or offline in Postgres.
+  ///
+  /// No coordinates are sent: a demo rider already has a simulated fix in the
+  /// database, and overwriting it with the device's location would misrepresent
+  /// simulated presence as real GPS. A rider with no stored fix gets the
+  /// database's "share your location" refusal, which the screen shows.
+  Future<void> setHostedRiderOnline(bool online) async {
+    await repositories.rides.setPresence(online: online);
+    riderOnline = online;
+    notifyListeners();
+    await cache.refresh(DomainSlot.riderPresence);
+    await cache.refresh(DomainSlot.riderIncomingRides);
+  }
+
+  /// Accepts or declines a request assigned to the signed-in rider.
+  Future<void> respondToHostedRequest(
+    RideRequestItem request, {
+    required bool accepted,
+  }) async {
+    final record = await repositories.rides.respondToRide(
+      rideId: request.id,
+      accept: accepted,
+    );
+    final full = await repositories.rides.fetchRide(record.id) ?? record;
+    final updated = rideRequestFromRecord(full);
+    if (accepted) {
+      activeRide = updated;
+      activeRideBreakdown = RidePricing.breakdown(priceFor(updated));
+      riderOnline = true;
+    }
+    notifyListeners();
+    await cache.refresh(DomainSlot.riderPresence);
+    await cache.refresh(DomainSlot.riderIncomingRides);
+  }
+
   /// Initials for an assisted-booking passenger's name, matching the seed
   /// convention: first letter of the first and last word.
   String _initialsFor(String name) {
@@ -2329,6 +2556,225 @@ class AppState extends ChangeNotifier {
     activeRentalBooking = null;
     notifyListeners();
   }
+
+  // ---- hosted rental lifecycle ----
+  //
+  // The database owns booking state: these methods call the RPCs and then
+  // re-read the slot, so the screen never advances a booking on its own word.
+
+  /// Re-reads both sides of the rental book, so an owner's decision shows on
+  /// the renter's screen and a new request shows on the owner's.
+  Future<void> refreshHostedRentals() async {
+    if (!usesHostedIdentity || !isSignedIn) return;
+    await cache.refresh(DomainSlot.passengerRentalBookings);
+    await cache.refresh(DomainSlot.ownerRentalBookings);
+  }
+
+  /// Submits a hosted rental request for [vehicle].
+  ///
+  /// The server prices the fare and the platform fee and refuses an overlap, so
+  /// neither amount is computed here.
+  Future<RentalBooking> createHostedRentalRequest({
+    required RentalVehicle vehicle,
+    required DateTime pickupDate,
+    required DateTime returnDate,
+    required String pickupBarangayId,
+    required String pickupLocation,
+    String? pickupPurokId,
+    double? pickupLatitude,
+    double? pickupLongitude,
+  }) async {
+    final created = await repositories.rentals.createRequest(
+      vehicleId: vehicle.id,
+      startAt: pickupDate,
+      endAt: returnDate,
+      pickupLocation: pickupLocation,
+      pickupBarangayId: pickupBarangayId,
+      pickupPurokId: pickupPurokId,
+      pickupLatitude: pickupLatitude,
+      pickupLongitude: pickupLongitude,
+    );
+    final full =
+        await repositories.rentals.fetchRental(created.id) ?? created;
+    final booking = rentalBookingFromRecord(full);
+    notifyListeners();
+    await refreshHostedRentals();
+    return booking;
+  }
+
+  /// Accepts or declines a hosted request as the vehicle owner.
+  Future<void> respondToHostedRentalRequest(
+    OwnerBookingRequest request, {
+    required bool accepted,
+  }) async {
+    await repositories.rentals.respond(
+      rentalId: request.id,
+      accept: accepted,
+    );
+    notifyListeners();
+    await refreshHostedRentals();
+  }
+
+  /// Moves a hosted booking one legal step. Returns the refreshed booking, or
+  /// null when the booking has nowhere left to go.
+  Future<RentalBooking?> advanceHostedRental(RentalBooking booking) async {
+    final next = booking.status.next;
+    if (next == null) return null;
+    final updated = await repositories.rentals.advance(
+      rentalId: booking.id,
+      status: next,
+    );
+    final full =
+        await repositories.rentals.fetchRental(updated.id) ?? updated;
+    notifyListeners();
+    await refreshHostedRentals();
+    return rentalBookingFromRecord(full);
+  }
+
+  Future<void> cancelHostedRental(RentalBooking booking, {String? reason}) async {
+    try {
+      await repositories.rentals.cancel(
+        rentalId: booking.id,
+        reason: reason ?? 'Cancelled from the app',
+      );
+    } on RepositoryFailure {
+      // The booking may already be terminal on the other side; the refresh
+      // below is still the right screen state.
+    }
+    notifyListeners();
+    await refreshHostedRentals();
+  }
+
+  /// The receipt split for a hosted booking: the owner keeps the fare whole and
+  /// the platform fee is the customer's add-on.
+  FeeBreakdown hostedRentalBreakdown(RentalBooking booking) =>
+      FeeBreakdown.fixedAddon(
+        service: ServiceType.rental,
+        providerFare: booking.totalFare,
+        platformFee: booking.platformFee,
+      );
+
+  // ---- hosted errand lifecycle ----
+
+  /// Re-reads the customer's errands, the helper's jobs and the open feed.
+  Future<void> refreshHostedErrands() async {
+    if (!usesHostedIdentity || !isSignedIn) return;
+    await cache.refresh(DomainSlot.customerErrands);
+    await cache.refresh(DomainSlot.providerErrands);
+    await cache.refresh(DomainSlot.openErrands);
+  }
+
+  /// Posts an errand as the signed-in customer. The server sets the platform
+  /// fee and refuses a missing recipient when the errand is for someone else.
+  Future<PasuyoTask> createHostedErrand({
+    required PasuyoCategory category,
+    required String title,
+    required String pickupAddress,
+    required String pickupBarangayId,
+    required int quotedFeeCentavos,
+    List<Map<String, dynamic>> items = const [],
+    String? description,
+    String? pickupPurokId,
+    double? pickupLatitude,
+    double? pickupLongitude,
+    String? dropoffAddress,
+    String? dropoffBarangayId,
+    String? dropoffPurokId,
+    double? dropoffLatitude,
+    double? dropoffLongitude,
+    bool bookedForSomeone = false,
+    String? recipientName,
+    String? recipientPhone,
+  }) async {
+    final created = await repositories.pasuyo.createRequest(
+      category: category,
+      title: title,
+      pickupAddress: pickupAddress,
+      pickupBarangayId: pickupBarangayId,
+      quotedFeeCentavos: quotedFeeCentavos,
+      items: items,
+      description: description,
+      pickupPurokId: pickupPurokId,
+      pickupLatitude: pickupLatitude,
+      pickupLongitude: pickupLongitude,
+      dropoffAddress: dropoffAddress,
+      dropoffBarangayId: dropoffBarangayId,
+      dropoffPurokId: dropoffPurokId,
+      dropoffLatitude: dropoffLatitude,
+      dropoffLongitude: dropoffLongitude,
+      bookedForSomeone: bookedForSomeone,
+      recipientName: recipientName,
+      recipientPhone: recipientPhone,
+    );
+    final full =
+        await repositories.pasuyo.fetchRequest(created.id) ?? created;
+    notifyListeners();
+    await refreshHostedErrands();
+    return pasuyoTaskFromRecord(full);
+  }
+
+  /// Claims an open errand as the signed-in helper.
+  Future<PasuyoTask> acceptHostedErrand(PasuyoTask task) async {
+    final accepted = await repositories.pasuyo.accept(task.id);
+    final full = await repositories.pasuyo.fetchRequest(accepted.id) ?? accepted;
+    notifyListeners();
+    await refreshHostedErrands();
+    return pasuyoTaskFromRecord(full);
+  }
+
+  /// Moves an assigned errand one legal step. Delivery settles the transaction
+  /// inside the database; no money is written here.
+  Future<PasuyoTask?> advanceHostedErrand(PasuyoTask task) async {
+    final next = task.nextStatus;
+    if (next == null) return null;
+    final updated = await repositories.pasuyo.advance(
+      requestId: task.id,
+      status: next,
+    );
+    final full =
+        await repositories.pasuyo.fetchRequest(updated.id) ?? updated;
+    notifyListeners();
+    await refreshHostedErrands();
+    return pasuyoTaskFromRecord(full);
+  }
+
+  /// Records what the helper actually paid for the items.
+  Future<void> setHostedErrandActuals(
+    PasuyoTask task,
+    List<Map<String, dynamic>> items,
+  ) async {
+    await repositories.pasuyo.setItemActuals(
+      requestId: task.id,
+      items: items,
+    );
+    notifyListeners();
+    await refreshHostedErrands();
+  }
+
+  Future<void> cancelHostedErrand(PasuyoTask task, {String? reason}) async {
+    try {
+      await repositories.pasuyo.cancel(
+        requestId: task.id,
+        reason: reason ?? 'Cancelled from the app',
+      );
+    } on RepositoryFailure {
+      // Already terminal on the other side; refresh below is authoritative.
+    }
+    notifyListeners();
+    await refreshHostedErrands();
+  }
+
+  /// The receipt split for a hosted errand: the helper keeps the fee whole and
+  /// the platform fee is the customer's add-on. Item cost is a pass-through and
+  /// is deliberately not part of SurGo's take.
+  FeeBreakdown hostedErrandBreakdown(PasuyoTask task) =>
+      FeeBreakdown.fixedAddon(
+        service: ServiceType.pasuyo,
+        providerFare: task.budget,
+        platformFee: task.platformFee > 0
+            ? task.platformFee
+            : HostedFees.pasuyoPlatformFeeCentavos,
+      );
 
   // ---- favorites (toggle helpers) ----
   bool isFavoriteRiderName(String name) =>

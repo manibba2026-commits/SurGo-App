@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../data/db_models.dart';
+import '../repositories/repository_failure.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
 import '../state/ride_match.dart';
@@ -35,6 +36,14 @@ class _MatchingScreenState extends State<MatchingScreen>
   /// Riders already shown in this visit. "Find Another" keeps walking down the
   /// ranking, so the same person is never proposed twice.
   final Set<String> _seen = {};
+
+  /// Riders this visit has seen, keyed by id. A hosted proposal is not in the
+  /// seed fleet, so the sent-state card needs this local snapshot to name the
+  /// rider after the proposal has been cleared.
+  final Map<String, MapRider> _knownRiders = {};
+
+  /// True while the request is being sent to the chosen rider.
+  bool _sending = false;
 
   /// True between asking for a match and the answer landing. Separate from
   /// [AppState.rideProposal] because the previous proposal stays in the store
@@ -90,34 +99,76 @@ class _MatchingScreenState extends State<MatchingScreen>
       setState(() => _searching = false);
       return;
     }
-    final outcome = state.proposeRider(request, excludeRiderIds: _seen);
-    if (!mounted) return;
-    setState(() {
-      _searching = false;
-      _exhausted = outcome == MatchOutcome.noRidersAvailable;
-    });
+    try {
+      final outcome = state.usesHostedIdentity
+          ? await state.proposeHostedRider(request, excludeRiderIds: _seen)
+          : state.proposeRider(request, excludeRiderIds: _seen);
+      final proposal = state.rideProposal;
+      if (proposal != null) _knownRiders[proposal.rider.id] = proposal.rider;
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _exhausted = outcome == MatchOutcome.noRidersAvailable;
+      });
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _exhausted = true;
+      });
+      SurgoNotice.show(
+        context,
+        failure.message,
+        tone: SbNoticeTone.warning,
+        title: 'Matching failed',
+      );
+    }
   }
 
   /// Sends the request to the proposed rider and goes home.
   ///
   /// Nothing here accepts on the rider's behalf: the request becomes
   /// [RideStatus.awaitingAcceptance] and waits for their answer.
-  void _select(RideMatchProposal proposal) {
+  Future<void> _select(RideMatchProposal proposal) async {
+    if (_sending) return;
     final riderName = proposal.riderName;
-    if (!state.confirmRideMatch()) return;
-    SurgoNotice.show(
-      context,
-      'Request sent to $riderName. The trip starts once they accept.',
-      tone: SbNoticeTone.success,
-      title: 'Request sent',
-    );
-    Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    setState(() => _sending = true);
+    try {
+      final sent = state.usesHostedIdentity
+          ? await state.confirmHostedRideMatch()
+          : state.confirmRideMatch();
+      if (!sent || !mounted) return;
+      SurgoNotice.show(
+        context,
+        'Request sent to $riderName. The trip starts once they accept.',
+        tone: SbNoticeTone.success,
+        title: 'Request sent',
+      );
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      SurgoNotice.show(
+        context,
+        failure.message,
+        tone: SbNoticeTone.warning,
+        title: 'Rider unavailable',
+      );
+      // The rider may have gone offline since the proposal. Look again rather
+      // than leaving a card that can never be selected.
+      unawaited(_dispatch(nextCandidate: true));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   /// Closes the screen, putting the request back to open so it can be matched
   /// again later instead of pointing at a rider nobody chose.
   void _close() {
-    state.declineRideMatch();
+    if (state.usesHostedIdentity) {
+      unawaited(state.cancelHostedRideRequest(reason: 'Closed matching'));
+    } else {
+      state.declineRideMatch();
+    }
     Navigator.pop(context);
   }
 
@@ -126,12 +177,18 @@ class _MatchingScreenState extends State<MatchingScreen>
   }
 
   void _cancelRequest() {
-    state.cancelRideRequest();
+    if (state.usesHostedIdentity) {
+      unawaited(state.cancelHostedRideRequest(reason: 'Cancelled by passenger'));
+    } else {
+      state.cancelRideRequest();
+    }
     _backHome();
   }
 
   MapRider? _riderFor(String? id) {
     if (id == null) return null;
+    final known = _knownRiders[id];
+    if (known != null) return known;
     for (final rider in state.db.mapRiders) {
       if (rider.id == id) return rider;
     }
@@ -141,16 +198,6 @@ class _MatchingScreenState extends State<MatchingScreen>
   @override
   Widget build(BuildContext context) {
     final request = state.myRideRequest;
-
-    // A Supabase account has no live rider presence or dispatch service in this
-    // build, so the seeded fleet must not be presented as a real match.
-    if (state.usesHostedIdentity) {
-      return _shell(
-        title: 'Find a ride',
-        body: _hostedUnavailable(),
-        leading: SbIconButton(icon: Icons.close, onTap: _backHome),
-      );
-    }
 
     if (request == null) return _noRequest();
 
@@ -279,11 +326,15 @@ class _MatchingScreenState extends State<MatchingScreen>
             const Text('No riders available',
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
             const SizedBox(height: 6),
-            const Text(
-              'No other verified rider is free near your pickup right now. '
-              'Search again in a moment, or go back and change your route.',
+            Text(
+              state.usesHostedIdentity
+                  ? 'No demo rider is online and available right now. '
+                      'Search again, or go back and change your route.'
+                  : 'No other verified rider is free near your pickup right '
+                      'now. Search again in a moment, or go back and change '
+                      'your route.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+              style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
             ),
             const SizedBox(height: 20),
             SbOutlineButton(
@@ -312,13 +363,18 @@ class _MatchingScreenState extends State<MatchingScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
       children: [
-        const SbStatusBanner(
+        SbStatusBanner(
           tone: SbTone.info,
           icon: Icons.science_outlined,
-          title: 'Simulated rider fleet',
-          message:
-              'Rider positions and ETAs come from the demo fleet in this '
-              'build. They are not live riders and not a real dispatch.',
+          title: state.usesHostedIdentity
+              ? 'Demo riders, live availability'
+              : 'Simulated rider fleet',
+          message: state.usesHostedIdentity
+              ? 'These riders are demo accounts stored in the hosted database. '
+                  'Their online state is real; their positions are simulated '
+                  'around Tandag City, not device GPS.'
+              : 'Rider positions and ETAs come from the demo fleet in this '
+                  'build. They are not live riders and not a real dispatch.',
         ),
         const SizedBox(height: 14),
         const Text('Closest rider first',
@@ -443,7 +499,9 @@ class _MatchingScreenState extends State<MatchingScreen>
             Expanded(
               child: SbOutlineButton(
                 label: 'Find Another',
-                onPressed: () => unawaited(_dispatch(nextCandidate: true)),
+                onPressed: _sending
+                    ? null
+                    : () => unawaited(_dispatch(nextCandidate: true)),
               ),
             ),
             const SizedBox(width: 10),
@@ -452,7 +510,10 @@ class _MatchingScreenState extends State<MatchingScreen>
               child: SbPrimaryButton(
                 label: 'Select Rider',
                 icon: Icons.check_rounded,
-                onPressed: () => _select(proposal),
+                feedback: _sending
+                    ? SbButtonFeedback.loading
+                    : SbButtonFeedback.idle,
+                onPressed: _sending ? null : () => unawaited(_select(proposal)),
               ),
             ),
           ],
@@ -507,39 +568,6 @@ class _MatchingScreenState extends State<MatchingScreen>
               onPressed: _cancelRequest,
               style: TextButton.styleFrom(foregroundColor: AppColors.danger),
               child: const Text('Cancel request'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _hostedUnavailable() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off_outlined,
-                size: 40, color: AppColors.muted2),
-            const SizedBox(height: 14),
-            const Text('Live matching is not connected',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-            const SizedBox(height: 6),
-            const Text(
-              'Your SurGo account needs the live rider presence and dispatch '
-              'services before it can request a ride. The seeded demo fleet is '
-              'not shown here because those riders are not real accounts.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
-            ),
-            const SizedBox(height: 20),
-            SbOutlineButton(
-              label: 'Back to Home',
-              block: false,
-              onPressed: _backHome,
             ),
           ],
         ),

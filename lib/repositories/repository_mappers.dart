@@ -198,6 +198,75 @@ RideRequestItem rideRequestFromRow(RideRequestRow row) {
   );
 }
 
+/// A ride row from the repository layer as the presentation model the existing
+/// screens already use.
+///
+/// The hosted row carries the counterparty name only when RLS lets this reader
+/// see that profile; the fallback is a role word, not an invented person.
+RideRequestItem rideRequestFromRecord(RideRecord record) {
+  final passengerName = record.passengerName?.trim();
+  final name = (passengerName == null || passengerName.isEmpty)
+      ? 'Passenger'
+      : passengerName;
+  return RideRequestItem(
+    id: record.id,
+    passengerId: record.passengerId,
+    riderId: record.riderId,
+    passengerName: name,
+    passengerInitials: initialsFor(name),
+    passengerRating: 5,
+    pickupBarangay: record.pickupBarangayName ?? '',
+    pickupPurok: '',
+    pickup: record.pickupAddress,
+    pickupLatitude: record.pickupLatitude,
+    pickupLongitude: record.pickupLongitude,
+    dropoffBarangay: record.dropoffBarangayName ?? '',
+    dropoffPurok: '',
+    dropoff: record.dropoffAddress,
+    dropoffLatitude: record.dropoffLatitude,
+    dropoffLongitude: record.dropoffLongitude,
+    distanceKm: record.distanceKm,
+    etaMinutes: record.etaMinutes,
+    fare: record.fareCentavos,
+    paymentMethod: paymentMethodLabel(record.paymentMethod),
+    note: record.note ?? '',
+    requestedAt: displayTimestamp(record.requestedAt, fallback: 'Just now'),
+    requestedAtIso: record.requestedAt,
+    status: record.status,
+  );
+}
+
+/// A discovery result as the map/proposal model.
+///
+/// Discovery only returns riders with a position, so the coordinates here are
+/// real row values; the record's `isSimulated` flag travels separately for the
+/// screens that label demo positions.
+MapRider mapRiderFromCandidate(RiderCandidateRecord candidate) {
+  final type = (candidate.vehicleType ?? 'motorcycle').toLowerCase();
+  final marker = type.contains('tricycle') || type.contains('multicab')
+      ? 'tricycle'
+      : 'motorcycle';
+  return MapRider(
+    id: candidate.profileId,
+    name: candidate.fullName,
+    vehicleType: candidate.vehicleType ?? 'motorcycle',
+    vehicleModel: candidate.vehicleLabel ?? 'Ride',
+    markerType: marker,
+    position: MapPoint(
+      candidate.latitude ?? 0,
+      candidate.longitude ?? 0,
+    ),
+    barangay: candidate.barangayName ?? '',
+    purok: '',
+    rating: candidate.rating,
+    available: true,
+    verified: true,
+    estimatedFare: 0,
+    vehiclePlate: candidate.vehiclePlate ?? '',
+    totalTrips: candidate.totalTrips,
+  );
+}
+
 RideHistoryItem rideHistoryFromRow(
   RideRecord record, {
   int rating = 0,
@@ -395,6 +464,127 @@ RentalBooking rentalBookingFromRow(RentalBookingRow row) {
   );
 }
 
+/// A display name for a counterparty whose profile row may be hidden by RLS.
+/// The fallback is a role word, not an invented person.
+String _displayName(String? value, String fallback) {
+  final name = value?.trim();
+  return (name == null || name.isEmpty) ? fallback : name;
+}
+
+int _rentalDays(DateTime start, DateTime end, int? durationHours) {
+  if (durationHours != null && durationHours > 0) {
+    return (durationHours / 24).ceil();
+  }
+  final days = end.difference(start).inDays;
+  return days <= 0 ? 1 : days;
+}
+
+/// A hosted vehicle row as a rental catalogue listing.
+///
+/// [location] is the service area name from the catalogue, because a vehicle
+/// row carries only the area id.
+RentalVehicle rentalListingFromRecord(
+  VehicleRecord record, {
+  String location = '',
+}) {
+  final ownerName = _displayName(record.ownerName, 'Vehicle owner');
+  final description = [
+    if (record.make != null) record.make!,
+    if (record.model != null) record.model!,
+    if (record.modelYear != null) '${record.modelYear}',
+    if (record.color != null) record.color!,
+  ].join(' · ');
+  return RentalVehicle(
+    id: record.id,
+    name: record.name,
+    type: record.vehicleType,
+    icon: vehicleIcon(record.vehicleType, record.category),
+    location: location.isEmpty ? (record.serviceAreaName ?? '') : location,
+    availability: record.isListed ? 'Available today' : 'Unavailable',
+    pricePerDay: record.pricePerDayCentavos,
+    rating: record.rating,
+    ownerName: ownerName,
+    ownerInitials: initialsFor(ownerName),
+    description: description,
+    depositFee: 0,
+  );
+}
+
+/// A hosted booking as the renter's tracked booking.
+RentalBooking rentalBookingFromRecord(RentalRecord record) {
+  final start =
+      record.startAt ?? record.acceptedAt ?? record.completedAt ?? DateTime.now();
+  final end = record.endAt ?? start;
+  final type = record.vehicleType ?? 'Vehicle';
+  final category = record.vehicleCategory ?? OwnedVehicle.categoryForType(type);
+  final ownerName = _displayName(record.ownerName, 'Vehicle owner');
+  return RentalBooking(
+    id: record.id,
+    vehicleId: record.vehicleId,
+    vehicleName: record.vehicleName ?? 'Vehicle',
+    vehicleType: type,
+    icon: vehicleIcon(type, category),
+    ownerName: ownerName,
+    ownerInitials: initialsFor(ownerName),
+    pickupLabel: displayDateOnly(start),
+    returnLabel: displayDateOnly(end),
+    pickupDate: start,
+    returnDate: end,
+    days: _rentalDays(start, end, record.durationHours),
+    totalFare: record.totalFareCentavos,
+    platformFee: record.platformFeeCentavos,
+    status: record.status,
+    requestedAt: record.startAt ?? DateTime.now(),
+  );
+}
+
+/// A hosted booking as an incoming request on the owner's screen.
+OwnerBookingRequest ownerBookingFromRecord(RentalRecord record) {
+  final renterName = _displayName(record.renterName, 'Renter');
+  final start = record.startAt;
+  final end = record.endAt;
+  return OwnerBookingRequest(
+    id: record.id,
+    renterId: record.renterId,
+    ownerId: record.ownerId,
+    vehicleId: record.vehicleId,
+    renterName: renterName,
+    renterInitials: initialsFor(renterName),
+    vehicleName: record.vehicleName ?? 'Vehicle',
+    startDate: displayDateOnly(start),
+    endDate: displayDateOnly(end),
+    startTime:
+        start == null ? null : displayTimestamp(start).split('·').last.trim(),
+    endTime: end == null ? null : displayTimestamp(end).split('·').last.trim(),
+    durationHours: record.durationHours,
+    totalFare: record.totalFareCentavos,
+    paymentMethod: paymentMethodLabel(record.paymentMethod),
+    pickupLocation: record.pickupLocation,
+    currentLocation: record.currentLocation,
+    pickupLatitude: record.pickupLatitude,
+    pickupLongitude: record.pickupLongitude,
+    vehicleLatitude: record.vehicleLatitude,
+    vehicleLongitude: record.vehicleLongitude,
+    status: record.status,
+    startAt: start,
+    endAt: end,
+  );
+}
+
+/// A hosted booking as a history row.
+RentalHistoryItem rentalHistoryFromRecord(RentalRecord record) =>
+    RentalHistoryItem(
+      id: record.id,
+      vehicleName: record.vehicleName ?? 'Vehicle',
+      ownerName: _displayName(record.ownerName, 'Vehicle owner'),
+      startDate: displayDateOnly(record.startAt),
+      endDate: displayDateOnly(record.endAt),
+      totalFare: record.totalFareCentavos,
+      status: record.status.shortLabel,
+      startAt: record.startAt,
+      endAt: record.endAt,
+    );
+
 PasuyoCategory pasuyoCategoryFromBackend(String value) => switch (value) {
       'groceries' => PasuyoCategory.groceries,
       'food_delivery' || 'food' => PasuyoCategory.foodDelivery,
@@ -422,6 +612,43 @@ PasuyoTask pasuyoTaskFromRow(ServiceRequestRow row) => PasuyoTask(
       requestedAt: displayTimestamp(row.requestedAt, fallback: 'Just now'),
       requestedAtIso: row.requestedAt,
       status: PasuyoStatus.fromJson(row.status),
+    );
+
+/// What the helper actually paid for the items, when the database has the
+/// actual unit prices. Reimbursed in cash on delivery, so it is not SurGo's fee.
+int _actualItemCost(ServiceRequestRecord record) {
+  var total = 0.0;
+  for (final item in record.items) {
+    final price = item.actualUnitPriceCentavos;
+    if (price != null) total += price * item.quantity;
+  }
+  return total.round();
+}
+
+/// A hosted errand as the task model the Pasuyo screens use.
+PasuyoTask pasuyoTaskFromRecord(ServiceRequestRecord record) => PasuyoTask(
+      id: record.id,
+      customerId: record.customerId,
+      helperId: record.providerId,
+      category: record.category,
+      title: record.title,
+      items: [for (final item in record.items) item.name],
+      pickupBarangay: record.pickupBarangayName ?? '',
+      pickupPurok: '',
+      pickup: record.pickupAddress,
+      dropoffBarangay: record.dropoffBarangayName ?? '',
+      dropoffPurok: '',
+      dropoff: record.dropoffAddress ?? '',
+      budget: record.budgetCentavos ?? record.quotedFeeCentavos,
+      note: record.description ?? '',
+      bookedForSomeone: record.bookedForSomeone,
+      recipientName: record.recipientName ?? '',
+      recipientPhone: record.recipientPhone ?? '',
+      platformFee: record.platformFeeCentavos,
+      itemCost: _actualItemCost(record),
+      requestedAt: displayAge(record.requestedAt, fallback: 'Just now'),
+      requestedAtIso: record.requestedAt,
+      status: record.status,
     );
 
 WalletTransaction walletTransactionFromRow(WalletTransactionRow row) {

@@ -28,6 +28,11 @@ enum DomainSlot {
   /// build reads the passenger and earner rows it shows.
   passengerProfile,
   earnerProfile,
+
+  /// The signed-in earner's provider row: the capabilities the database has
+  /// granted and the rating/trip counts that belong to this account rather
+  /// than to the seeded earner.
+  earnerProviderProfile,
   barangays,
   unreadPassengerNotifications,
   unreadEarnerNotifications,
@@ -40,6 +45,9 @@ enum DomainSlot {
   /// The last few terminal rides behind the passenger home's Recent Bookings
   /// card. Open requests are not bookings, so the read asks for history only.
   passengerRecentRides,
+
+  /// The passenger's whole terminal ride history for the Activity tab.
+  passengerRideHistory,
   passengerWalletBalance,
   earnerWalletBalance,
   ownerWalletBalance,
@@ -60,6 +68,32 @@ enum DomainSlot {
   /// rejection reason an admin decision produced. The screen re-reads this slot
   /// rather than the seed once the account is hosted.
   verificationApplications,
+
+  /// The signed-in rider's own online/available row and the requests assigned
+  /// to them. Both are database reads; a hosted rider never falls back to the
+  /// seeded request list.
+  riderPresence,
+  riderIncomingRides,
+
+  /// The active service areas, used to scope listings and errand feeds to the
+  /// area a build actually serves.
+  serviceAreas,
+
+  /// Bookable vehicles (a listed vehicle *is* the rental catalogue entry).
+  rentalListings,
+
+  /// The signed-in renter's bookings and the signed-in owner's bookings. They
+  /// are separate slots because the two roles see different rows under RLS.
+  passengerRentalBookings,
+  ownerRentalBookings,
+
+  /// The signed-in customer's errands and the errands assigned to the
+  /// signed-in helper.
+  customerErrands,
+  providerErrands,
+
+  /// Unclaimed errands an approved helper may accept.
+  openErrands,
 }
 
 /// Repository reads held for the screens, each in an explicit state.
@@ -250,6 +284,8 @@ class DomainCache extends ChangeNotifier {
         registry.profiles.fetchProfile(_keyFor(ActorRole.passenger)),
       DomainSlot.earnerProfile =>
         registry.profiles.fetchProfile(_keyFor(ActorRole.earner)),
+      DomainSlot.earnerProviderProfile =>
+        registry.profiles.fetchProviderProfile(_keyFor(ActorRole.earner)),
       DomainSlot.barangays => _readBarangays(registry),
       DomainSlot.unreadPassengerNotifications =>
         registry.notifications.countUnread(_keyFor(ActorRole.passenger)),
@@ -261,6 +297,8 @@ class DomainCache extends ChangeNotifier {
         registry.notifications.fetchNotifications(_keyFor(ActorRole.earner)),
       DomainSlot.passengerRecentRides =>
         registry.rides.fetchRideHistory(_keyFor(ActorRole.passenger), limit: 3),
+      DomainSlot.passengerRideHistory =>
+        registry.rides.fetchRideHistory(_keyFor(ActorRole.passenger)),
       DomainSlot.passengerWalletBalance =>
         registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.passenger)),
       DomainSlot.earnerWalletBalance =>
@@ -278,6 +316,21 @@ class DomainCache extends ChangeNotifier {
       DomainSlot.ownerVehicleDocuments => _readOwnerDocuments(registry),
       DomainSlot.verificationApplications =>
         registry.verifications.fetchApplications(profileId),
+      DomainSlot.riderPresence =>
+        registry.rides.fetchPresence(_keyFor(ActorRole.earner)),
+      DomainSlot.riderIncomingRides =>
+        registry.rides.fetchRidesForRider(_keyFor(ActorRole.earner)),
+      DomainSlot.serviceAreas => registry.catalog.fetchServiceAreas(),
+      DomainSlot.rentalListings => _readRentalListings(registry),
+      DomainSlot.passengerRentalBookings =>
+        registry.rentals.fetchRentalsByRenter(_keyFor(ActorRole.passenger)),
+      DomainSlot.ownerRentalBookings =>
+        registry.rentals.fetchRentalsByOwner(_keyFor(ActorRole.vehicleOwner)),
+      DomainSlot.customerErrands =>
+        registry.pasuyo.fetchRequestsByCustomer(_keyFor(ActorRole.passenger)),
+      DomainSlot.providerErrands =>
+        registry.pasuyo.fetchRequestsByProvider(_keyFor(ActorRole.earner)),
+      DomainSlot.openErrands => _readOpenErrands(registry),
     };
   }
 
@@ -309,6 +362,32 @@ class DomainCache extends ChangeNotifier {
       );
     }
     return registry.catalog.fetchBarangays(areas.first.id);
+  }
+
+  /// The area a listing or errand feed belongs to.
+  ///
+  /// The pilot runs in one area. Reading it first keeps a slot from silently
+  /// listing another city's vehicles or errands if a second area is activated.
+  Future<String> _activeServiceAreaId(RepositoryRegistry registry) async {
+    final areas = await registry.catalog.fetchServiceAreas();
+    if (areas.isEmpty) {
+      throw RepositoryFailure.unsupported(
+        'No service area is active yet, so there is nothing to list.',
+      );
+    }
+    return areas.first.id;
+  }
+
+  Future<List<VehicleRecord>> _readRentalListings(
+      RepositoryRegistry registry) async {
+    final areaId = await _activeServiceAreaId(registry);
+    return registry.vehicles.fetchListedVehicles(serviceAreaId: areaId);
+  }
+
+  Future<List<ServiceRequestRecord>> _readOpenErrands(
+      RepositoryRegistry registry) async {
+    final areaId = await _activeServiceAreaId(registry);
+    return registry.pasuyo.fetchOpenFeed(areaId);
   }
 
   /// Documents are filed per vehicle, so the fleet is read first and the

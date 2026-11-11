@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/money.dart';
+import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
@@ -14,8 +16,15 @@ class VehicleOwnerMapScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final db = DbService.instance;
-    final ownerVehicles =
-        db.mapRentalVehicles.where((v) => v.ownerId == db.vehicleOwner.id).toList();
+    // A hosted fleet has no stored position, so it cannot be pinned; drawing
+    // the seeded owner's vehicles here would show a fleet the account does not
+    // own.
+    final hosted = AppState.instance.usesHostedIdentity;
+    final ownerVehicles = hosted
+        ? const <MapRentalVehicle>[]
+        : db.mapRentalVehicles
+            .where((v) => v.ownerId == db.vehicleOwner.id)
+            .toList();
 
     final markers = ownerVehicles
         .map((v) => SurgoMapMarker(
@@ -62,7 +71,9 @@ class VehicleOwnerMapScreen extends StatelessWidget {
                         border: Border.all(color: AppColors.border),
                       ),
                       child: Text(
-                        '${ownerVehicles.length} of your vehicles',
+                        hosted
+                            ? 'Vehicle locations are not tracked yet'
+                            : '${ownerVehicles.length} of your vehicles',
                         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
                       ),
                     ),

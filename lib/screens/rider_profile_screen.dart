@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend_rows.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
 import '../widgets/mode_switcher.dart';
+import '../widgets/repository_states.dart';
 import '../widgets/surgo_notice.dart';
 import 'account_settings_screen.dart';
 import 'emergency_contacts_screen.dart';
@@ -22,6 +25,13 @@ class EarnerProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // A hosted earner is the signed-in account, not the seeded rider, so the
+    // header and capabilities come from the database and the capability
+    // switches (which only rewrite the seed) are shown read-only.
+    if (state.usesHostedIdentity) {
+      final hosted = _hostedBody(context, state);
+      return embedded ? hosted : Scaffold(body: hosted);
+    }
     final body = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
@@ -167,6 +177,209 @@ class EarnerProfileScreen extends StatelessWidget {
     );
     if (embedded) return body;
     return Scaffold(body: body);
+  }
+
+  Widget _hostedBody(BuildContext context, AppState state) {
+    return SafeArea(
+      bottom: false,
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(18, embedded ? 4 : 16, 18, 90),
+        children: [
+          if (embedded) const SbTabHeader(title: 'Profile'),
+          RepositoryInline<ProfileRecord>(
+            slot: DomainSlot.profile,
+            placeholder: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text('Loading profile…',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12)),
+              ),
+            ),
+            data: (context, profile) => _hostedHeader(profile),
+          ),
+          const SizedBox(height: 16),
+          RepositoryInline<ProviderProfileRecord>(
+            slot: DomainSlot.earnerProviderProfile,
+            data: (context, provider) => _hostedCapabilities(provider),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _quickAction(
+                  context,
+                  icon: Icons.receipt_long,
+                  label: 'My Trips',
+                  color: AppColors.primaryLight,
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const RiderTripsScreen())),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _quickAction(
+                  context,
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Earnings',
+                  color: AppColors.secondaryLight,
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const RiderEarningsScreen())),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _quickAction(
+                  context,
+                  icon: Icons.account_balance_wallet_outlined,
+                  label: 'Wallet',
+                  color: AppColors.muted,
+                  onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const WalletScreen(isRider: true))),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _settingsRow(context, 'Vehicle Documents',
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const VehicleDocumentsScreen()))),
+          const SizedBox(height: 8),
+          VerificationStatusRow(
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const VerificationScreen()))),
+          const SizedBox(height: 8),
+          _settingsRow(context, 'Emergency Contacts',
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const EmergencyContactsScreen()))),
+          const SizedBox(height: 8),
+          _settingsRow(context, 'Account Settings',
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          const AccountSettingsScreen(isRider: true)))),
+          const SizedBox(height: 20),
+          const SbModeSwitcher(),
+        ],
+      ),
+    );
+  }
+
+  Widget _hostedHeader(ProfileRecord profile) {
+    final since = profile.createdAt?.year;
+    return Center(
+      child: Column(
+        children: [
+          SbAvatar(initials: _initialsOf(profile.fullName), size: 64),
+          const SizedBox(height: 10),
+          Text(
+            profile.fullName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            [
+              '⭐ ${profile.rating.toStringAsFixed(1)}',
+              '${profile.totalRides} trips',
+              if (since != null) 'Since $since',
+            ].join(' · '),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+          if (profile.phone != null) ...[
+            const SizedBox(height: 2),
+            Text(profile.phone!,
+                style:
+                    const TextStyle(color: AppColors.muted2, fontSize: 11.5)),
+          ],
+          if (profile.isSuspended) ...[
+            const SizedBox(height: 8),
+            const SbTag('Suspended'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Read-only capabilities: nothing in the client can write them, so a switch
+  /// here would only ever move a seed value.
+  Widget _hostedCapabilities(ProviderProfileRecord provider) {
+    final granted = {
+      for (final token in provider.capabilityTokens)
+        EarnerCapability.fromJson(token),
+    };
+    return SbCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.work_outline,
+                  color: AppColors.primaryLight, size: 18),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('What I offer',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              ),
+              SbTag('${granted.length} on', secondary: true),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'SurGo sets these when an account is approved. Ask support to '
+            'change them.',
+            style: TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
+          const SizedBox(height: 6),
+          for (final capability in EarnerCapability.values) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    granted.contains(capability)
+                        ? Icons.check_circle_outline
+                        : Icons.remove_circle_outline,
+                    size: 16,
+                    color: granted.contains(capability)
+                        ? AppColors.secondaryLight
+                        : AppColors.muted2,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(capability.label,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 12.5)),
+                ],
+              ),
+            ),
+            if (capability != EarnerCapability.values.last)
+              const Divider(height: 8, color: AppColors.border),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _initialsOf(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
   }
 
   /// The toggle that makes the Earner role mean something: an earner who only

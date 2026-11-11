@@ -132,6 +132,11 @@ class RentalBooking {
   final int days;
   final int totalFare;
 
+  /// The platform fee the database charged on top of [totalFare] when this came
+  /// from a hosted booking. Zero for the seeded prototype, whose ledger still
+  /// prices rentals by percentage commission.
+  final int platformFee;
+
   /// Where the booking sits in [RentalStatus].
   RentalStatus status;
   DateTime requestedAt;
@@ -150,6 +155,7 @@ class RentalBooking {
     required this.returnDate,
     required this.days,
     required this.totalFare,
+    this.platformFee = 0,
     required this.status,
     required this.requestedAt,
   });
@@ -178,8 +184,11 @@ class RentalBooking {
     return false;
   }
 
-  /// A booking that still holds or is about to hold the vehicle blocks it.
+  /// True when the booking still holds or is about to hold the vehicle.
   bool get blocksAvailability => status.isOnRent || status.isPending;
+
+  /// What the customer hands over: the owner's fare plus the platform fee.
+  int get customerPays => totalFare + platformFee;
 
   bool canAdvanceTo(RentalStatus target) => status.next == target;
 

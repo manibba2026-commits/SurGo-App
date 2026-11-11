@@ -11,6 +11,7 @@ import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
 import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/surgo_notice.dart';
 
 /// Vehicle Owner mode — Vehicles tab. Lets the owner see their fleet
 /// grouped by category (2-Wheel / 3-Wheel / 4-Wheel / Truck), add a new
@@ -30,6 +31,13 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // The add/status/remove actions only rewrite the seeded store, so a hosted
+    // fleet could show a change the database never saw. A live account gets a
+    // plain notice instead of a fake success.
+    final hosted = state.usesHostedIdentity;
+    void addVehicle() => hosted
+        ? _notListedYet(context)
+        : _showAddVehicleSheet(context, state);
     final content = ListView(
       padding: EdgeInsets.fromLTRB(18, widget.embedded ? 4 : 16, 18, 90),
       children: [
@@ -37,7 +45,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
           SbTabHeader(
             title: 'Vehicles',
             actions: [
-              SbIconButton(icon: Icons.add, onTap: () => _showAddVehicleSheet(context, state)),
+              SbIconButton(icon: Icons.add, onTap: addVehicle),
             ],
           )
         else
@@ -45,7 +53,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('My Vehicles', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-              SbIconButton(icon: Icons.add, onTap: () => _showAddVehicleSheet(context, state)),
+              SbIconButton(icon: Icons.add, onTap: addVehicle),
             ],
           ),
         const SizedBox(height: 6),
@@ -106,7 +114,9 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
               label: 'Add Vehicle',
               icon: Icons.add,
               block: false,
-              onPressed: () => _showAddVehicleSheet(context, state),
+              onPressed: state.usesHostedIdentity
+                  ? () => _notListedYet(context)
+                  : () => _showAddVehicleSheet(context, state),
             ),
           ],
         ),
@@ -154,6 +164,7 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
   }
 
   void _showManageSheet(BuildContext context, AppState state, VehicleRecord v) {
+    final hosted = state.usesHostedIdentity;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.panel,
@@ -167,34 +178,50 @@ class _VehicleOwnerVehiclesScreenState extends State<VehicleOwnerVehiclesScreen>
             Text(v.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             Text('Plate ${v.plateNumber} · ${Money.format(v.pricePerDayCentavos)}/day', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
             const SizedBox(height: 16),
-            const Text('Set status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.muted2)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: ['Listed', 'Rented', 'Maintenance']
-                  .map((s) => SbChip(
-                        s,
-                        active: v.statusLabel == s,
-                        onTap: () {
-                          state.setOwnedVehicleStatusById(v.id, s);
-                          Navigator.pop(context);
-                        },
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(height: 18),
-            SbOutlineButton(
-              label: 'Remove Vehicle',
-              icon: Icons.delete_outline,
-              onPressed: () {
-                state.removeOwnedVehicleById(v.id);
-                Navigator.pop(context);
-              },
-            ),
+            if (hosted)
+              const Text(
+                'Listing changes aren\'t available for live accounts yet. '
+                'This vehicle\'s status is set by the rentals the database records.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              )
+            else ...[
+              const Text('Set status', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.muted2)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: ['Listed', 'Rented', 'Maintenance']
+                    .map((s) => SbChip(
+                          s,
+                          active: v.statusLabel == s,
+                          onTap: () {
+                            state.setOwnedVehicleStatusById(v.id, s);
+                            Navigator.pop(context);
+                          },
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              SbOutlineButton(
+                label: 'Remove Vehicle',
+                icon: Icons.delete_outline,
+                onPressed: () {
+                  state.removeOwnedVehicleById(v.id);
+                  Navigator.pop(context);
+                },
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  void _notListedYet(BuildContext context) {
+    SurgoNotice.show(
+      context,
+      'Adding vehicles from the app isn\'t enabled for live accounts yet.',
+      tone: SbNoticeTone.info,
     );
   }
 

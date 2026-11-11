@@ -44,7 +44,7 @@ enum ServiceType {
 /// a commission is a share of the fare the provider quoted, while a platform
 /// fee is a separate charge the customer pays on top of a fare the provider
 /// keeps whole.
-enum FeeBasis { percentageCommission, distancePlatformFee }
+enum FeeBasis { percentageCommission, distancePlatformFee, fixedPlatformFee }
 
 /// The money movement for one completed transaction. [customerPays] is the
 /// gross amount charged, [providerGets] is what the rider/helper/owner earns,
@@ -106,6 +106,27 @@ class FeeBreakdown {
       providerGets: providerFare,
       surgoKeeps: platformFee,
       basis: FeeBasis.distancePlatformFee,
+    );
+  }
+
+  /// A rental or errand priced by a fixed platform fee: the provider keeps the
+  /// whole quoted amount and the customer pays the fee on top. This is the
+  /// hosted settlement rule; it is not a percentage of the provider's money.
+  factory FeeBreakdown.fixedAddon({
+    required ServiceType service,
+    required int providerFare,
+    required int platformFee,
+  }) {
+    assert(service != ServiceType.ride,
+        'A ride fee is priced per distance, not as a fixed add-on.');
+    assert(providerFare >= 0, 'providerFare must not be negative');
+    assert(platformFee >= 0, 'platformFee must not be negative');
+    return FeeBreakdown._(
+      service: service,
+      customerPays: providerFare + platformFee,
+      providerGets: providerFare,
+      surgoKeeps: platformFee,
+      basis: FeeBasis.fixedPlatformFee,
     );
   }
 
@@ -214,6 +235,43 @@ class FeeCalculator {
     final raw = gross * bps;
     // Half-up on the whole peso: (raw / 10000 + 0.5).floor() without floats.
     return ((raw * 2) + 10000) ~/ 20000;
+  }
+}
+
+/// The fixed platform fees the hosted settlement functions charge.
+///
+/// These mirror `private.rental_platform_fee` and `private.pasuyo_platform_fee`
+/// in `20261111180000_rental_pasuyo_lifecycle.sql`, so a preview on screen and
+/// the receivable the database records cannot disagree. They are separate from
+/// [FeeRates], whose percentages still price the seeded prototype ledger.
+class HostedFees {
+  HostedFees._();
+
+  /// A flat surcharge on every errand, paid by the customer on top of the
+  /// helper's quoted fee.
+  static const int pasuyoPlatformFeeCentavos = 1000;
+
+  static const int rentalFeeBaseCentavos = 2000;
+  static const int rentalFeePerDayCentavos = 1000;
+  static const int rentalFeeMinimumCentavos = 2000;
+  static const int rentalFeeMaximumCentavos = 15000;
+
+  /// `clamp(2000 + 1000 × started_days, 2000, 15000)` centavos, where a
+  /// started day is any part of 24 hours and the first day always counts.
+  static int rentalPlatformFee(int durationHours) {
+    final hours = durationHours <= 0 ? 1 : durationHours;
+    final startedDays = (hours / 24).ceil();
+    final days = startedDays < 1 ? 1 : startedDays;
+    final raw =
+        rentalFeeBaseCentavos + rentalFeePerDayCentavos * days;
+    return raw.clamp(rentalFeeMinimumCentavos, rentalFeeMaximumCentavos).toInt();
+  }
+
+  /// How many started days a period covers, for display beside the fee.
+  static int startedDays(DateTime start, DateTime end) {
+    final minutes = end.difference(start).inMinutes;
+    final days = (minutes / (24 * 60)).ceil();
+    return days < 1 ? 1 : days;
   }
 }
 

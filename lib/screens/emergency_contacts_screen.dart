@@ -10,6 +10,26 @@ class EmergencyContactsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // These contacts are seed data tied to the demo account. Listing them for
+    // a live user would claim people are reachable who never agreed to be.
+    if (state.usesHostedIdentity) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Emergency Contacts')),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          children: const [
+            SbCard(
+              child: Text(
+                'Emergency contacts aren\'t synced for live accounts yet, so '
+                'the demo contacts are hidden here. Use your phone\'s '
+                'emergency dialler if you need help right away.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Emergency Contacts')),
       body: ListenableBuilder(

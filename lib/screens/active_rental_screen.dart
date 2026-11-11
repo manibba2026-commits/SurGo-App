@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
 import '../data/db_models.dart';
+import '../data/models.dart' show RentalBooking;
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_mappers.dart';
+import '../repositories/repository_state.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../state/rental_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -24,6 +29,12 @@ class ActiveRentalScreen extends StatelessWidget {
     // When opened from Vehicle Owner mode, the specific booking is passed directly.
     final ownerArg =
         ModalRoute.of(context)?.settings.arguments as OwnerBookingRequest?;
+
+    // A hosted renter has no in-memory booking: the live one comes from the
+    // database, and its state is advanced by the booking functions.
+    if (state.usesHostedIdentity && ownerArg == null) {
+      return const _HostedActiveRentalScreen();
+    }
 
     return Scaffold(
       body: ListenableBuilder(
@@ -308,6 +319,286 @@ class ActiveRentalScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// The hosted renter's live booking, read from the database.
+///
+/// No timers and no local transitions: the action button asks the server for
+/// the next legal state, and the screen re-renders from the refreshed row.
+class _HostedActiveRentalScreen extends StatefulWidget {
+  const _HostedActiveRentalScreen();
+
+  @override
+  State<_HostedActiveRentalScreen> createState() =>
+      _HostedActiveRentalScreenState();
+}
+
+class _HostedActiveRentalScreenState extends State<_HostedActiveRentalScreen> {
+  final DomainCache _cache = AppState.instance.cache;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cache.addListener(_onCacheChanged);
+    _cache.ensure(DomainSlot.passengerRentalBookings);
+  }
+
+  @override
+  void dispose() {
+    _cache.removeListener(_onCacheChanged);
+    super.dispose();
+  }
+
+  void _onCacheChanged() {
+    if (mounted) setState(() {});
+  }
+
+  RentalRecord? get _liveRecord {
+    final state =
+        _cache.stateOf<List<RentalRecord>>(DomainSlot.passengerRentalBookings);
+    if (state.status != RepositoryStatus.data) return null;
+    final records = (state.data as List<RentalRecord>)
+        .where((r) => !r.status.isTerminal)
+        .toList()
+      ..sort((a, b) => (b.startAt ?? DateTime(0))
+          .compareTo(a.startAt ?? DateTime(0)));
+    return records.isEmpty ? null : records.first;
+  }
+
+  Future<void> _advance(RentalBooking booking) async {
+    setState(() => _busy = true);
+    try {
+      final updated = await AppState.instance.advanceHostedRental(booking);
+      if (!mounted) return;
+      if (updated == null || updated.status.isTerminal) {
+        Navigator.pop(context);
+        SurgoNotice.show(
+          context,
+          '${booking.vehicleName} rental completed.',
+          tone: SbNoticeTone.success,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      SurgoNotice.show(
+        context,
+        'That step could not be completed. Please refresh and try again.',
+        tone: SbNoticeTone.danger,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _cancel(RentalBooking booking) async {
+    setState(() => _busy = true);
+    try {
+      await AppState.instance.cancelHostedRental(booking);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final record = _liveRecord;
+    if (record == null) {
+      final settled = _cache
+          .stateOf<List<RentalRecord>>(DomainSlot.passengerRentalBookings)
+          .status;
+      if (settled == RepositoryStatus.data || settled == RepositoryStatus.empty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        });
+      }
+      return const Scaffold(
+        body: SafeArea(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    final booking = rentalBookingFromRecord(record);
+    final pending = booking.status.isPending;
+    final platformFee = booking.platformFee;
+    final actionLabel = booking.status.advanceActionLabel;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+              child: Row(
+                children: [
+                  SbIconButton(
+                      icon: Icons.arrow_back,
+                      onTap: () => Navigator.pop(context)),
+                  const SizedBox(width: 10),
+                  const Text('Your Rental',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SbCard(
+                      borderColor: (pending
+                              ? AppColors.primary
+                              : AppColors.secondary)
+                          .withValues(alpha: 0.3),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              SbTag(booking.status.shortLabel,
+                                  secondary: !pending),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(booking.vehicleType,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.end,
+                                    style: const TextStyle(
+                                        color: AppColors.muted,
+                                        fontSize: 11.5)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              SbAvatar(initials: booking.ownerInitials),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(booking.vehicleName,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14)),
+                                    Text('Owned by ${booking.ownerName}',
+                                        style: const TextStyle(
+                                            color: AppColors.muted,
+                                            fontSize: 11.5)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: SbField(
+                                      label: 'Pick-up',
+                                      value: booking.pickupLabel)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                  child: SbField(
+                                      label: 'Return',
+                                      value: booking.returnLabel)),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          _MoneyRow(
+                            label: 'Owner fare · ${booking.days} '
+                                '${booking.days == 1 ? 'day' : 'days'}',
+                            amount: booking.totalFare,
+                          ),
+                          const SizedBox(height: 4),
+                          _MoneyRow(
+                            label: 'SurGo platform fee',
+                            amount: platformFee,
+                          ),
+                          const Divider(height: 18),
+                          _MoneyRow(
+                            label: 'You pay (cash)',
+                            amount: booking.customerPays,
+                            emphasized: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      pending
+                          ? 'The owner has been notified. This screen updates '
+                              'the moment they respond.'
+                          : 'Your rental is active. Tap the button when you '
+                              'pick up or return the vehicle; the owner is paid '
+                              'only when the rental is completed.',
+                      style: const TextStyle(
+                          color: AppColors.muted, fontSize: 12, height: 1.6),
+                    ),
+                    const SizedBox(height: 18),
+                    if (pending)
+                      SbOutlineButton(
+                        label: _busy ? 'Cancelling…' : 'Cancel Request',
+                        icon: Icons.close,
+                        onPressed: _busy ? null : () => _cancel(booking),
+                      )
+                    else if (actionLabel != null)
+                      SbPrimaryButton(
+                        label: _busy ? 'Updating…' : actionLabel,
+                        icon: Icons.check_circle_outline,
+                        onPressed: _busy ? null : () => _advance(booking),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MoneyRow extends StatelessWidget {
+  const _MoneyRow({
+    required this.label,
+    required this.amount,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final int amount;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(label,
+              style: TextStyle(
+                  color: emphasized ? AppColors.text : AppColors.muted,
+                  fontSize: 12,
+                  fontWeight:
+                      emphasized ? FontWeight.w700 : FontWeight.w500)),
+        ),
+        Text(Money.format(amount),
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: emphasized ? AppColors.primaryLight : AppColors.text,
+                fontSize: emphasized ? 15 : 13)),
+      ],
     );
   }
 }

@@ -1815,6 +1815,22 @@ class PasuyoTask {
   final int budget;
   final String note;
 
+  /// True when the customer ordered the errand for another person. The
+  /// recipient receives the goods; the customer still pays.
+  final bool bookedForSomeone;
+  final String recipientName;
+  final String recipientPhone;
+
+  /// The platform fee the database charged on top of the helper's fee, when
+  /// this errand came from a hosted row. Zero for a seeded task, which is
+  /// priced by the legacy percentage rule instead.
+  final int platformFee;
+
+  /// What the helper paid for the items, when the database has recorded the
+  /// actual unit prices. The helper is reimbursed in cash on delivery, so this
+  /// is part of the customer's total even though it is not SurGo's fee.
+  final int itemCost;
+
   /// Display label for when the errand was posted, e.g. "Just now".
   final String requestedAt;
 
@@ -1844,6 +1860,11 @@ class PasuyoTask {
     required this.dropoff,
     required this.budget,
     this.note = '',
+    this.bookedForSomeone = false,
+    this.recipientName = '',
+    this.recipientPhone = '',
+    this.platformFee = 0,
+    this.itemCost = 0,
     this.requestedAt = 'Just now',
     this.requestedAtIso,
     this.status = PasuyoStatus.available,
@@ -1866,6 +1887,11 @@ class PasuyoTask {
         dropoff: j['dropoff'] ?? '',
         budget: j['budget'] ?? 0,
         note: j['note'] ?? '',
+        bookedForSomeone: j['bookedForSomeone'] ?? j['booked_for_someone'] ?? false,
+        recipientName: j['recipientName'] ?? j['recipient_name'] ?? '',
+        recipientPhone: j['recipientPhone'] ?? j['recipient_phone'] ?? '',
+        platformFee: j['platformFee'] ?? j['platform_fee'] ?? 0,
+        itemCost: j['itemCost'] ?? j['item_cost'] ?? 0,
         requestedAt: j['requestedAt'] ?? 'Just now',
         requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
         status: PasuyoStatus.fromJson(j['status'] ?? 'available'),

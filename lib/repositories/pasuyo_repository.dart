@@ -1,11 +1,17 @@
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../state/pasuyo_status.dart';
 import 'backend.dart';
 import 'backend_rows.dart';
 import 'catalog_repository.dart' show mockServiceAreaId;
+import 'repository_failure.dart';
 
 /// Pasuyo errands: the customer's post, the helper's job list and the
 /// append-only status history.
+///
+/// Reads are open to any build. Writes are only offered when a writer was
+/// installed; each one calls a database function that checks the actor and
+/// the legal transition, so the client never decides either.
 abstract interface class PasuyoRepository {
   Future<List<ServiceRequestRecord>> fetchRequestsByCustomer(
     String customerId, {
@@ -28,6 +34,53 @@ abstract interface class PasuyoRepository {
   Future<ServiceRequestRecord?> fetchRequest(String requestId);
 
   Future<List<ServiceStatusEventRecord>> fetchStatusEvents(String requestId);
+
+  /// Posts an errand as the signed-in customer.
+  ///
+  /// [items] is the JSON-ready list the database function turns into
+  /// `service_request_items` rows: `{name, quantity, unit,
+  /// estimated_unit_price_centavos, notes}`.
+  Future<ServiceRequestRecord> createRequest({
+    required PasuyoCategory category,
+    required String title,
+    required String pickupAddress,
+    required String pickupBarangayId,
+    required int quotedFeeCentavos,
+    List<Map<String, dynamic>> items = const [],
+    String? description,
+    String? pickupPurokId,
+    double? pickupLatitude,
+    double? pickupLongitude,
+    String? dropoffAddress,
+    String? dropoffBarangayId,
+    String? dropoffPurokId,
+    double? dropoffLatitude,
+    double? dropoffLongitude,
+    bool bookedForSomeone = false,
+    String? recipientName,
+    String? recipientPhone,
+  });
+
+  /// Claims an open errand as the signed-in helper.
+  Future<ServiceRequestRecord> accept(String requestId);
+
+  /// Moves an assigned errand one step. The database refuses any other move.
+  Future<ServiceRequestRecord> advance({
+    required String requestId,
+    required PasuyoStatus status,
+  });
+
+  /// Records the actual unit prices the helper paid.
+  Future<ServiceRequestRecord> setItemActuals({
+    required String requestId,
+    required List<Map<String, dynamic>> items,
+  });
+
+  /// Cancels an unfinished errand as either participant.
+  Future<ServiceRequestRecord> cancel({
+    required String requestId,
+    String? reason,
+  });
 }
 
 const String _requestColumns =
@@ -37,14 +90,30 @@ const String _requestColumns =
     'dropoff_purok_id, dropoff_latitude, dropoff_longitude, budget_centavos, '
     'quoted_fee_centavos, platform_fee_centavos, payment_method, '
     'requested_at, accepted_at, picked_up_at, delivered_at, cancelled_at, '
-    'cancellation_reason, '
+    'cancellation_reason, booked_for_someone, recipient_name, recipient_phone, '
+    'customer:profiles(full_name), provider:profiles(full_name), '
     'items:service_request_items(id, service_request_id, name, quantity, unit, '
     'estimated_unit_price_centavos, actual_unit_price_centavos, notes)';
 
 class SupabasePasuyoRepository implements PasuyoRepository {
-  SupabasePasuyoRepository(SurgoBackend backend) : _backend = backend;
+  SupabasePasuyoRepository(
+    SurgoBackend backend, {
+    SurgoWriteBackend? writer,
+  })  : _backend = backend,
+        _writer = writer;
 
   final SurgoBackend _backend;
+  final SurgoWriteBackend? _writer;
+
+  SurgoWriteBackend get _write {
+    final writer = _writer;
+    if (writer == null) {
+      throw RepositoryFailure.unsupported(
+        'This build cannot submit errand changes.',
+      );
+    }
+    return writer;
+  }
 
   @override
   Future<List<ServiceRequestRecord>> fetchRequestsByCustomer(
@@ -97,6 +166,112 @@ class SupabasePasuyoRepository implements PasuyoRepository {
       ascending: true,
     );
     return [for (final row in rows) ServiceStatusEventRecord.fromRow(row)];
+  }
+
+  @override
+  Future<ServiceRequestRecord> createRequest({
+    required PasuyoCategory category,
+    required String title,
+    required String pickupAddress,
+    required String pickupBarangayId,
+    required int quotedFeeCentavos,
+    List<Map<String, dynamic>> items = const [],
+    String? description,
+    String? pickupPurokId,
+    double? pickupLatitude,
+    double? pickupLongitude,
+    String? dropoffAddress,
+    String? dropoffBarangayId,
+    String? dropoffPurokId,
+    double? dropoffLatitude,
+    double? dropoffLongitude,
+    bool bookedForSomeone = false,
+    String? recipientName,
+    String? recipientPhone,
+  }) async {
+    final row = _rpcRow(await _write.rpc(
+      function: 'create_service_request',
+      params: {
+        'p_category': pasuyoCategoryTokenToDb(category),
+        'p_title': title,
+        'p_pickup_address': pickupAddress,
+        'p_pickup_barangay_id': pickupBarangayId,
+        'p_quoted_fee_centavos': quotedFeeCentavos,
+        'p_items': items,
+        if (description != null) 'p_description': description,
+        if (pickupPurokId != null) 'p_pickup_purok_id': pickupPurokId,
+        if (pickupLatitude != null) 'p_pickup_latitude': pickupLatitude,
+        if (pickupLongitude != null) 'p_pickup_longitude': pickupLongitude,
+        if (dropoffAddress != null) 'p_dropoff_address': dropoffAddress,
+        if (dropoffBarangayId != null)
+          'p_dropoff_barangay_id': dropoffBarangayId,
+        if (dropoffPurokId != null) 'p_dropoff_purok_id': dropoffPurokId,
+        if (dropoffLatitude != null) 'p_dropoff_latitude': dropoffLatitude,
+        if (dropoffLongitude != null) 'p_dropoff_longitude': dropoffLongitude,
+        'p_booked_for_someone': bookedForSomeone,
+        if (recipientName != null) 'p_recipient_name': recipientName,
+        if (recipientPhone != null) 'p_recipient_phone': recipientPhone,
+      },
+    ));
+    return ServiceRequestRecord.fromRow(row);
+  }
+
+  @override
+  Future<ServiceRequestRecord> accept(String requestId) async {
+    final row = _rpcRow(await _write.rpc(
+      function: 'accept_service_request',
+      params: {'p_request_id': requestId},
+    ));
+    return ServiceRequestRecord.fromRow(row);
+  }
+
+  @override
+  Future<ServiceRequestRecord> advance({
+    required String requestId,
+    required PasuyoStatus status,
+  }) async {
+    final row = _rpcRow(await _write.rpc(
+      function: 'advance_service_status',
+      params: {
+        'p_request_id': requestId,
+        'p_status': pasuyoStatusToDb(status),
+      },
+    ));
+    return ServiceRequestRecord.fromRow(row);
+  }
+
+  @override
+  Future<ServiceRequestRecord> setItemActuals({
+    required String requestId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final row = _rpcRow(await _write.rpc(
+      function: 'set_service_item_actuals',
+      params: {'p_request_id': requestId, 'p_items': items},
+    ));
+    return ServiceRequestRecord.fromRow(row);
+  }
+
+  @override
+  Future<ServiceRequestRecord> cancel({
+    required String requestId,
+    String? reason,
+  }) async {
+    final row = _rpcRow(await _write.rpc(
+      function: 'cancel_service_request',
+      params: {
+        'p_request_id': requestId,
+        if (reason != null) 'p_reason': reason,
+      },
+    ));
+    return ServiceRequestRecord.fromRow(row);
+  }
+
+  Map<String, dynamic> _rpcRow(dynamic result) {
+    if (result is Map) return Map<String, dynamic>.from(result);
+    throw RepositoryFailure.invalidData(
+      'The errand service returned an unexpected shape.',
+    );
   }
 
   Future<List<ServiceRequestRecord>> _read({
@@ -172,6 +347,69 @@ class MockPasuyoRepository implements PasuyoRepository {
       String requestId) async {
     // No transition log in the seed; see the note in MockRideRepository.
     return const [];
+  }
+
+  @override
+  Future<ServiceRequestRecord> createRequest({
+    required PasuyoCategory category,
+    required String title,
+    required String pickupAddress,
+    required String pickupBarangayId,
+    required int quotedFeeCentavos,
+    List<Map<String, dynamic>> items = const [],
+    String? description,
+    String? pickupPurokId,
+    double? pickupLatitude,
+    double? pickupLongitude,
+    String? dropoffAddress,
+    String? dropoffBarangayId,
+    String? dropoffPurokId,
+    double? dropoffLatitude,
+    double? dropoffLongitude,
+    bool bookedForSomeone = false,
+    String? recipientName,
+    String? recipientPhone,
+  }) async {
+    throw RepositoryFailure.unsupported(
+      'Seeded errands are simulated by AppState.',
+    );
+  }
+
+  @override
+  Future<ServiceRequestRecord> accept(String requestId) async {
+    throw RepositoryFailure.unsupported(
+      'Seeded errands are simulated by AppState.',
+    );
+  }
+
+  @override
+  Future<ServiceRequestRecord> advance({
+    required String requestId,
+    required PasuyoStatus status,
+  }) async {
+    throw RepositoryFailure.unsupported(
+      'Seeded errands are simulated by AppState.',
+    );
+  }
+
+  @override
+  Future<ServiceRequestRecord> setItemActuals({
+    required String requestId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    throw RepositoryFailure.unsupported(
+      'Seeded errands are simulated by AppState.',
+    );
+  }
+
+  @override
+  Future<ServiceRequestRecord> cancel({
+    required String requestId,
+    String? reason,
+  }) async {
+    throw RepositoryFailure.unsupported(
+      'Seeded errands are simulated by AppState.',
+    );
   }
 
   ServiceRequestRecord _toRecord(PasuyoTask task) => ServiceRequestRecord(

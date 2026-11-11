@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import '../data/models.dart';
+import '../repositories/backend_rows.dart';
+import '../repositories/repository_failure.dart';
+import '../repositories/repository_state.dart';
+import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../state/rental_availability.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -106,12 +111,64 @@ class _AvailabilityNotice extends StatelessWidget {
       };
 }
 
+/// The pick-up barangay, required by the hosted booking function. A hosted
+/// booking names the barangay it starts in; the seed's free text cannot.
+class _BarangayPicker extends StatelessWidget {
+  const _BarangayPicker({
+    required this.barangays,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<BarangayRecord> barangays;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: AppColors.panel2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: AppColors.panel,
+          hint: const Text('Pick-up barangay',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          items: [
+            for (final barangay in barangays)
+              DropdownMenuItem(
+                value: barangay.id,
+                child: Text(barangay.name,
+                    style: const TextStyle(fontSize: 12.5)),
+              ),
+          ],
+          onChanged: barangays.isEmpty ? null : onChanged,
+        ),
+      ),
+    );
+  }
+}
+
 class _RentalDetailScreenState extends State<RentalDetailScreen> {
   /// The period being considered, as real dates. Null until the passenger
   /// picks them, which is why the request button starts disabled: the screen
   /// never invents a period on the passenger's behalf.
   DateTime? _pickup;
   DateTime? _return;
+
+  final DomainCache _cache = AppState.instance.cache;
+  List<BarangayRecord> _barangays = const [];
+  List<RentalRecord> _hostedBookings = const [];
+  String? _barangayId;
+  bool _submitting = false;
+
+  bool get _hosted => AppState.instance.usesHostedIdentity;
 
   @override
   void initState() {
@@ -120,6 +177,54 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
     final today = DateTime(now.year, now.month, now.day);
     _pickup = today;
     _return = today.add(const Duration(days: 2));
+    if (_hosted) {
+      _cache.addListener(_onCacheChanged);
+      _cache.ensure(DomainSlot.barangays);
+      _cache.ensure(DomainSlot.passengerRentalBookings);
+      _syncHostedReads();
+    }
+  }
+
+  @override
+  void dispose() {
+    _cache.removeListener(_onCacheChanged);
+    super.dispose();
+  }
+
+  void _onCacheChanged() {
+    if (!mounted) return;
+    setState(_syncHostedReads);
+  }
+
+  void _syncHostedReads() {
+    final barangays =
+        _cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays);
+    if (barangays.status == RepositoryStatus.data) {
+      _barangays = barangays.data as List<BarangayRecord>;
+    }
+    final bookings =
+        _cache.stateOf<List<RentalRecord>>(DomainSlot.passengerRentalBookings);
+    if (bookings.status == RepositoryStatus.data) {
+      _hostedBookings = bookings.data as List<RentalRecord>;
+    }
+  }
+
+  /// True when one of this account's own live bookings already holds a day in
+  /// the chosen range. RLS hides other renters' bookings, so the server remains
+  /// the final word on a clash.
+  bool _ownRangeClashes(DateTime start, DateTime end) {
+    for (final booking in _hostedBookings) {
+      if (booking.status.isTerminal) continue;
+      final from = booking.startAt;
+      final to = booking.endAt;
+      if (from == null || to == null) continue;
+      final fromDay = DateTime(from.year, from.month, from.day);
+      final toDay = DateTime(to.year, to.month, to.day);
+      final startDay = DateTime(start.year, start.month, start.day);
+      final endDay = DateTime(end.year, end.month, end.day);
+      if (!toDay.isBefore(startDay) && !fromDay.isAfter(endDay)) return true;
+    }
+    return false;
   }
 
   Future<void> _pickRange({required bool isPickup}) async {
@@ -183,10 +288,25 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
             returnDate: _return!,
           )
         : const RentalAvailability(canBook: false);
+    // RLS hides other renters' bookings, so a hosted build can only pre-check
+    // this account's own ones; the server makes the final call on a clash.
+    final hostedClash = _hosted &&
+        _pickup != null &&
+        _return != null &&
+        _ownRangeClashes(_pickup!, _return!);
     // One live rental at a time per account: a second booking would overwrite the
     // first and strand it, the same reason a helper can hold only one errand.
-    final blockedByExistingRequest = state.activeRentalBooking != null;
-    final canRequest = availability.canBook && !blockedByExistingRequest;
+    final blockedByExistingRequest = _hosted
+        ? _hostedBookings.any((b) => !b.status.isTerminal)
+        : state.activeRentalBooking != null;
+    final platformFee = HostedFees.rentalPlatformFee((days ?? 0) * 24);
+    final canRequest = _hosted
+        ? days != null &&
+            _barangayId != null &&
+            !blockedByExistingRequest &&
+            !hostedClash &&
+            !_submitting
+        : availability.canBook && !blockedByExistingRequest;
 
     return Scaffold(
       body: Stack(
@@ -325,10 +445,33 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    _AvailabilityNotice(
-                      availability: availability,
-                      blockedByExistingRequest: blockedByExistingRequest,
-                    ),
+                    if (_hosted) ...[
+                      _BarangayPicker(
+                        barangays: _barangays,
+                        value: _barangayId,
+                        onChanged: (id) => setState(() => _barangayId = id),
+                      ),
+                      const SizedBox(height: 10),
+                      SbStatusBanner(
+                        tone: blockedByExistingRequest || hostedClash
+                            ? SbTone.danger
+                            : SbTone.success,
+                        icon: blockedByExistingRequest || hostedClash
+                            ? Icons.error_outline
+                            : Icons.check_circle_outline,
+                        title: blockedByExistingRequest
+                            ? 'You already have a rental request in progress.'
+                            : hostedClash
+                                ? 'Those dates clash with your current rental.'
+                                : _barangayId == null
+                                    ? 'Choose the pick-up barangay.'
+                                    : 'The owner will confirm these dates.',
+                      ),
+                    ] else
+                      _AvailabilityNotice(
+                        availability: availability,
+                        blockedByExistingRequest: blockedByExistingRequest,
+                      ),
                     const SizedBox(height: 16),
                     Text(
                       '${vehicle.description} ${Money.format(vehicle.depositFee)} refundable deposit.',
@@ -356,13 +499,20 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(Money.format(total),
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text(
+                            Money.format(
+                                _hosted ? total + platformFee : total),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 15)),
                         Text(
                           days == null
                               ? 'Pick your dates'
-                              : '$days ${days == 1 ? 'day' : 'days'} total',
-                          style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+                              : _hosted
+                                  ? '${Money.format(total)} fare + '
+                                      '${Money.format(platformFee)} fee'
+                                  : '$days ${days == 1 ? 'day' : 'days'} total',
+                          style: const TextStyle(
+                              color: AppColors.muted, fontSize: 10.5),
                         ),
                       ],
                     ),
@@ -374,71 +524,24 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                         // button never refuses without explanation.
                         onPressed: canRequest
                             ? () {
-                                state.requestRental(
-                                  vehicleId: vehicle.id,
-                                  vehicleName: vehicle.name,
-                                  vehicleType: vehicle.type,
-                                  icon: vehicle.icon,
-                                  ownerName: vehicle.ownerName,
-                                  ownerInitials: vehicle.ownerInitials,
-                                  pickupLabel: _fmt(_pickup!),
-                                  returnLabel: _fmt(_return!),
-                                  pickupDate: _pickup!,
-                                  returnDate: _return!,
-                                  days: days!,
-                                  totalFare: total,
-                                );
-                                showDialog(
-                                  context: context,
-                                  builder: (_) => AlertDialog(
-                                    backgroundColor: AppColors.panel,
-                                    title: const Text('Rental requested'),
-                                    content: Text(
-                                      'Your request for the ${vehicle.name} from ${_fmt(_pickup!)} '
-                                      'to ${_fmt(_return!)} has been sent to ${vehicle.ownerName}. '
-                                      'You\'ll see it as pending on your Home tab while they respond.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        // Cleans the stack instead of popping a
-                                        // guessed number of times: the dialog,
-                                        // this screen and the list all close and
-                                        // Home is left as the only route.
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          Navigator.of(context).pushNamedAndRemoveUntil(
-                                            '/home',
-                                            (route) => false,
-                                          );
-                                        },
-                                        child: const Text('Back to Home'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.pop(context); // close dialog
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(builder: (_) => const ActiveRentalScreen()),
-                                          );
-                                        },
-                                        child: const Text('View Request'),
-                                      ),
-                                    ],
-                                  ),
-                                );
+                                if (_hosted) {
+                                  _submitHosted(vehicle, total);
+                                } else {
+                                  _submitMock(vehicle, days!, total);
+                                }
                               }
-                            // Disabled when the period is not free; see the
-                            // notice above for which reason applies.
                             : null,
-                            // The label has to say which of the reasons it is
-                            // disabled: a button that just goes grey teaches
-                            // nothing.
-                            child: Text(
-                          blockedByExistingRequest
-                              ? 'Rental Already Requested'
-                              : availability.canBook
-                                  ? 'Request Rental'
-                                  : 'Unavailable',
+                        // The label has to say which of the reasons it is
+                        // disabled: a button that just goes grey teaches
+                        // nothing.
+                        child: Text(
+                          _submitting
+                              ? 'Sending…'
+                              : blockedByExistingRequest
+                                  ? 'Rental Already Requested'
+                                  : _hosted || availability.canBook
+                                      ? 'Request Rental'
+                                      : 'Unavailable',
                         ),
                       ),
                     ),
@@ -446,6 +549,93 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _submitMock(RentalVehicle vehicle, int days, int total) {
+    AppState.instance.requestRental(
+      vehicleId: vehicle.id,
+      vehicleName: vehicle.name,
+      vehicleType: vehicle.type,
+      icon: vehicle.icon,
+      ownerName: vehicle.ownerName,
+      ownerInitials: vehicle.ownerInitials,
+      pickupLabel: _fmt(_pickup!),
+      returnLabel: _fmt(_return!),
+      pickupDate: _pickup!,
+      returnDate: _return!,
+      days: days,
+      totalFare: total,
+    );
+    _showRequestedDialog(vehicle);
+  }
+
+  Future<void> _submitHosted(
+    RentalVehicle vehicle,
+    int total,
+  ) async {
+    setState(() => _submitting = true);
+    final barangay = _barangays.firstWhere((b) => b.id == _barangayId);
+    final location = vehicle.location.isEmpty
+        ? barangay.name
+        : '${barangay.name}, ${vehicle.location}';
+    try {
+      await AppState.instance.createHostedRentalRequest(
+        vehicle: vehicle,
+        pickupDate: _pickup!,
+        returnDate: _return!,
+        pickupBarangayId: barangay.id,
+        pickupLocation: location,
+      );
+      if (!mounted) return;
+      _showRequestedDialog(vehicle);
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(failure.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _showRequestedDialog(RentalVehicle vehicle) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Rental requested'),
+        content: Text(
+          'Your request for the ${vehicle.name} from ${_fmt(_pickup!)} '
+          'to ${_fmt(_return!)} has been sent to ${vehicle.ownerName}. '
+          'You\'ll see it as pending on your Home tab while they respond.',
+        ),
+        actions: [
+          TextButton(
+            // Cleans the stack instead of popping a guessed number of times:
+            // the dialog, this screen and the list all close and Home is left
+            // as the only route.
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                '/home',
+                (route) => false,
+              );
+            },
+            child: const Text('Back to Home'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // close dialog
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ActiveRentalScreen()),
+              );
+            },
+            child: const Text('View Request'),
           ),
         ],
       ),

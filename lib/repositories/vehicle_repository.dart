@@ -27,7 +27,8 @@ const String _vehicleColumns =
     'status, rating, total_rentals';
 
 const String _vehicleSelectColumns =
-    '$_vehicleColumns, owner:profiles(full_name)';
+    '$_vehicleColumns, owner:profiles(full_name), '
+    'service_area:service_areas(name)';
 
 class SupabaseVehicleRepository implements VehicleRepository {
   SupabaseVehicleRepository(SurgoBackend backend) : _backend = backend;

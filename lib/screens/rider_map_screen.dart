@@ -3,6 +3,7 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../services/money.dart';
 import '../services/ride_pricing.dart';
+import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
@@ -21,9 +22,15 @@ class EarnerMapScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final db = DbService.instance;
-    final requestsByPassenger = {for (final r in db.mapRideRequests) r.passengerId: r};
+    // The preview draws the seeded map people. A hosted rider's real demand
+    // arrives through the assigned-request slot, so pinning seed passengers
+    // here would invent jobs that do not exist.
+    final hosted = AppState.instance.usesHostedIdentity;
+    final requestsByPassenger = {
+      for (final r in db.mapRideRequests) r.passengerId: r
+    };
 
-    final markers = db.mapPassengers.map((p) {
+    final markers = (hosted ? const <MapPassenger>[] : db.mapPassengers).map((p) {
       final MapRideRequest? req = requestsByPassenger[p.id];
       return SurgoMapMarker(
         id: p.id,
@@ -73,7 +80,9 @@ class EarnerMapScreen extends StatelessWidget {
                         border: Border.all(color: AppColors.border),
                       ),
                       child: Text(
-                        '${db.mapPassengers.length} nearby passengers',
+                        hosted
+                            ? 'Nearby demand is not mapped yet'
+                            : '${db.mapPassengers.length} nearby passengers',
                         style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
                       ),
                     ),

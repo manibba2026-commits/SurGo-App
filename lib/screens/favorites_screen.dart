@@ -10,6 +10,25 @@ class FavoritesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // Favourites are seeded on this build, not loaded for the signed-in
+    // account, so a live sign-in sees the note instead of demo riders.
+    if (state.usesHostedIdentity) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Favorites')),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          children: const [
+            SbCard(
+              child: Text(
+                'Favorites aren\'t synced for live accounts yet, so the demo '
+                'list is hidden here.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Favorites')),
       body: ListenableBuilder(

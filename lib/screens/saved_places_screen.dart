@@ -10,6 +10,25 @@ class SavedPlacesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // The saved list lives in the seed; showing it under a live sign-in would
+    // present demo addresses as the user's own.
+    if (state.usesHostedIdentity) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Saved Places')),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          children: const [
+            SbCard(
+              child: Text(
+                'Saved places aren\'t synced for live accounts yet, so the '
+                'demo list is hidden here.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Saved Places')),
       body: ListenableBuilder(

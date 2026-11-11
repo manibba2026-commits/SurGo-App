@@ -97,6 +97,18 @@ enum RideStatus {
 
   /// Parses a seeded status. Older seeds stored free-text statuses; they are
   /// mapped onto the path rather than rewritten, so seed files stay valid.
+  /// The value the database enum expects, used when writing a transition.
+  String get wireValue => switch (this) {
+        RideStatus.searching => 'searching',
+        RideStatus.awaitingAcceptance => 'awaiting_acceptance',
+        RideStatus.accepted => 'accepted',
+        RideStatus.headingToPickup => 'heading_to_pickup',
+        RideStatus.arrived => 'arrived',
+        RideStatus.inProgress => 'in_progress',
+        RideStatus.completed => 'completed',
+        RideStatus.cancelled => 'cancelled',
+      };
+
   static RideStatus fromJson(Object? raw) => switch ('$raw'.toLowerCase()) {
         'pending' || 'searching' => RideStatus.searching,
         'awaitingacceptance' ||

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
+import '../repositories/repository_failure.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
 import '../state/ride_status.dart';
@@ -102,6 +103,14 @@ class LiveTripScreen extends StatelessWidget {
   Widget _trip(BuildContext context, AppState state, RideRequestItem activeRide) {
     final db = DbService.instance;
     final earner = db.earner;
+    // A hosted trip has no seeded counterpart: the passenger and rider rows are
+    // protected by RLS and there is no live rider fix streamed to this device,
+    // so the seed's map people and the demo driver's position must not be
+    // borrowed to fill the screen in.
+    final hosted = state.usesHostedIdentity;
+    final myRiderId = state.currentAccount?.riderId;
+    final iAmTheRider =
+        hosted && myRiderId != null && activeRide.riderId == myRiderId;
     MapPassenger? matchById;
     MapPassenger? matchByName;
     for (final p in db.mapPassengers) {
@@ -139,12 +148,18 @@ class LiveTripScreen extends StatelessWidget {
     // signed-in earner - all three roles run on the same account, so the
     // signed-in earner is frequently not the driver. Fall back to the earner
     // only while nothing is assigned, so the card is never blank.
-    final driverName = assignedRider?.name ?? earner.name;
-    final driverInitials = assignedRider?.initials ?? earner.initials;
-    final driverModel = assignedRider?.vehicleModel ?? earner.vehicleModel;
-    final driverVehicleLabel = assignedRider != null
-        ? '${assignedRider.vehicleType} · ${assignedRider.vehiclePlate}'
-        : '${earner.vehicleType} · ${earner.vehiclePlate}';
+    final driverName = hosted
+        ? (iAmTheRider ? (state.currentAccount?.name ?? 'You') : 'Your rider')
+        : assignedRider?.name ?? earner.name;
+    final driverInitials =
+        hosted ? _initialsFor(driverName) : assignedRider?.initials ?? earner.initials;
+    final driverModel =
+        hosted ? '' : assignedRider?.vehicleModel ?? earner.vehicleModel;
+    final driverVehicleLabel = hosted
+        ? 'Vehicle details are shared after the trip'
+        : (assignedRider != null
+            ? '${assignedRider.vehicleType} · ${assignedRider.vehiclePlate}'
+            : '${earner.vehicleType} · ${earner.vehiclePlate}');
     final driverRating = assignedRider?.rating ?? earner.rating;
     final driverTrips = assignedRider?.totalTrips ?? earner.totalTrips;
     final driverPosition = (assignedRider ??
@@ -154,23 +169,28 @@ class LiveTripScreen extends StatelessWidget {
     final pickupPoint = matchedRequest?.pickup ??
         (activeRide.pickupLatitude != null
             ? MapPoint(activeRide.pickupLatitude!, activeRide.pickupLongitude!)
-            : (passenger?.position ?? db.mapConfig.defaultCenter));
+            : (hosted
+                ? db.mapConfig.defaultCenter
+                : (passenger?.position ?? db.mapConfig.defaultCenter)));
+    // Without a rider fix the route is still the honest thing to draw, so the
+    // destination falls back to the pickup pin rather than a seeded driver.
     final destinationPoint = activeRide.dropoffLatitude != null
         ? MapPoint(activeRide.dropoffLatitude!, activeRide.dropoffLongitude!)
-        : driverPosition;
+        : (hosted ? pickupPoint : driverPosition);
 
     final markers = <SurgoMapMarker>[
-      SurgoMapMarker(
-        id: 'driver',
-        position: driverPosition,
-        icon: surgoMarkerIcon('motorcycle'),
-        title: 'You',
-        subtitle: driverVehicleLabel,
-        details: [
-          MapEntry('Name', driverName),
-          MapEntry('Vehicle', driverModel),
-        ],
-      ),
+      if (!hosted)
+        SurgoMapMarker(
+          id: 'driver',
+          position: driverPosition,
+          icon: surgoMarkerIcon('motorcycle'),
+          title: 'You',
+          subtitle: driverVehicleLabel,
+          details: [
+            MapEntry('Name', driverName),
+            MapEntry('Vehicle', driverModel),
+          ],
+        ),
       SurgoMapMarker(
         id: 'pickup',
         position: pickupPoint,
@@ -301,7 +321,11 @@ class LiveTripScreen extends StatelessWidget {
                                           fontWeight: FontWeight.w800,
                                           fontSize: 14)),
                                   Text(
-                                      '⭐ $driverRating · $driverTrips trips',
+                                      hosted
+                                          ? (iAmTheRider
+                                              ? 'Signed in as the rider for this trip'
+                                              : 'Rider details are shared after the trip')
+                                          : '⭐ $driverRating · $driverTrips trips',
                                       style: const TextStyle(
                                           color: AppColors.muted,
                                           fontSize: 11.5)),
@@ -354,9 +378,13 @@ class LiveTripScreen extends StatelessWidget {
                           activeRide.status == RideStatus.inProgress
                               ? 'The trip is under way. Complete it to settle '
                                   'the fare and rate your rider.'
-                              : 'Rider progress is simulated in this '
-                                  'prototype. Advance the trip to see the next '
-                                  'state.',
+                              : hosted
+                                  ? 'The trip moves one step at a time. The '
+                                      'database refuses any step that is not '
+                                      'legal for your side of the trip.'
+                                  : 'Rider progress is simulated in this '
+                                      'prototype. Advance the trip to see the '
+                                      'next state.',
                           style: const TextStyle(
                               color: AppColors.muted,
                               fontSize: 11.5,
@@ -379,7 +407,41 @@ class LiveTripScreen extends StatelessWidget {
                   if (activeRide.status.advanceActionLabel != null)
                     SbPrimaryButton(
                       label: activeRide.status.advanceActionLabel!,
-                      onPressed: () {
+                      onPressed: () async {
+                        if (state.usesHostedIdentity) {
+                          try {
+                            final next = await state.advanceHostedRide();
+                            if (!context.mounted) return;
+                            if (next == null) {
+                              SurgoNotice.show(
+                                context,
+                                'The trip cannot move forward yet.',
+                                tone: SbNoticeTone.warning,
+                              );
+                              return;
+                            }
+                            SurgoNotice.show(
+                              context,
+                              next.label,
+                              tone: next == RideStatus.completed
+                                  ? SbNoticeTone.success
+                                  : SbNoticeTone.info,
+                            );
+                            if (next == RideStatus.completed) {
+                              Navigator.of(context).pushNamedAndRemoveUntil(
+                                  '/home', (route) => false);
+                            }
+                          } on RepositoryFailure catch (failure) {
+                            if (!context.mounted) return;
+                            SurgoNotice.show(
+                              context,
+                              failure.message,
+                              tone: SbNoticeTone.warning,
+                              title: 'Trip update failed',
+                            );
+                          }
+                          return;
+                        }
                         // One action follows the trip's own state machine: the
                         // earlier steps move it along, and only the last live
                         // state settles. Settling here (not from `accepted`)
@@ -499,4 +561,14 @@ class _RideStatusStepper extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Initials for a display name, matching the seed convention: the first
+/// letter of the first and last word.
+String _initialsFor(String name) {
+  final parts = name.trim().split(RegExp(r"\s+"));
+  if (parts.isEmpty || parts.first.isEmpty) return "?";
+  if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+  return (parts.first.characters.first + parts.last.characters.first)
+      .toUpperCase();
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/repository_failure.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
@@ -24,6 +25,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
   final _titleCtrl = TextEditingController();
   final _itemCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  final _recipientNameCtrl = TextEditingController();
+  final _recipientPhoneCtrl = TextEditingController();
 
   PasuyoCategory _category = PasuyoCategory.groceries;
   String _pickup = '';
@@ -32,7 +35,17 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
   String _dropoff = '';
   String _dropoffBarangay = '';
   String _dropoffPurok = '';
+  String? _pickupBarangayId;
+  String? _pickupPurokId;
+  String? _dropoffBarangayId;
+  String? _dropoffPurokId;
+  bool _bookedForSomeone = false;
+  bool _submitting = false;
   int _budget = 15000;
+
+  /// Hosted writes go straight to Postgres and need the barangay id, while the
+  /// seeded demo keeps using AppState and its label-only picker.
+  bool get _hosted => AppState.instance.usesHostedIdentity;
 
   /// Slider bounds in centavos: ₱50 to ₱800.
   static const int minBudget = 5000;
@@ -44,6 +57,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
     _titleCtrl.dispose();
     _itemCtrl.dispose();
     _noteCtrl.dispose();
+    _recipientNameCtrl.dispose();
+    _recipientPhoneCtrl.dispose();
     super.dispose();
   }
 
@@ -67,6 +82,38 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
     });
   }
 
+  /// Hosted variant: keeps the chosen barangay and purok ids so the database
+  /// row can reference them instead of a free-text label.
+  void _applyHostedLocation(PickedLocation picked, {required bool isPickup}) {
+    setState(() {
+      if (isPickup) {
+        _pickup = picked.label;
+        _pickupBarangay = picked.barangayName;
+        _pickupPurok = picked.purokName ?? '';
+        _pickupBarangayId = picked.barangayId;
+        _pickupPurokId = picked.purokId;
+      } else {
+        _dropoff = picked.label;
+        _dropoffBarangay = picked.barangayName;
+        _dropoffPurok = picked.purokName ?? '';
+        _dropoffBarangayId = picked.barangayId;
+        _dropoffPurokId = picked.purokId;
+      }
+    });
+  }
+
+  Future<void> _pickLocation({required bool isPickup}) async {
+    if (!_hosted) {
+      final picked = await showLocationPicker(context,
+          title: isPickup ? 'Pickup location' : 'Drop-off location');
+      if (picked != null) _applyLocation(picked, isPickup: isPickup);
+      return;
+    }
+    final picked = await showHostedLocationPicker(context,
+        title: isPickup ? 'Pickup location' : 'Drop-off location');
+    if (picked != null) _applyHostedLocation(picked, isPickup: isPickup);
+  }
+
   void _addItem(String raw) {
     final item = raw.trim();
     if (item.isEmpty) return;
@@ -76,9 +123,13 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
     });
   }
 
-  void _post() {
+  Future<void> _post() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_pickup.isEmpty || _dropoff.isEmpty) {
+    if (_pickup.isEmpty || (_hosted && _pickupBarangayId == null)) {
+      _toast('Set both pickup and drop-off first');
+      return;
+    }
+    if (_dropoff.isEmpty) {
       _toast('Set both pickup and drop-off first');
       return;
     }
@@ -86,25 +137,67 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
       _toast('Add at least one item');
       return;
     }
+    if (_bookedForSomeone && _recipientNameCtrl.text.trim().isEmpty) {
+      _toast('Add the recipient\'s name');
+      return;
+    }
 
-    final task = AppState.instance.postPasuyoTask(
-      category: _category,
-      title: _titleCtrl.text.trim(),
-      items: List.unmodifiable(_items),
-      pickupBarangay: _pickupBarangay,
-      pickupPurok: _pickupPurok,
-      pickup: _pickup,
-      dropoffBarangay: _dropoffBarangay,
-      dropoffPurok: _dropoffPurok,
-      dropoff: _dropoff,
-      budget: _budget,
-      note: _noteCtrl.text.trim(),
-    );
+    if (!_hosted) {
+      final task = AppState.instance.postPasuyoTask(
+        category: _category,
+        title: _titleCtrl.text.trim(),
+        items: List.unmodifiable(_items),
+        pickupBarangay: _pickupBarangay,
+        pickupPurok: _pickupPurok,
+        pickup: _pickup,
+        dropoffBarangay: _dropoffBarangay,
+        dropoffPurok: _dropoffPurok,
+        dropoff: _dropoff,
+        budget: _budget,
+        note: _noteCtrl.text.trim(),
+      );
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
-    );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final note = _noteCtrl.text.trim();
+      final phone = _recipientPhoneCtrl.text.trim();
+      final task = await AppState.instance.createHostedErrand(
+        category: _category,
+        title: _titleCtrl.text.trim(),
+        pickupAddress: _pickup,
+        pickupBarangayId: _pickupBarangayId!,
+        pickupPurokId: _pickupPurokId,
+        quotedFeeCentavos: _budget,
+        items: [
+          for (final item in _items) {'name': item},
+        ],
+        description: note.isEmpty ? null : note,
+        dropoffAddress: _dropoff,
+        dropoffBarangayId: _dropoffBarangayId,
+        dropoffPurokId: _dropoffPurokId,
+        bookedForSomeone: _bookedForSomeone,
+        recipientName:
+            _bookedForSomeone ? _recipientNameCtrl.text.trim() : null,
+        recipientPhone:
+            _bookedForSomeone && phone.isNotEmpty ? phone : null,
+      );
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
+      );
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      _toast(failure.message);
+      setState(() => _submitting = false);
+    }
   }
 
   void _toast(String message) {
@@ -113,7 +206,15 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final breakdown = FeeCalculator.breakdownFor(ServiceType.pasuyo, _budget);
+    // Hosted errands charge a flat platform add-on and pay the helper the fee
+    // whole; the seeded demo still uses the legacy percentage split.
+    final breakdown = _hosted
+        ? FeeBreakdown.fixedAddon(
+            service: ServiceType.pasuyo,
+            providerFare: _budget,
+            platformFee: HostedFees.pasuyoPlatformFeeCentavos,
+          )
+        : FeeCalculator.breakdownFor(ServiceType.pasuyo, _budget);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Post a Pasuyo')),
@@ -223,11 +324,7 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
               value: _pickup.isEmpty ? 'Where should the helper buy it?' : _pickup,
               leading: const Icon(Icons.storefront_outlined,
                   size: 17, color: AppColors.secondary),
-              onTap: () async {
-                final picked = await showLocationPicker(context,
-                    title: 'Pickup location');
-                if (picked != null) _applyLocation(picked, isPickup: true);
-              },
+              onTap: () => _pickLocation(isPickup: true),
             ),
             const SizedBox(height: 8),
             SbField(
@@ -236,12 +333,48 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
                   _dropoff.isEmpty ? 'Where should it go?' : _dropoff,
               leading: const Icon(Icons.place_outlined,
                   size: 17, color: AppColors.primary),
-              onTap: () async {
-                final picked = await showLocationPicker(context,
-                    title: 'Drop-off location');
-                if (picked != null) _applyLocation(picked, isPickup: false);
-              },
+              onTap: () => _pickLocation(isPickup: false),
             ),
+            const SizedBox(height: 14),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Booked for someone else',
+                  style:
+                      TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+              subtitle: const Text(
+                  'The recipient receives the goods; you still pay.',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+              value: _bookedForSomeone,
+              activeTrackColor: AppColors.primary,
+              onChanged: (v) => setState(() => _bookedForSomeone = v),
+            ),
+            if (_bookedForSomeone) ...[
+              const SizedBox(height: 4),
+              TextFormField(
+                controller: _recipientNameCtrl,
+                style: const TextStyle(fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: 'Recipient name',
+                  labelStyle: TextStyle(fontSize: 12.5),
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => !_bookedForSomeone ||
+                        (v != null && v.trim().isNotEmpty)
+                    ? null
+                    : 'Add the recipient\'s name',
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _recipientPhoneCtrl,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(fontSize: 13),
+                decoration: const InputDecoration(
+                  labelText: 'Recipient phone (optional)',
+                  labelStyle: TextStyle(fontSize: 12.5),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
             Row(
               children: [
@@ -279,9 +412,11 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
             ),
             const SizedBox(height: 20),
             SbPrimaryButton(
-              label: 'Post Pasuyo · ${breakdown.customerPaysLabel}',
+              label: _submitting
+                  ? 'Posting…'
+                  : 'Post Pasuyo · ${breakdown.customerPaysLabel}',
               icon: Icons.send_rounded,
-              onPressed: _post,
+              onPressed: _submitting ? null : _post,
             ),
           ],
         ),
@@ -300,7 +435,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
           _row('Helper gets', b.providerGetsLabel,
               color: AppColors.secondaryLight),
           const SizedBox(height: 6),
-          _row('SurGo service fee (15%)', b.surgoKeepsLabel,
+          _row(_hosted ? 'Platform fee (fixed)' : 'SurGo service fee (15%)',
+              b.surgoKeepsLabel,
               color: AppColors.yellow),
         ],
       ),

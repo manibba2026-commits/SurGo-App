@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import '../repositories/backend_rows.dart';
 import '../state/app_state.dart';
+import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/common.dart';
 import '../widgets/mode_switcher.dart';
+import '../widgets/repository_states.dart';
 import 'account_settings_screen.dart';
 import 'emergency_contacts_screen.dart';
 import 'vehicle_documents_screen.dart';
@@ -20,48 +23,53 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
+    // The seeded owner is a demo persona; a hosted owner is the signed-in
+    // account, so the header reads that profile and their own fleet.
+    final identity = state.usesHostedIdentity
+        ? RepositoryInline<ProfileRecord>(
+            slot: DomainSlot.profile,
+            placeholder: const SizedBox(height: 96),
+            data: (context, profile) => Column(
+              children: [
+                SbAvatar(initials: _initials(profile.fullName), size: 64),
+                const SizedBox(height: 10),
+                Text(
+                  profile.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 2),
+                RepositoryInline<List<VehicleRecord>>(
+                  slot: DomainSlot.ownerFleet,
+                  placeholder: _ownerSubtitle(profile, null),
+                  data: (context, fleet) => _ownerSubtitle(profile, fleet),
+                ),
+                if (profile.phone != null) ...[
+                  const SizedBox(height: 2),
+                  Text(profile.phone!,
+                      style: const TextStyle(
+                          color: AppColors.muted2, fontSize: 11.5)),
+                ],
+                if (profile.isSuspended) ...[
+                  const SizedBox(height: 8),
+                  const SbTag('Suspended'),
+                ],
+              ],
+            ),
+          )
+        : Center(child: _seedIdentity(state));
     final body = ListenableBuilder(
       listenable: state,
       builder: (context, _) {
-        final owner = state.db.vehicleOwner;
         return SafeArea(
           bottom: false,
           child: ListView(
             padding: EdgeInsets.fromLTRB(18, embedded ? 4 : 16, 18, 90),
             children: [
               if (embedded) const SbTabHeader(title: 'Profile'),
-              Center(
-                child: Column(
-                  children: [
-                    SbAvatar(initials: owner.initials, size: 64),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            owner.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 16),
-                          ),
-                        ),
-                        if (owner.verified) ...[
-                          const SizedBox(width: 6),
-                          const Icon(Icons.verified,
-                              size: 16, color: AppColors.primaryLight),
-                        ],
-                      ],
-                    ),
-                    Text(
-                      '⭐ ${owner.rating} · ${owner.totalRentals} rentals · Since ${owner.memberSince}',
-                      style:
-                          const TextStyle(color: AppColors.muted, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
+              Center(child: identity),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -149,6 +157,59 @@ class VehicleOwnerProfileScreen extends StatelessWidget {
     );
     if (embedded) return body;
     return Scaffold(body: body);
+  }
+
+  Widget _seedIdentity(AppState state) {
+    final owner = state.db.vehicleOwner;
+    return Column(
+      children: [
+        SbAvatar(initials: owner.initials, size: 64),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                owner.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+            ),
+            if (owner.verified) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.verified,
+                  size: 16, color: AppColors.primaryLight),
+            ],
+          ],
+        ),
+        Text(
+          '⭐ ${owner.rating} · ${owner.totalRentals} rentals · Since ${owner.memberSince}',
+          style: const TextStyle(color: AppColors.muted, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Widget _ownerSubtitle(ProfileRecord profile, List<VehicleRecord>? fleet) {
+    final since = profile.createdAt?.year;
+    return Text(
+      [
+        'Vehicle Owner',
+        if (fleet != null) '${fleet.length} vehicles',
+        if (since != null) 'Since $since',
+      ].join(' · '),
+      style: const TextStyle(color: AppColors.muted, fontSize: 12),
+    );
+  }
+
+  static String _initials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.characters.first.toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
   }
 
   Widget _quickAction(BuildContext context,
