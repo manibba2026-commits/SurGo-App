@@ -1,4 +1,5 @@
 import { buildOtpMessage } from './message.ts';
+import { isDemoNumber } from './demo_numbers.ts';
 import { extractSmsHookPayload } from './payload.ts';
 import { isValidOtp, normalizePhilippineNumber } from './phone.ts';
 import { sendSemaphoreSms } from './semaphore.ts';
@@ -69,6 +70,11 @@ export async function handleSendSms(
   const number = normalizePhilippineNumber(extracted.phone);
   if (!number) {
     return json({ error: 'invalid_phone' }, 400);
+  }
+  // Demo identities sign in with a PIN; their phone must never receive an OTP.
+  if (isDemoNumber(number)) {
+    console.error('send-sms: refused a demo number');
+    return json({ error: 'demo_number_blocked' }, 403);
   }
   if (!isValidOtp(extracted.otp)) {
     return json({ error: 'invalid_otp' }, 400);

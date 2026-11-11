@@ -233,3 +233,44 @@ test('rejects non-POST requests', async () => {
   );
   assert.equal(response.status, 405);
 });
+
+test('never sends an OTP to a demo number in any spelling', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const forms = [
+    '+639170000001',
+    '639170000001',
+    '09170000001',
+  ];
+
+  for (const phone of forms) {
+    const calls: FetchCall[] = [];
+    const response = await handleSendSms(
+      await signedRequest(payload({ user: { phone } })),
+      {
+        hookSecret: HOOK_SECRET,
+        semaphoreApiKey: 'sem_test_key',
+        nowSeconds: NOW,
+        fetchImpl: captureFetch(calls, semaphoreOk),
+      },
+    );
+    assert.equal(response.status, 403, phone);
+    assert.deepEqual(await response.json(), { error: 'demo_number_blocked' });
+    assert.equal(calls.length, 0, phone);
+  }
+});
+
+test('a real number next to the demo block still delivers', async () => {
+  const calls: FetchCall[] = [];
+  const response = await handleSendSms(
+    await signedRequest(payload({ user: { phone: '+639175124810' } })),
+    {
+      hookSecret: HOOK_SECRET,
+      semaphoreApiKey: 'sem_test_key',
+      nowSeconds: NOW,
+      fetchImpl: captureFetch(calls, semaphoreOk),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+});
