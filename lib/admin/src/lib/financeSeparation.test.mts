@@ -1,13 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { actualOnly, completedTotals, type FinanceRow } from './financeSeparation.ts';
-import { SIMULATED_FINANCE, SIMULATED_FINANCE_NOTE } from './simulatedFinance.ts';
 
 const real: FinanceRow[] = [
   { status: 'completed', customer_pays_centavos: 12000, provider_payout_centavos: 10800, platform_revenue_centavos: 1200 },
   { status: 'completed', customer_pays_centavos: 6000, provider_payout_centavos: 5400, platform_revenue_centavos: 600 },
   { status: 'pending', customer_pays_centavos: 9900, provider_payout_centavos: 8900, platform_revenue_centavos: 1000 },
   { status: 'voided', customer_pays_centavos: 5000, provider_payout_centavos: 4500, platform_revenue_centavos: 500 },
+];
+
+const demo: FinanceRow[] = [
+  { is_simulated: true, status: 'completed', customer_pays_centavos: 11000, provider_payout_centavos: 11000, platform_revenue_centavos: 0 },
+  { is_simulated: true, status: 'completed', customer_pays_centavos: 9500, provider_payout_centavos: 9500, platform_revenue_centavos: 0 },
 ];
 
 test('completed totals count only completed, real rows', () => {
@@ -19,23 +23,21 @@ test('completed totals count only completed, real rows', () => {
   });
 });
 
-test('simulated fixtures are explicitly marked and carry no real status', () => {
-  assert.ok(SIMULATED_FINANCE.length > 0);
-  for (const row of SIMULATED_FINANCE) {
-    assert.equal(row.simulated, true, 'every fixture is flagged simulated');
-    assert.match(row.reference, /^SIM-/, 'fixture references are visibly simulated');
-    assert.ok(!('status' in row), 'fixtures never masquerade as completed transactions');
-    assert.ok(row.cash_centavos > 0 && row.platform_fee_centavos > 0);
-  }
-  assert.match(SIMULATED_FINANCE_NOTE, /never counted/i);
-});
-
-test('a fixture mixed into database rows cannot change a real total', () => {
-  const mixed = [...real, ...SIMULATED_FINANCE] as FinanceRow[];
+test('database demo rows never enter a real total', () => {
+  const mixed = [...real, ...demo] as FinanceRow[];
   assert.deepEqual(completedTotals(actualOnly(mixed)), completedTotals(real));
 });
 
-test('actualOnly keeps database rows untouched', () => {
-  assert.deepEqual(actualOnly(real), real);
-  assert.deepEqual(actualOnly([...SIMULATED_FINANCE] as { simulated?: boolean }[]), []);
+test('actualOnly drops both fixture and database demo markers', () => {
+  assert.deepEqual(actualOnly([...real, ...demo]), real);
+  assert.deepEqual(actualOnly([{ simulated: true }, { is_simulated: true }]), []);
+});
+
+test('demo settlements carry zero platform revenue', () => {
+  assert.deepEqual(completedTotals(demo), {
+    count: 2,
+    cashCentavos: 20500,
+    payoutCentavos: 20500,
+    feeCentavos: 0,
+  });
 });

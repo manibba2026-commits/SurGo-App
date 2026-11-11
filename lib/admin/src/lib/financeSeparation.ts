@@ -2,11 +2,12 @@
  * The boundary between real money and demonstration rows.
  *
  * Real figures always come from database rows that passed through `actualOnly`.
- * The Finance page's simulated fixtures live in a separate module and are only
- * rendered in their own section, so no fixture can enter a total by accident.
+ * Demo activity is stored in the same tables with `is_simulated = true`; it is
+ * rendered in its own section and never enters a real total.
  */
 export type FinanceRow = {
   simulated?: boolean;
+  is_simulated?: boolean;
   status?: string | null;
   customer_pays_centavos?: number | string | null;
   provider_payout_centavos?: number | string | null;
@@ -14,9 +15,11 @@ export type FinanceRow = {
   platform_revenue_centavos?: number | string | null;
 };
 
-/** Drops anything flagged as simulated. */
-export function actualOnly<T extends { simulated?: boolean }>(rows: readonly T[]): T[] {
-  return rows.filter((row) => row.simulated !== true);
+/** Drops anything flagged as simulated, from a fixture or from the database. */
+export function actualOnly<T extends { simulated?: boolean; is_simulated?: boolean }>(
+  rows: readonly T[],
+): T[] {
+  return rows.filter((row) => row.simulated !== true && row.is_simulated !== true);
 }
 
 export type TransactionTotals = {
@@ -27,7 +30,7 @@ export type TransactionTotals = {
 };
 
 /** Totals for completed rows only; pending, voided, refunded and failed rows
- *  are not money received. Never feed simulated fixtures in without actualOnly. */
+ *  are not money received. Never feed simulated rows in without actualOnly. */
 export function completedTotals(rows: readonly FinanceRow[]): TransactionTotals {
   const totals: TransactionTotals = { count: 0, cashCentavos: 0, payoutCentavos: 0, feeCentavos: 0 };
   for (const row of rows) {

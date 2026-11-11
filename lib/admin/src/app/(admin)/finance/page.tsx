@@ -5,7 +5,6 @@ import { PageHeader, Panel, Stat, Table, Badge, Filters, Field, Select, Input, P
 import { FeeStrip } from '@/components/charts';
 import { ActionForm } from '@/components/ActionForm';
 import { actualOnly, completedTotals } from '@/lib/financeSeparation';
-import { SIMULATED_FINANCE, SIMULATED_FINANCE_NOTE } from '@/lib/simulatedFinance';
 import { updateRemittance } from '@/app/actions';
 
 type SP = { rstatus?: string; tstatus?: string; service?: string; from?: string; to?: string; page?: string; tpage?: string };
@@ -21,24 +20,35 @@ export default async function Finance({ searchParams: sp }: { searchParams: SP }
   if (sp.rstatus) rq = rq.eq('status', sp.rstatus);
 
   let tq = db.from('service_transactions')
-    .select('id,service_type,status,fare_centavos,platform_fee_centavos,customer_pays_centavos,provider_payout_centavos,platform_revenue_centavos,settled_at,created_at,provider:profiles!service_transactions_provider_id_fkey(id,full_name)', { count: 'exact' })
+    .select('id,service_type,status,fare_centavos,platform_fee_centavos,customer_pays_centavos,provider_payout_centavos,platform_revenue_centavos,settled_at,created_at,is_simulated,provider:profiles!service_transactions_provider_id_fkey(id,full_name)', { count: 'exact' })
+    .eq('is_simulated', false)
     .order('created_at', { ascending: false }).range(...pageRange(tpage));
   if (sp.service) tq = tq.eq('service_type', sp.service);
   if (sp.tstatus && ['pending', 'completed', 'voided', 'refunded', 'failed'].includes(sp.tstatus)) tq = tq.eq('status', sp.tstatus);
   if (from) tq = tq.gte('created_at', `${from}T00:00:00+08:00`);
   if (to) tq = tq.lte('created_at', `${to}T23:59:59+08:00`);
 
-  const [ov, remRes, txRes] = await Promise.all([db.rpc('admin_overview'), rq, tq]);
+  let dq = db.from('service_transactions')
+    .select('id,service_type,status,fare_centavos,platform_fee_centavos,customer_pays_centavos,provider_payout_centavos,platform_revenue_centavos,settled_at,created_at,is_simulated,provider:profiles!service_transactions_provider_id_fkey(id,full_name)', { count: 'exact' })
+    .eq('is_simulated', true)
+    .order('created_at', { ascending: false }).limit(50);
+  if (sp.service) dq = dq.eq('service_type', sp.service);
+  if (from) dq = dq.gte('created_at', `${from}T00:00:00+08:00`);
+  if (to) dq = dq.lte('created_at', `${to}T23:59:59+08:00`);
+
+  const [ov, remRes, txRes, demoRes] = await Promise.all([
+    db.rpc('admin_overview'), rq, tq, dq,
+  ]);
   const o = ok(ov as any, 'Finance summary') as Row;
   const rem = ok(remRes as any, 'Remittances') as Row[];
   const txRows = ok(txRes as any, 'Transactions') as Row[];
-  // Every real figure passes through actualOnly; simulated fixtures are not
-  // database rows, but the boundary is explicit rather than assumed.
+  const demoRows = ok(demoRes as any, 'Simulated activity') as Row[];
+  // Every real figure passes through actualOnly as a second guard: the query
+  // already excludes demo rows, and the helper refuses any that slip through.
   const tx = actualOnly(txRows);
   const pageTotals = completedTotals(tx);
+  const demoTotals = completedTotals(demoRows);
   const rev = (o.revenue_by_service ?? {}) as Record<string, number>;
-  const sampleCash = SIMULATED_FINANCE.reduce((a, r) => a + r.cash_centavos, 0);
-  const sampleFees = SIMULATED_FINANCE.reduce((a, r) => a + r.platform_fee_centavos, 0);
 
   return (
     <>
@@ -102,40 +112,41 @@ export default async function Finance({ searchParams: sp }: { searchParams: SP }
 
       <section className="mt-10 border-t-2 border-dashed border-amber-100 pt-6">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold">Simulated finance history</h2>
+          <h2 className="text-lg font-semibold">Simulated demo activity</h2>
           <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber">Demo only · not real</span>
         </div>
-        <p className="mt-1 max-w-3xl text-sm text-ink-500">{SIMULATED_FINANCE_NOTE}</p>
+        <p className="mt-1 max-w-3xl text-sm text-ink-500">
+          These are database rows created for the fictional demo accounts. They are marked
+          simulated at the row level, carry zero platform revenue, and are excluded from the
+          summary, remittance and transaction figures above.
+        </p>
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-dashed border-amber-100 bg-white px-4 py-3">
-            <div className="text-xs text-ink-500">Sample cash (not real)</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-amber">{peso(sampleCash)}</div>
+            <div className="text-xs text-ink-500">Demo cash (not real)</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums text-amber">{peso(demoTotals.cashCentavos)}</div>
           </div>
           <div className="rounded-lg border border-dashed border-amber-100 bg-white px-4 py-3">
-            <div className="text-xs text-ink-500">Sample platform fee (not real)</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-amber">{peso(sampleFees)}</div>
+            <div className="text-xs text-ink-500">Demo platform revenue (not real)</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums text-amber">{peso(demoTotals.feeCentavos)}</div>
           </div>
           <div className="rounded-lg border border-dashed border-amber-100 bg-white px-4 py-3">
-            <div className="text-xs text-ink-500">Sample rows</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-amber">{SIMULATED_FINANCE.length}</div>
+            <div className="text-xs text-ink-500">Demo rows</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums text-amber">{demoRes.count ?? demoRows.length}</div>
           </div>
         </div>
         <div className="mt-3">
-          <Table head={['Date', 'Reference', 'Service', 'Description', 'Cash (sample)', 'Platform fee (sample)']}>
-            {SIMULATED_FINANCE.map((r) => (
-              <tr key={r.reference}>
-                <td className="whitespace-nowrap text-ink-500">{dt(r.occurred_at)}</td>
-                <td><span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber">{r.reference}</span></td>
-                <td className="capitalize">{label(r.service)}</td>
-                <td>{r.description}</td>
-                <td className="tabular-nums">{peso(r.cash_centavos)}</td>
-                <td className="tabular-nums">{peso(r.platform_fee_centavos)}</td>
-              </tr>
+          <Table head={['Date', 'Service', 'Provider', 'Customer paid', 'Provider earned', 'Platform revenue', 'Status']} empty={<Empty title="No simulated activity" hint="Run the demo seed to load the fictional history." />}>
+            {demoRows.map((t) => (
+              <tr key={t.id}><td className="whitespace-nowrap text-ink-500">{dt(t.settled_at ?? t.created_at)}</td><td className="capitalize">{label(t.service_type)}</td>
+                <td><Who p={t.provider} id={t.provider?.id} href /></td><td className="tabular-nums">{peso(t.customer_pays_centavos)}</td>
+                <td className="tabular-nums">{peso(t.provider_payout_centavos)}</td><td className="tabular-nums">{peso(t.platform_revenue_centavos)}</td>
+                <td><Badge status="simulated" tone="warn" /></td></tr>
             ))}
           </Table>
         </div>
         <p className="mt-2 text-xs text-ink-500">
-          These rows never appear in the remittance or transaction tables above, and no figure above includes them.
+          The table shows the 50 most recent demo settlements. None of these rows appears in the
+          remittance or transaction history above.
         </p>
       </section>
     </>
