@@ -305,7 +305,7 @@
 
 > "The admin dashboard is a separate Next.js app. It never writes tables from the browser; every decision goes through an audited server function. The reports page is intentionally operational: it shows what happened in a window, not a predictive model."
 
-> Note: the dashboard has been verified by TypeScript tests, typecheck, lint, production build, and direct hosted read checks; the maintained audit covers 132 checks and the admin-read check covers 52. It has not had a full manual browser pass. State that if asked.
+> Note: the dashboard has been verified by TypeScript tests, typecheck, lint, production build, and direct hosted read checks; the maintained audit covers 127 checks and the admin-read check covers 52. It has not had a full manual browser pass. State that if asked.
 
 ---
 

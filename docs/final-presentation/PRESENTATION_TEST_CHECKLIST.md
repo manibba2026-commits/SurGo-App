@@ -251,7 +251,7 @@ select has_table_privilege('authenticated','public.admin_audit_logs','SELECT'); 
 - [ ] Demo accounts are banned.
 - [ ] The hosted ledger has 15 migrations; the local set has 19.
 - [ ] `admin_audit_logs` is not readable by `authenticated` (42501 by design).
-- [ ] `node supabase/tools/audit_hosted.mjs` reports 132 read-only checks passing.
+- [ ] `node supabase/tools/audit_hosted.mjs` reports 127 read-only checks passing.
 - [ ] `node supabase/tools/verify_admin_reads.mjs` reports 52 admin-read checks passing.
 
 ## 8. Failure and recovery drills

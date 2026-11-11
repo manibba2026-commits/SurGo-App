@@ -66,9 +66,9 @@ const BOOTSTRAP = `
 const EXPECTED = {
   profiles: 19, user_roles: null, provider_profiles: 15, vehicles: 14,
   vehicle_documents: 5, verification_applications: 3,
-  verification_documents: 8, ride_requests: 19, rental_bookings: 16,
-  service_requests: 20, service_request_items: 23, service_transactions: 29,
-  wallet_accounts: 11, wallet_transactions: 79, notifications: 25,
+  verification_documents: 8, ride_requests: 23, rental_bookings: 16,
+  service_requests: 20, service_request_items: 23, service_transactions: 33,
+  wallet_accounts: 11, wallet_transactions: 79, notifications: 33,
   pricing_policies: 0, cash_fee_remittances: 0, device_tokens: 0,
 };
 
@@ -107,6 +107,19 @@ async function bootWithDemo() {
       await db.exec(demo);
     } catch (e) {
       throw new Error(`demo-data.sql pass ${pass} failed: ${e.message}`);
+    }
+  }
+
+  // Presence and activity are separate idempotent seeds applied after the
+  // profiles exist. Each runs twice to prove a rerun does not duplicate rows.
+  for (const seed of ['demo-presence.sql', 'demo-activity.sql']) {
+    const sql = fs.readFileSync(path.join(supabaseDir, seed), 'utf8');
+    for (const pass of [1, 2]) {
+      try {
+        await db.exec(sql);
+      } catch (e) {
+        throw new Error(`${seed} pass ${pass} failed: ${e.message}`);
+      }
     }
   }
   return db;
@@ -175,6 +188,112 @@ check('Jr unread notifications (P001+R001 merged)', unread.rows[0].n, 4);
 const plates = await db.query(
   `select count(*)::int as n from public.vehicles where plate_number = 'NGD 6612'`);
 check('duplicate plate NGD 6612 both imported', plates.rows[0].n, 2);
+
+console.log('Presence:');
+const online = await db.query(
+  `select count(*)::int as n from public.rider_presence
+   where is_online and is_available and is_simulated and source = 'demo'`);
+check('six demo riders online and available', online.rows[0].n, 6);
+
+const offline = await db.query(
+  `select count(*)::int as n from public.rider_presence
+   where not is_online and is_simulated`);
+check('two demo riders deliberately offline', offline.rows[0].n, 2);
+
+const suspended = await db.query(
+  `select count(*)::int as n from public.rider_presence rp
+   join public.profiles p on p.id = rp.profile_id
+   where p.account_status = 'suspended'`);
+check('a suspended account has no dispatchable presence', suspended.rows[0].n, 0);
+
+const noFix = await db.query(
+  `select count(*)::int as n from public.rider_presence
+   where is_online and (latitude is null or longitude is null)`);
+check('every online rider has a simulated fix', noFix.rows[0].n, 0);
+
+await db.exec(`select set_config('request.jwt.claim.sub',
+  (select id::text from public.profiles where phone = '+639170000001'), false)`);
+let discoverable;
+try {
+  discoverable = await db.query(
+    `select count(*)::int as n from public.find_available_riders()`);
+} catch (error) {
+  console.log('  discovery query failed:', error.message);
+  throw error;
+}
+check('discovery returns the online demo riders', discoverable.rows[0].n, 6);
+
+console.log('Simulated attribution:');
+const unmarked = await db.query(`
+  select (
+    (select count(*) from public.ride_requests rr
+      where (rr.passenger_id in (select id from public.profiles
+                                  where phone like '+63917000%')
+          or rr.rider_id in (select id from public.profiles
+                              where phone like '+63917000%'))
+        and not rr.is_simulated)
+    + (select count(*) from public.rental_bookings rb
+        where (rb.renter_id in (select id from public.profiles
+                                 where phone like '+63917000%')
+            or rb.owner_id in (select id from public.profiles
+                                where phone like '+63917000%'))
+          and not rb.is_simulated)
+    + (select count(*) from public.service_requests sr
+        where (sr.customer_id in (select id from public.profiles
+                                   where phone like '+63917000%')
+            or sr.provider_id in (select id from public.profiles
+                                   where phone like '+63917000%'))
+          and not sr.is_simulated)
+    + (select count(*) from public.service_transactions st
+        where (st.customer_id in (select id from public.profiles
+                                   where phone like '+63917000%')
+            or st.provider_id in (select id from public.profiles
+                                   where phone like '+63917000%'))
+          and not st.is_simulated)
+    + (select count(*) from public.notifications n
+        where n.profile_id in (select id from public.profiles
+                                where phone like '+63917000%')
+          and not n.is_simulated)
+    + (select count(*) from public.wallet_transactions wt
+        join public.wallet_accounts wa on wa.id = wt.wallet_account_id
+        where wa.profile_id in (select id from public.profiles
+                                 where phone like '+63917000%')
+          and not wt.is_simulated)
+  )::int as n`);
+check('every demo-linked history row is marked simulated', unmarked.rows[0].n, 0);
+
+const actualRevenue = await db.query(
+  `select count(*)::int as n from public.service_transactions
+   where is_simulated and (platform_fee_centavos <> 0
+     or platform_revenue_centavos <> 0)`);
+check('demo settlements carry no platform revenue', actualRevenue.rows[0].n, 0);
+
+const stale = await db.query(
+  `select count(*)::int as n from public.ride_requests rr
+   join public.profiles p on p.id = rr.passenger_id
+   where p.phone like '+63917000%'
+     and rr.status = 'awaiting_acceptance'
+     and rr.rider_id is null
+     and coalesce(rr.requested_at, rr.created_at) < now() - interval '1 hour'`);
+check('no stale unanswered demo request stays live', stale.rows[0].n, 0);
+
+const ratings = await db.query(`
+  select (select count(*) from public.ride_requests rr
+           join public.profiles p on p.id = rr.passenger_id
+           where p.phone like '+63917000%' and rr.status = 'completed'
+             and rr.rider_id is not null
+             and rr.passenger_id <> rr.rider_id)::int as rides,
+         (select count(*) from public.ride_ratings where is_simulated)::int as rated`);
+check('every completed demo ride has one rating',
+  ratings.rows[0].rated, ratings.rows[0].rides);
+
+const timeline = await db.query(`
+  select count(*)::int as n from public.ride_requests rr
+   join public.profiles p on p.id = rr.passenger_id
+   where p.phone like '+63917000%' and rr.is_simulated
+     and not exists (select 1 from public.ride_status_events e
+                      where e.ride_id = rr.id)`);
+check('every simulated ride has a status timeline', timeline.rows[0].n, 0);
 
 await db.close();
 console.log(

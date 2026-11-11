@@ -17,6 +17,7 @@ This folder is a documentation-only package prepared for the SurGo thesis defens
 | [PANEL_QA.md](PANEL_QA.md) | Twenty-five-plus anticipated panel questions with technically accurate answers. |
 | [DEMO_ACCOUNTS.md](DEMO_ACCOUNTS.md) | Which accounts exist, how each signs in, and why no passwords are stored in the repository. |
 | [FINAL_READINESS_REPORT.md](FINAL_READINESS_REPORT.md) | Readiness summary, blockers, Qoder dependencies, and preparation order. |
+| [PHASE_COMPLETION_REPORT.md](PHASE_COMPLETION_REPORT.md) | Phase-by-phase A–E status with current test, build, and hosted-audit evidence, plus the approvals still pending. |
 
 ## Status vocabulary
 
@@ -33,4 +34,4 @@ These labels are used consistently across the package:
 
 ## Source-of-truth rule
 
-Repository code is treated as the source of truth. `README.md`, `supabase/README.md`, and `surgo_special_readme.md` contain stale statements (for example, the old 10% ride commission and "no screen reads the database"). Where they conflict with code, the code wins and the conflict is called out.
+Repository code is treated as the source of truth. `README.md` was reconciled with the code and hosted wiring on 11 November 2026. `surgo_special_readme.md` and parts of `supabase/README.md` still contain older statements (for example, password login and the old 10% ride commission). Where they conflict with code, the code wins and the conflict is called out.

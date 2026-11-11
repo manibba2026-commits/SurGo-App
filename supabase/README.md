@@ -37,6 +37,9 @@ previous one ran.
 | 21 | `20261110120000_verification_review_integrity.sql` | approval requires every document approved; decided applications freeze their documents |
 | 22 | `20261111100000_account_management.sql` | admin profile edits, role grant/revoke/suspend, admin-managed documents |
 | 23 | `20261111120000_attachments.sql` | private `attachments` bucket, metadata table, RPCs and storage policies |
+| 24 | `20261111140000_demo_pin_access.sql` | demo PIN verifier and the `set_demo_access` RPC |
+| 25 | `20261111150000_rider_presence_and_dispatch.sql` | `rider_presence`, `find_available_riders`, ride dispatch lifecycle RPCs |
+| 26 | `20261111160000_demo_activity_attribution.sql` | `is_simulated` on history tables and actual-only admin reporting |
 
 Row 14 is a **verbatim copy** of SQL that is already on the hosted project under
 a different timestamp — see [Admin dashboard migration sync](#admin-dashboard-migration-sync).
@@ -134,19 +137,20 @@ UUIDs (`md5('surgo:demo:<kind>:<key>')::uuid`), so re-running it converges to th
 same rows instead of duplicating them. It lives outside `migrations/` and
 `seed.sql` so no demo row can reach a production deploy by accident.
 
-Applied to `lrhgktxmavnhjatqzbzr` on 2026-11-06 after local PGlite validation.
-Totals are what the hosted project holds now, so they include the real
-account's own `profiles` / `user_roles` rows on top of the 19 demo people:
+Applied to `lrhgktxmavnhjatqzbzr` on 2026-11-06 after local PGlite validation;
+the demo presence and activity seeds then added four rides, their settlements,
+timelines and notifications. The counts below are the demo rows only — real
+sign-ups add their own profiles, roles and applications on top:
 
 | table | rows | table | rows |
 | ----- | ---- | ----- | ---- |
-| `profiles` | 20 | `service_requests` | 20 |
-| `user_roles` | 60 | `service_request_items` | 23 |
-| `provider_profiles` | 15 | `service_transactions` | 29 |
+| `profiles` | 19 | `service_requests` | 20 |
+| `user_roles` | 58 | `service_request_items` | 23 |
+| `provider_profiles` | 15 | `service_transactions` | 33 |
 | `vehicles` | 14 | `wallet_accounts` | 11 |
 | `vehicle_documents` | 5 | `wallet_transactions` | 79 |
-| `verification_applications` | 3 | `notifications` | 25 |
-| `verification_documents` | 8 | `ride_requests` | 19 |
+| `verification_applications` | 3 | `notifications` | 33 |
+| `verification_documents` | 8 | `ride_requests` | 23 |
 | `rental_bookings` | 16 | | |
 
 Rules the generator follows:
@@ -154,9 +158,12 @@ Rules the generator follows:
 - **One profile per person.** `P001` / `R001` / `VOW-77213` in the JSON are the
   same human, so they collapse into one `profiles` row with several `user_roles`
   and `provider_profiles` entries. 11 roster people + 8 archived accounts = 19.
-- **Demo accounts cannot sign in.** Each gets an `auth.users` row with no
-  password and `banned_until = 'infinity'`; the trigger-created profile is then
-  overwritten by the imported row (`on conflict (id) do update`).
+- **Demo accounts start without credentials.** Each `auth.users` row is created
+  passwordless and banned (`banned_until = 'infinity'`); the trigger-created
+  profile is then overwritten by the imported row (`on conflict (id) do
+  update`). `provision_demo_accounts.mjs` later enables phone + PIN sign-in for
+  the active demo identities through `private.demo_access`. A suspended person
+  (Junel Ramos) stays banned and suspended.
 - **Per-user scoping, not per-user databases.** All 19 people share the same 30
   tables; the RLS read-own policies scope every query through `auth.uid()`, so an
   account only sees its own profile, roles, wallets, ledger and notifications
@@ -211,10 +218,51 @@ cd supabase/tests && npm test          # tracked schema tests stay green (9 file
 node supabase/tools/apply_demo_data.mjs preflight   # read-only hosted check
 node supabase/tools/apply_demo_data.mjs apply       # chunked upserts
 node supabase/tools/apply_demo_data.mjs verify      # counts, real user, wallet balance match
-node supabase/tools/apply_demo_data.mjs auth        # auth roster: demo banned, real user not
-node supabase/tools/audit_hosted.mjs                # 132 read-only integrity checks
+node supabase/tools/apply_demo_data.mjs auth        # auth roster: banned flag, password, roles per row
+node supabase/tools/audit_hosted.mjs                # read-only integrity checks
 node supabase/tools/audit_hosted.mjs --fees         # + the fee each settlement would owe
 ```
+
+The generator takes each person's number from `DEMO_PHONES` in
+`supabase/tools/demo_provision_plan.mjs`, not from the display-formatted
+`users.json` value, and marks Junel Ramos `suspended`. That keeps
+`demo-presence.sql` / `demo-activity.sql` (which match people by phone) valid
+after a regeneration, so demo sign-in cannot silently lose its fixture.
+
+### Demo presence and history
+
+Two further idempotent seeds build a demo fleet the app can actually dispatch:
+
+| file | what it writes |
+| ---- | -------------- |
+| `demo-presence.sql` | 8 `rider_presence` rows keyed by profile phone: 6 online and available, 2 deliberately offline, none for suspended Junel. Each carries a simulated fix in a Tandag barangay and `is_simulated = true`, `source = 'demo'`. |
+| `demo-activity.sql` | Marks every demo-owned history row `is_simulated`, closes stale unanswered demo requests, backfills ride/Pasuyo status timelines, adds one deterministic completed ride per previously history-less online rider (with zero-fee settlement and notifications), and rates every completed demo ride. |
+
+Both are safe to rerun: rows are keyed by a deterministic id or a natural
+`ON CONFLICT` target, and neither creates an account or a UUID. They require
+migration 26 (`is_simulated`) and the demo roster to exist. To apply and check
+the hosted project:
+
+```bash
+node supabase/tools/apply_demo_seed.mjs preflight   # read-only: columns, roster, pricing gate
+node supabase/tools/apply_demo_seed.mjs apply       # one transaction, both seeds
+node supabase/tools/apply_demo_seed.mjs verify      # presence, discovery, history, money invariants
+node supabase/tools/peek_hosted.mjs "select ..."    # one read-only query, for spot checks
+```
+
+`preflight` aborts if Junel is not still suspended, fewer than 19 demo accounts
+are active, `pricing_policies` is not empty, or migration 26 is missing.
+`verify` asserts 6 online / 2 offline simulated riders, no presence for Junel
+or without a fix, discovery returning exactly the online set with no offline or
+suspended leak, a rating and timeline for every completed demo ride, no stale
+open demo request, and zero platform revenue on simulated settlements.
+
+`20261111160000_demo_activity_attribution.sql` also redefines `admin_overview()`
+and the finance reporting functions so actual money filters on
+`is_simulated = false`. Admin Finance shows the staged demo cash and platform
+revenue in a separate "Simulated demo activity" section instead of mixing it
+into real totals; the demo settlements keep `platform_fee_centavos = 0` and
+`platform_revenue_centavos = 0`, so they never represent collected revenue.
 
 `apply_demo_data.mjs` uses the Supabase Management API SQL endpoint with the
 access token the Supabase CLI already keeps in the Windows Credential Manager; it
@@ -226,11 +274,14 @@ migrations reached the host and references none of their columns
 ### Hosted audit
 
 `audit_hosted.mjs` shares the same read-only channel (`db_admin.mjs`) and runs
-132 checks: the documented counts, an id-by-id comparison of every table against
-the ids in `demo-data.sql` (so a re-import cannot have duplicated a row), FK
-orphans in both directions, the role → provider → vehicle → wallet graph, wallet
-ledger replay, settlement coverage against the service rows it points at, the
-eight archived accounts, and the real account's untouched state. It also prints
+read-only integrity checks: the demo-scoped counts (so real sign-ups do not
+break them), an id-by-id comparison of every table against the ids in
+`demo-data.sql` (so a re-import cannot have duplicated a row), FK orphans in
+both directions, the role → provider → vehicle → wallet graph, wallet ledger
+replay, settlement coverage against the service rows it points at, the archived
+accounts (active demo identities can sign in, the suspended one stays banned),
+and the real account's untouched state. Live bookings made by demo identities
+are reported separately rather than failing the import audit. It also prints
 the remote migration history: 15 rows, every one of which now has a local file —
 `20261106062246_admin_dashboard_access_and_actions` is kept in the repo under the
 retimed name `20261106091300`, so the audit reports that single known ledger

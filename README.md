@@ -5,10 +5,14 @@ Tandag City, Surigao del Sur. It combines ride booking, vehicle rentals, and Pas
 errands behind **one account** that switches between three modes: **Passenger**,
 **Rider/Helper**, and **Vehicle Owner**.
 
-The screens still run on mock JSON seed data in `assets/db/`, but the app is now
-connected to the hosted Supabase project: `main()` initializes the client with the
+The screens can run on the mock JSON seed data in `assets/db/`, and they also run
+against the hosted Supabase project: `main()` initializes the client with the
 publishable key before the UI starts (see `lib/services/supabase_bootstrap.dart`).
-No screen reads or writes the database yet — that migration is a separate change.
+With a signed-in hosted account the ride, rental and Pasuyo flows call Postgres
+RPCs and read their lists through the repository layer, so both sides of a
+transaction see the same rows. Hosted surfaces that have no server-side function
+yet (wallet top-up/cash-out, saved places, adding fleet vehicles) say so instead
+of replaying the seed as if it were real.
 
 ## Running it
 
@@ -63,29 +67,30 @@ whole flow is demonstrable on first launch without typing anything.
 
 ## The fee model
 
-Every transaction is priced through `lib/services/fee_calculator.dart` — one place, so
-receipts, rider earnings, and the revenue screen can never disagree:
+A provider keeps **100% of their fare**. SurGo's revenue is a separate fee the
+customer pays on top, priced in `lib/services/fee_calculator.dart` and mirrored by
+the settlement functions in Postgres:
 
-| Service | SurGo commission |
-|---------|------------------|
-| Rides   | 10% |
-| Pasuyo  | 15% |
-| Rentals | 10% |
+| Service | Customer-side platform fee |
+|---------|----------------------------|
+| Rides   | ₱2.00/km, clamped to a ₱5–₱30 band |
+| Pasuyo  | flat ₱10.00 per errand (item costs pass through at cost) |
+| Rentals | `clamp(₱20 + ₱10 × started days, ₱20, ₱150)`; a started day is any part of 24h and the first day always counts |
 
-Rates are seeded from `assets/db/config.json` rather than hardcoded, and every amount is an
-**integer number of centavos** — `₱180.50` is `18050` — so commission arithmetic never
-touches a floating-point value and a split always re-adds to the exact gross.
-`lib/services/money.dart` owns that convention: `Money.format` is the only way an amount
-should be rendered, and `Money.tryParsePesos` is the only way a peso amount the user typed
-becomes centavos.
+Every amount is an **integer number of centavos** — `₱180.50` is `18050` — so fee
+arithmetic never touches a floating-point value and a split always re-adds to the
+exact gross. `lib/services/money.dart` owns that convention: `Money.format` is the
+only way an amount should be rendered, and `Money.tryParsePesos` is the only way a
+peso amount the user typed becomes centavos.
 
-Each receipt shows **Customer pays / Provider gets / SurGo keeps**. `PlatformLedger`
-accumulates every completed transaction and feeds the revenue screen (Profile →
-Platform Revenue), which reports total commission, commission by service, a 7-day
-chart, and the blended take rate.
+Each receipt shows **Customer pays / Provider gets / SurGo keeps**, and the provider
+column is the fare whole. In the mock build `PlatformLedger` accumulates completed
+transactions and feeds the Profile → Platform Revenue screen; a hosted account sees
+a note there instead, because its fees are recorded in Postgres and reviewed in the
+Admin dashboard, where demo activity is reported separately.
 
-Because the ledger only grows when a transaction actually completes, the platform
-revenue on screen is the same money that moved the helper's balance a moment earlier.
+Because the mock ledger only grows when a transaction actually completes, the
+revenue it shows is the same money that moved the helper's balance a moment earlier.
 
 ## Data model
 
@@ -124,27 +129,60 @@ centavos, that timestamps are real ISO times, and that both seeds describe the s
 is easiest to break quietly: the fee split, and the rule that completing a job moves the
 provider's wallet, the earnings roll-ups and the platform ledger together.
 
+### Hosted data
+
+The hosted schema lives in `supabase/migrations/` (applied in filename order) with RLS on
+every table and SECURITY DEFINER RPCs for anything that moves money or changes a
+counterparty's state. The app never writes those tables directly; it calls the RPCs through
+`SurgoWriteBackend.rpc` and re-reads the affected slot, so a refused step leaves the screen
+on the server's answer instead of a local guess.
+
+| Flow | Tables / RPCs |
+|------|---------------|
+| Accounts | `profiles`, `user_roles`, `provider_profiles`; admin account management and verification review |
+| Rides | `ride_requests`, `ride_status_events`, `ride_locations`, rider presence; create → assign → accept → start → complete, priced server-side |
+| Rentals | `rental_bookings`; request → owner decision → active → returned → completed, with an overlap refusal and the fixed-addon fee |
+| Pasuyo | `service_requests`, `service_request_items`, `service_status_events`; post → accept → pick up → deliver, with item actuals saved by the assigned helper |
+| Money | `wallet_accounts`, `wallet_transactions`, `service_transactions`, `cash_fee_remittances` |
+| Reviews | `verification_applications`, `verification_documents`, approval gate and document locking |
+
+Rows created by the demo seeder carry an `is_simulated` marker (and simulated presence is
+flagged on the presence row), so the Admin dashboard can report demo activity apart from
+real transactions. The SQL suite at `supabase/tests/` builds a fresh database from the
+migrations, loads the seed, and runs the RLS, constraint, pricing, settlement and lifecycle
+tests — `node supabase/tests/run.mjs`.
+
 ## Project layout
 
 ```text
 lib/
+  admin/       the Admin dashboard screens
+  auth/        session handling, demo PIN and phone sign-in
   data/        seed models (db_models.dart), loader (db_service.dart)
+  repositories/ Supabase and mock implementations of every read and write
   screens/     one file per screen
-  services/    fee_calculator.dart (commission math + PlatformLedger),
+  services/    fee_calculator.dart (fee math + PlatformLedger),
                money.dart (centavos formatting and parsing),
                location_service.dart (GPS)
-  state/       app_state.dart — in-memory ChangeNotifier singleton
+  state/       app_state.dart (session + mock actions), domain_cache.dart
+               (repository-backed reads the screens share)
   theme/       colors and dark theme
-  widgets/     shared components, live map, stepper
+  widgets/     shared components, live map, stepper, repository states
 ```
 
-`AppState` is the single source of truth at runtime and mutates in memory only. A page
-refresh resets the app to seed data — there is no persistence layer yet.
+`AppState` still holds the mock build's in-memory state, and a signed-out demo resets
+to seed data on reload. A signed-in hosted account keeps its session across launches
+and reads its own rows from Postgres. A screen that has both paths branches on
+`AppState.usesHostedIdentity`; the seed path is never used as a stand-in for a
+hosted write.
 
 ## Known gaps
 
-- No persistence: state resets on reload.
-- No real (server-side) authentication; sign-in validates against the local mock
-  seed accounts in `assets/db/accounts.json`.
+- Hosted wallet top-up and cash-out are not enabled; the wallet shows settled
+  transactions and says so when you tap the action.
+- Saved places, favourites, payment methods, emergency contacts and adding fleet
+  vehicles are still seed-only, and are hidden for signed-in hosted accounts.
+- A hosted trip's rider GPS is not streamed to the passenger's live-trip map yet;
+  demo riders use the simulated position stored in Postgres.
 - `geolocator` has limited web support — live location is best-effort on Chrome,
   and the maps fall back to Tandag City centering when a fix isn't available.

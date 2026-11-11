@@ -205,7 +205,7 @@ The reports page supports 7/14/30/90-day windows and shows new users, rides, ren
 
 ### 44. Has the admin dashboard been tested in a browser against production?
 
-Not by a full manual pass. The evidence is TypeScript unit tests, typecheck, lint, production build, PGlite SQL tests, and direct hosted read checks. The maintained hosted audit covers 132 checks and the admin-read check covers 52; both can be re-run. Treat browser behaviour as "implemented but needs verification".
+Not by a full manual pass. The evidence is TypeScript unit tests, typecheck, lint, production build, PGlite SQL tests, and direct hosted read checks. The maintained hosted audit covers 127 checks and the admin-read check covers 52; both can be re-run. Treat browser behaviour as "implemented but needs verification".
 
 ### 45. Can the admin approve a real application safely?
 

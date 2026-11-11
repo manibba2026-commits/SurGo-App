@@ -252,7 +252,7 @@ assets/db/*.json
 | `wallet_transactions` | 79 |
 | `cash_fee_remittances` | 0 |
 
-These counts were re-verified against the hosted project on 9 November 2026. `supabase/tools/audit_hosted.mjs` runs **132 read-only integrity checks**: the documented counts, an id-by-id comparison of every table against `demo-data.sql`, foreign-key orphans in both directions, the role → provider → vehicle → wallet graph, wallet-ledger replay, settlement coverage, the eight banned demo accounts, and the real account's untouched state.
+These counts were re-verified against the hosted project on 9 November 2026. `supabase/tools/audit_hosted.mjs` runs **127 read-only integrity checks**: the demo-scoped counts, an id-by-id comparison of every table against `demo-data.sql`, foreign-key orphans in both directions, the role → provider → vehicle → wallet graph, wallet-ledger replay, settlement coverage, the eight archived demo accounts (active ones can sign in with a demo PIN, the suspended one stays banned), and the real account's untouched state.
 
 ### Demo data rules
 

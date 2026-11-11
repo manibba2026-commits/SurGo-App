@@ -26,6 +26,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DEMO_PHONES } from './demo_provision_plan.mjs';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const supabaseDir = path.resolve(here, '..');
 const assetsDir = path.resolve(supabaseDir, '..', 'assets', 'db');
@@ -264,7 +266,17 @@ const refByName = (name) =>
   archivedBySlug[slugify(name)];
 
 const allPeople = [...personByEmail.values(), ...Object.values(archivedBySlug)];
-for (const p of allPeople) p.id = profileId(p.slug);
+
+// Demo sign-in is phone + PIN, and demo-presence/demo-activity match people by
+// phone. Always emit the provisioned E.164 number, never the display-formatted
+// number in users.json, so regenerating this file cannot break demo sign-in.
+const SUSPENDED = new Set(['junel-ramos']);
+for (const p of allPeople) {
+  p.id = profileId(p.slug);
+  p.phone = DEMO_PHONES[p.slug];
+  if (!p.phone) throw new Error(`no demo phone assigned to ${p.slug}`);
+  p.accountStatus = SUSPENDED.has(p.slug) ? 'suspended' : 'active';
+}
 
 // ---------- derived driver stats (archived earners, from JSON history) ----------
 
@@ -341,8 +353,8 @@ for (const p of allPeople) {
   inserts.profiles.push(
     `insert into public.profiles\n` +
       `  (id, full_name, first_name, email, phone, account_status, rating, total_rides, created_at, updated_at)\n` +
-      `values (${q(p.id)}, ${q(p.name)}, ${q(p.name.split(' ')[0])}, ${q(p.email ?? null)}, ${q(p.phone ?? null)},\n` +
-      `  'active', ${q(rating.toFixed(2))}, ${q(total)}, ${q(created)}, ${q(now)})\n` +
+      `values (${q(p.id)}, ${q(p.name)}, ${q(p.name.split(' ')[0])}, ${q(p.email ?? null)}, ${q(p.phone)},\n` +
+      `  '${p.accountStatus}', ${q(rating.toFixed(2))}, ${q(total)}, ${q(created)}, ${q(now)})\n` +
       `on conflict (id) do update set\n` +
       `  full_name = excluded.full_name, first_name = excluded.first_name,\n` +
       `  email = excluded.email, phone = excluded.phone,\n` +

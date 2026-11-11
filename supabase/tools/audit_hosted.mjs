@@ -26,24 +26,26 @@ const DEMO_SQL = fs
   .readFileSync(path.resolve(HERE, '..', 'demo-data.sql'), 'utf8');
 const WANT_FEES = process.argv.includes('--fees');
 
-// What the hosted project is documented to hold, including the real account's
-// own rows and the passenger roles the auth trigger creates (supabase/README.md).
+// What the demo dataset is documented to hold. Counts that can also grow from
+// real sign-ups or live use are scoped to the 19 demo phone numbers, so the
+// audit keeps checking the import instead of failing whenever a real account
+// registers. Tables that only ever hold demo rows stay global.
 const EXPECTED = {
-  profiles: 20,
-  user_roles: 60,
+  profiles: 19,
+  user_roles: 58,
   provider_profiles: 15,
   vehicles: 14,
   vehicle_documents: 5,
   verification_applications: 3,
   verification_documents: 8,
-  ride_requests: 19,
+  ride_requests: 23,
   rental_bookings: 16,
   service_requests: 20,
   service_request_items: 23,
-  service_transactions: 29,
+  service_transactions: 33,
   wallet_accounts: 11,
   wallet_transactions: 79,
-  notifications: 25,
+  notifications: 33,
 };
 
 const ARCHIVED = [
@@ -222,13 +224,21 @@ async function counts() {
   const row = (
     await sql(`
     select
-      (select count(*) from public.profiles) as profiles,
-      (select count(*) from public.user_roles) as user_roles,
+      (select count(*) from public.profiles p
+        where p.phone like '+63917000%') as profiles,
+      (select count(*) from public.user_roles r
+        join public.profiles p on p.id = r.profile_id
+        where p.phone like '+63917000%') as user_roles,
       (select count(*) from public.provider_profiles) as provider_profiles,
       (select count(*) from public.vehicles) as vehicles,
       (select count(*) from public.vehicle_documents) as vehicle_documents,
-      (select count(*) from public.verification_applications) as verification_applications,
-      (select count(*) from public.verification_documents) as verification_documents,
+      (select count(*) from public.verification_applications va
+        join public.profiles p on p.id = va.profile_id
+        where p.phone like '+63917000%') as verification_applications,
+      (select count(*) from public.verification_documents vd
+        join public.verification_applications va on va.id = vd.application_id
+        join public.profiles p on p.id = va.profile_id
+        where p.phone like '+63917000%') as verification_documents,
       (select count(*) from public.ride_requests) as ride_requests,
       (select count(*) from public.rental_bookings) as rental_bookings,
       (select count(*) from public.service_requests) as service_requests,
@@ -239,7 +249,11 @@ async function counts() {
       (select count(*) from public.notifications) as notifications,
       (select count(*) from public.pricing_policies) as pricing_policies,
       (select count(*) from public.cash_fee_remittances) as cash_fee_remittances,
-      (select count(*) from auth.users) as auth_users;
+      (select count(*) from auth.users u
+        join public.profiles p on p.id = u.id
+        where p.phone like '+63917000%') as auth_users,
+      (select count(*) from public.profiles p
+        where p.phone is null or p.phone not like '+63917000%') as real_profiles;
   `)
   )[0];
   for (const [table, want] of Object.entries(EXPECTED)) {
@@ -250,8 +264,10 @@ async function counts() {
     `pricing_policies ${row.pricing_policies}`);
   check('no cash remittance rows', Number(row.cash_fee_remittances) === 0,
     `hosted ${row.cash_fee_remittances}`);
-  check('auth.users roster', Number(row.auth_users) === 20,
+  check('auth.users demo roster', Number(row.auth_users) === 19,
     `hosted ${row.auth_users}`);
+  info('non-demo profiles (real sign-ups, outside the demo import)',
+    row.real_profiles);
 }
 
 // ------------------------------------------------------------- integrity ----
@@ -307,9 +323,13 @@ async function roleGraph() {
     with approved_provider as (
       select r.profile_id, r.role::text as role from public.user_roles r
       where r.status = 'approved' and r.role in ('earner', 'vehicle_owner')
+        and exists (select 1 from public.profiles p
+          where p.id = r.profile_id and p.phone like '+63917000%')
     ), provider_rows as (
-      select profile_id, provider_type::text as provider_type
-        from public.provider_profiles
+      select v.profile_id, v.provider_type::text as provider_type
+        from public.provider_profiles v
+        join public.profiles p on p.id = v.profile_id
+        where p.phone like '+63917000%'
     )
     select
       (select count(*) from approved_provider a
@@ -488,11 +508,11 @@ async function coverage() {
     await sql(`
     select
       (select count(*) from public.ride_requests r
-        where r.status = 'completed'
+        where r.is_simulated and r.status = 'completed'
           and not exists (select 1 from public.service_transactions t
             where t.service_type = 'ride' and t.ride_id = r.id)) as ride_unsettled,
       (select count(*) from public.ride_requests r
-        where r.status not in ('completed', 'cancelled')
+        where r.is_simulated and r.status not in ('completed', 'cancelled')
           and exists (select 1 from public.service_transactions t
             where t.service_type = 'ride' and t.ride_id = r.id)) as ride_settled_early,
       (select count(*) from public.service_transactions t
@@ -533,6 +553,19 @@ async function coverage() {
   for (const [name, value] of Object.entries(cover)) {
     check(`settlement: ${name}`, Number(value) === 0, `rows ${value}`);
   }
+
+  // Live bookings made during a demo are outside the seed's consistency
+  // guarantee; report them so a leftover verification ride is visible instead
+  // of failing the import audit.
+  const live = await sql(`
+    select count(*) filter (where r.status = 'completed'
+             and not exists (select 1 from public.service_transactions t
+               where t.service_type = 'ride' and t.ride_id = r.id)) as unsettled,
+           count(*) as n
+      from public.ride_requests r where not r.is_simulated;
+  `);
+  info('non-simulated rides (live use, outside the demo seed)',
+    `rows ${live[0]?.n ?? 0}, completed without settlement ${live[0]?.unsettled ?? 0}`);
 
   const byType = await sql(`
     select t.service_type, count(*) as n,
@@ -610,8 +643,16 @@ async function archived() {
   for (const name of ARCHIVED) {
     check(`archived account present: ${name}`, seen.has(name));
   }
-  check('archived accounts blocked from sign-in',
-    rows.every((r) => r.banned === true), `${rows.length} rows`);
+  // Since the demo PIN rollout, active demo identities must be able to sign in;
+  // only the suspended one stays banned. Before that phase every demo auth row
+  // was permanently banned, so this assertion is inverted rather than dropped.
+  const activeArchived = rows.filter((r) => r.account_status === 'active');
+  const junel = rows.find((r) => r.full_name === 'Junel Ramos');
+  check('archived accounts: active can demo-sign-in, suspended stays banned',
+    activeArchived.length === 7 &&
+      activeArchived.every((r) => r.banned === false) &&
+      junel?.account_status === 'suspended' && junel?.banned === true,
+    `${rows.length} rows`);
   check('archived accounts keep a derived rating',
     rows.every((r) => Number(r.rating) >= 1 && Number(r.rating) <= 5));
   // Six of the eight archived people drove or rented out vehicles, so their
