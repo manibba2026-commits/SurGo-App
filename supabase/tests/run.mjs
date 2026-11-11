@@ -33,6 +33,7 @@ const BOOTSTRAP = `
     id uuid primary key default gen_random_uuid(),
     email text,
     phone text,
+    raw_app_meta_data jsonb not null default '{}'::jsonb,
     raw_user_meta_data jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now()
   );

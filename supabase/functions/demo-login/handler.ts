@@ -1,8 +1,13 @@
 // Supabase Edge Function: demo-account sign-in by PH mobile + PIN.
 //
-// Flow: normalize the phone → look up the demo PIN record with the service
-// role → verify the PIN with PBKDF2 → lock out after five misses → mint a real
-// Supabase session through an admin magic-link that is verified server-side.
+// Flow: normalize the phone → atomically reserve one PIN attempt with the
+// service role → verify the PIN with PBKDF2 → mint a real Supabase session
+// through an admin magic-link that is verified server-side.
+//
+// The reservation RPC is the lockout gate: it consumes the attempt before the
+// PIN is checked, so parallel requests cannot exceed five verifications per
+// 15-minute window. A request that arrives while the account is already locked
+// reports was_locked and is refused without consuming or extending an attempt.
 //
 // No email or SMS is sent. No password exists. The service key, PIN hash and
 // session stay on the server; the client receives only the session it owns.
@@ -13,17 +18,20 @@ import { DUMMY_PIN_HASH, verifyPin } from './pin.ts';
 export interface DemoLoginConfig {
   supabaseUrl: string;
   serviceRoleKey: string;
+  /** Publishable (anon) key. Only the token exchange needs it. */
+  publishableKey: string;
   fetchImpl?: typeof fetch;
   now?: () => number;
 }
 
-interface LookupRow {
+interface ReserveRow {
   user_id: string;
   email: string | null;
   pin_hash: string;
   failed_attempts: number;
   locked_until: string | null;
   account_status: string;
+  was_locked: boolean;
 }
 
 const MAX_BODY_BYTES = 4 * 1024;
@@ -36,10 +44,17 @@ const CORS_HEADERS: Record<string, string> = {
     'authorization, apikey, content-type, x-client-info',
 };
 
+// Authentication responses carry a session; no intermediary may cache one.
+const NO_STORE = { 'Cache-Control': 'no-store' };
+
 function json(body: Record<string, unknown>, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+    headers: {
+      'Content-Type': 'application/json',
+      ...NO_STORE,
+      ...CORS_HEADERS,
+    },
   });
 }
 
@@ -87,10 +102,12 @@ async function mintSession(
     return { ok: false };
   }
 
+  // The token exchange is a normal client operation, so it uses the
+  // publishable key rather than the service key.
   const verifyResponse = await fetchImpl(`${config.supabaseUrl}/auth/v1/verify`, {
     method: 'POST',
     headers: {
-      apikey: config.serviceRoleKey,
+      apikey: config.publishableKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ type: 'magiclink', token_hash: tokenHash }),
@@ -118,12 +135,15 @@ export async function handleDemoLogin(
   config: DemoLoginConfig,
 ): Promise<Response> {
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return new Response(null, {
+      status: 204,
+      headers: { ...NO_STORE, ...CORS_HEADERS },
+    });
   }
   if (request.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405);
   }
-  if (!config.supabaseUrl || !config.serviceRoleKey) {
+  if (!config.supabaseUrl || !config.serviceRoleKey || !config.publishableKey) {
     return json({ error: 'not_configured' }, 500);
   }
 
@@ -149,24 +169,27 @@ export async function handleDemoLogin(
   const fetchImpl = config.fetchImpl ?? fetch;
   const nowMs = (config.now ?? Date.now)();
 
-  let lookupResponse: Response;
+  let reserveResponse: Response;
   try {
-    lookupResponse = await callRpc(fetchImpl, config, 'demo_login_lookup', {
-      p_phone: phone,
-    });
+    reserveResponse = await callRpc(
+      fetchImpl,
+      config,
+      'demo_login_reserve_attempt',
+      { p_phone: phone },
+    );
   } catch {
-    console.error('demo-login: lookup request failed');
+    console.error('demo-login: reservation request failed');
     return json({ error: 'login_unavailable' }, 502);
   }
-  if (!lookupResponse.ok) {
-    console.error('demo-login: lookup rejected', {
-      status: lookupResponse.status,
+  if (!reserveResponse.ok) {
+    console.error('demo-login: reservation rejected', {
+      status: reserveResponse.status,
     });
     return json({ error: 'login_unavailable' }, 502);
   }
 
-  const rows = await lookupResponse.json().catch(() => null);
-  const row: LookupRow | undefined = Array.isArray(rows) ? rows[0] : undefined;
+  const rows = await reserveResponse.json().catch(() => null);
+  const row: ReserveRow | undefined = Array.isArray(rows) ? rows[0] : undefined;
 
   if (!row) {
     // Burn comparable time so an unknown phone is not faster than a wrong PIN.
@@ -174,25 +197,22 @@ export async function handleDemoLogin(
     return json({ error: 'invalid_credentials' }, 401);
   }
 
-  const lockedUntil = row.locked_until ? Date.parse(row.locked_until) : NaN;
-  if (Number.isFinite(lockedUntil) && lockedUntil > nowMs) {
-    const retry = Math.max(
-      LOCKOUT_RETRY_FLOOR_SECONDS,
-      Math.ceil((lockedUntil - nowMs) / 1000),
-    );
+  // Only a lock that already existed before this request refuses early. The
+  // reservation that sets the lock still lets its own PIN be verified.
+  if (row.was_locked) {
+    const lockedUntil = row.locked_until ? Date.parse(row.locked_until) : NaN;
+    const retry = Number.isFinite(lockedUntil)
+      ? Math.max(
+        LOCKOUT_RETRY_FLOOR_SECONDS,
+        Math.ceil((lockedUntil - nowMs) / 1000),
+      )
+      : LOCKOUT_RETRY_FLOOR_SECONDS;
     return json({ error: 'locked', retry_after_seconds: retry }, 429);
   }
 
+  // The attempt is already recorded; verification only decides the response.
   const verified = await verifyPin(pin, row.pin_hash).catch(() => false);
   if (!verified) {
-    try {
-      await callRpc(fetchImpl, config, 'demo_login_record_failure', {
-        p_user_id: row.user_id,
-      });
-    } catch {
-      // The response is the same either way; the next attempt retries.
-      console.error('demo-login: failure counter update failed');
-    }
     return json({ error: 'invalid_credentials' }, 401);
   }
 

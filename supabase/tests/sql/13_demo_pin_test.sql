@@ -1,20 +1,28 @@
 begin;
 
--- Demo PIN access: storage boundary, lookup, lockout and status preservation.
+-- Demo PIN access: storage boundary, atomic reservation, lockout recovery and
+-- status preservation.
 --
 -- The hashes here are format-valid placeholders. Hashing and comparison live
 -- in the demo-login Edge Function; this test covers the SQL contract.
 
-insert into auth.users (id, email, phone, raw_user_meta_data) values
+insert into auth.users (id, email, phone, raw_user_meta_data, raw_app_meta_data) values
   ('c1000000-0000-0000-0000-000000000001',
-   'rhea.demo@surgo-demo.test', '+639170000007',
-   '{"full_name":"Rhea Puno","surgo_demo":true}'::jsonb),
+   'rhea.demo@surgo-demo.test', '+639170000017',
+   '{"full_name":"Rhea Puno"}'::jsonb,
+   '{"surgo_demo":true}'::jsonb),
   ('c1000000-0000-0000-0000-000000000002',
-   'junel.demo@surgo-demo.test', '+639170000003',
-   '{"full_name":"Junel Ramos","surgo_demo":true}'::jsonb),
+   'junel.demo@surgo-demo.test', '+639170000011',
+   '{"full_name":"Junel Ramos"}'::jsonb,
+   '{"surgo_demo":true}'::jsonb),
   ('c1000000-0000-0000-0000-000000000003',
    'real.user@example.com', '+639180000399',
-   '{"full_name":"Real User"}'::jsonb);
+   '{"full_name":"Real User"}'::jsonb,
+   '{}'::jsonb),
+  ('c1000000-0000-0000-0000-000000000004',
+   'user.meta@example.com', '+639180000400',
+   '{"full_name":"User Meta","surgo_demo":true}'::jsonb,
+   '{}'::jsonb);
 
 -- The auth trigger created the profiles; Junel must stay suspended throughout.
 update public.profiles
@@ -47,9 +55,9 @@ begin
 
   foreach v_sig in array array[
     'public.set_demo_access(uuid,text)',
-    'public.demo_login_lookup(text)',
-    'public.demo_login_record_failure(uuid)',
-    'public.demo_login_record_success(uuid)'
+    'public.demo_login_reserve_attempt(text)',
+    'public.demo_login_record_success(uuid)',
+    'public.demo_login_clear_lockout(uuid)'
   ] loop
     perform public.test_assert(
       has_function_privilege('service_role', v_sig, 'EXECUTE'),
@@ -64,7 +72,7 @@ begin
 end;
 $$;
 
--- 2. PIN assignment refuses non-demo accounts and malformed hashes.
+-- 2. PIN assignment trusts only app_metadata, never user_metadata.
 do $$
 begin
   begin
@@ -73,6 +81,18 @@ begin
       'pbkdf2-sha256$210000$saltOneForDemoPin1234$hashOneForDemoPin0123456789abcdefGHIJKLM'
     );
     raise exception 'expected a non-demo account to be refused';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  -- The row carries surgo_demo in user_metadata, which the account holder can
+  -- write. It must still be refused.
+  begin
+    perform public.set_demo_access(
+      'c1000000-0000-0000-0000-000000000004',
+      'pbkdf2-sha256$210000$saltOneForDemoPin1234$hashOneForDemoPin0123456789abcdefGHIJKLM'
+    );
+    raise exception 'expected a user_metadata flag to be ignored';
   exception when insufficient_privilege then
     null;
   end;
@@ -89,10 +109,29 @@ begin
     not exists (select 1 from private.demo_access),
     'refused assignments wrote no row'
   );
+
+  -- The trusted app_metadata flag is what the guard accepts.
+  update auth.users
+     set raw_app_meta_data = '{"surgo_demo":true}'::jsonb
+   where id = 'c1000000-0000-0000-0000-000000000004';
+  perform public.set_demo_access(
+    'c1000000-0000-0000-0000-000000000004',
+    'pbkdf2-sha256$210000$saltFourForDemoPin123$hashFourForDemoPin0123456789abcdefGHIJKL'
+  );
+  perform public.test_assert(
+    exists (
+      select 1 from private.demo_access
+       where user_id = 'c1000000-0000-0000-0000-000000000004'
+    ),
+    'an app_metadata demo flag is accepted'
+  );
+  delete from private.demo_access
+   where user_id = 'c1000000-0000-0000-0000-000000000004';
 end;
 $$;
 
--- 3. Lookup returns the demo row and ignores unknown or non-E.164 input.
+-- 3. Reservation returns the demo row, consumes one attempt, and ignores
+--    unknown, local-form or malformed input.
 select public.set_demo_access(
   'c1000000-0000-0000-0000-000000000001',
   'pbkdf2-sha256$210000$saltOneForDemoPin1234$hashOneForDemoPin0123456789abcdefGHIJKLM'
@@ -102,72 +141,99 @@ do $$
 declare
   v_row record;
 begin
-  select * into v_row from public.demo_login_lookup('+639170000007');
+  select * into v_row from public.demo_login_reserve_attempt('+639170000017');
   perform public.test_assert(
     v_row.user_id = 'c1000000-0000-0000-0000-000000000001',
-    'lookup finds the demo account by E.164 phone'
+    'reservation finds the demo account by E.164 phone'
   );
   perform public.test_assert(
     v_row.account_status = 'active',
-    'lookup reports the profile status'
+    'reservation reports the profile status'
   );
   perform public.test_assert(
-    v_row.failed_attempts = 0 and v_row.locked_until is null,
-    'a fresh account is unlocked'
+    v_row.failed_attempts = 1 and v_row.locked_until is null,
+    'the first reservation consumes one attempt without locking'
+  );
+  perform public.test_assert(
+    not v_row.was_locked,
+    'a fresh reservation reports no pre-existing lock'
   );
 
   -- Normalization is the Edge Function's job; the RPC matches E.164 only.
   perform public.test_assert(
-    not exists (select 1 from public.demo_login_lookup('09170000007')),
-    'lookup does not accept the local 09 form directly'
+    not exists (select 1 from public.demo_login_reserve_attempt('09170000017')),
+    'reservation does not accept the local 09 form directly'
   );
   perform public.test_assert(
-    not exists (select 1 from public.demo_login_lookup('+639179999999')),
+    not exists (select 1 from public.demo_login_reserve_attempt('+639179999999')),
     'unknown phone returns no row'
   );
-end;
-$$;
-
--- 4. Five failures lock for 15 minutes; success clears the state.
-do $$
-declare
-  v_row record;
-  i integer;
-begin
-  for i in 1..4 loop
-    select * into v_row
-      from public.demo_login_record_failure(
-        'c1000000-0000-0000-0000-000000000001');
-    perform public.test_assert(
-      v_row.failed_attempts = i and v_row.locked_until is null,
-      format('failure %s does not lock yet', i)
-    );
-  end loop;
-
-  select * into v_row
-    from public.demo_login_record_failure(
-      'c1000000-0000-0000-0000-000000000001');
   perform public.test_assert(
-    v_row.failed_attempts = 5 and v_row.locked_until > now(),
-    'the fifth failure locks the account'
-  );
-
-  -- A retry while locked must not push the unlock time out.
-  select * into v_row
-    from public.demo_login_record_failure(
-      'c1000000-0000-0000-0000-000000000001');
-  perform public.test_assert(
-    v_row.failed_attempts = 5,
-    'a retry while locked does not add a failure'
+    not exists (select 1 from public.demo_login_reserve_attempt(null::text)),
+    'null phone returns no row'
   );
 
   perform public.demo_login_record_success(
     'c1000000-0000-0000-0000-000000000001');
-  select * into v_row from public.demo_login_lookup('+639170000007');
+end;
+$$;
+
+-- 4. Five reservations lock for 15 minutes; a retry while locked neither adds
+--    an attempt nor extends the window; success clears the state.
+do $$
+declare
+  v_row record;
+  v_locked timestamptz;
+  i integer;
+begin
+  for i in 1..4 loop
+    select * into v_row
+      from public.demo_login_reserve_attempt('+639170000017');
+    perform public.test_assert(
+      v_row.failed_attempts = i and v_row.locked_until is null,
+      format('reservation %s does not lock yet', i)
+    );
+  end loop;
+
+  select * into v_row
+    from public.demo_login_reserve_attempt('+639170000017');
+  v_locked := v_row.locked_until;
   perform public.test_assert(
-    v_row.failed_attempts = 0 and v_row.locked_until is null,
-    'success clears the failure count and lock'
+    v_row.failed_attempts = 5 and v_locked > now(),
+    'the fifth reservation locks the account'
   );
+  perform public.test_assert(
+    not v_row.was_locked,
+    'the reservation that sets the lock still allows verification'
+  );
+
+  -- The Edge Function still gets the hash on the fifth reservation, so a
+  -- correct fifth PIN can succeed; a sixth call is refused before verifying.
+  select * into v_row
+    from public.demo_login_reserve_attempt('+639170000017');
+  perform public.test_assert(
+    v_row.was_locked,
+    'a reservation against a live lock reports was_locked'
+  );
+  perform public.test_assert(
+    v_row.failed_attempts = 5,
+    'a retry while locked does not add an attempt'
+  );
+  perform public.test_assert(
+    v_row.locked_until = v_locked,
+    'a retry while locked does not extend the window'
+  );
+
+  perform public.demo_login_record_success(
+    'c1000000-0000-0000-0000-000000000001');
+  select * into v_row
+    from public.demo_login_reserve_attempt('+639170000017');
+  perform public.test_assert(
+    v_row.failed_attempts = 1 and v_row.locked_until is null,
+    'success clears the failure count and lock before the next attempt'
+  );
+  perform public.demo_login_record_success(
+    'c1000000-0000-0000-0000-000000000001');
 end;
 $$;
 
@@ -182,16 +248,21 @@ declare
   v_row record;
 begin
   select * into v_row
-    from public.demo_login_record_failure(
-      'c1000000-0000-0000-0000-000000000001');
+    from public.demo_login_reserve_attempt('+639170000017');
   perform public.test_assert(
     v_row.failed_attempts = 1,
-    'the first miss after an expired lock restarts the count'
+    'the first reservation after an expired lock restarts the count'
   );
   perform public.test_assert(
     v_row.locked_until is null,
-    'one miss after expiry does not lock again'
+    'one reservation after expiry does not lock again'
   );
+  perform public.test_assert(
+    not v_row.was_locked,
+    'an expired lock is not reported as a live lock'
+  );
+  perform public.demo_login_record_success(
+    'c1000000-0000-0000-0000-000000000001');
 end;
 $$;
 
@@ -205,15 +276,13 @@ do $$
 declare
   v_row record;
 begin
-  select * into v_row from public.demo_login_lookup('+639170000003');
+  select * into v_row from public.demo_login_reserve_attempt('+639170000011');
   perform public.test_assert(
     v_row.user_id = 'c1000000-0000-0000-0000-000000000002'
       and v_row.account_status = 'suspended',
-    'lookup returns a suspended demo account so the function can refuse it'
+    'reservation returns a suspended demo account so the function can refuse it'
   );
 
-  perform public.demo_login_record_failure(
-    'c1000000-0000-0000-0000-000000000002');
   perform public.demo_login_record_success(
     'c1000000-0000-0000-0000-000000000002');
 
@@ -225,18 +294,56 @@ begin
 end;
 $$;
 
--- 7. Unknown ids are a no-op rather than an error.
+-- 7. Lockout recovery clears the counter without rotating the PIN.
+do $$
+declare
+  v_hash text;
+  v_cleared boolean;
+  i integer;
+begin
+  select pin_hash into v_hash
+    from private.demo_access
+   where user_id = 'c1000000-0000-0000-0000-000000000001';
+
+  for i in 1..5 loop
+    perform public.demo_login_reserve_attempt('+639170000017');
+  end loop;
+  perform public.test_assert(
+    (select locked_until from private.demo_access
+      where user_id = 'c1000000-0000-0000-0000-000000000001') > now(),
+    'the account is locked before recovery'
+  );
+
+  v_cleared := public.demo_login_clear_lockout(
+    'c1000000-0000-0000-0000-000000000001');
+  perform public.test_assert(v_cleared, 'lockout recovery reports a cleared row');
+  perform public.test_assert(
+    (select failed_attempts = 0 and locked_until is null
+       from private.demo_access
+      where user_id = 'c1000000-0000-0000-0000-000000000001'),
+    'lockout recovery clears the counter and window'
+  );
+  perform public.test_assert(
+    (select pin_hash from private.demo_access
+      where user_id = 'c1000000-0000-0000-0000-000000000001') = v_hash,
+    'lockout recovery does not rotate the PIN'
+  );
+
+  v_cleared := public.demo_login_clear_lockout(
+    'c1000000-0000-0000-0000-000000000009');
+  perform public.test_assert(
+    not v_cleared,
+    'lockout recovery reports an unknown id as unchanged'
+  );
+end;
+$$;
+
+-- 8. Unknown ids are a no-op rather than an error.
 do $$
 begin
   perform public.demo_login_record_success(
     'c1000000-0000-0000-0000-000000000009');
-  perform public.test_assert(
-    not exists (
-      select 1 from public.demo_login_record_failure(
-        'c1000000-0000-0000-0000-000000000009')
-    ),
-    'unknown user ids return no lockout row'
-  );
+  perform public.test_assert(true, 'success on an unknown id is a no-op');
 end;
 $$;
 
