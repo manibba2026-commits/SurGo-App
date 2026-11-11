@@ -42,27 +42,36 @@ class _HomeContent extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 90),
         children: [
+          const Text(
+            'Tandag City, Surigao del Sur',
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    RepositoryInline<ProfileRecord>(
-                      slot: DomainSlot.passengerProfile,
-                      placeholder: const Text('Hello there 👋',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w800)),
-                      data: (context, profile) => Text(
-                          'Hello, ${profile.firstName ?? profile.fullName} 👋',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w800)),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text('Where are we headed today?',
-                        style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                  ],
+                child: RepositoryInline<ProfileRecord>(
+                  slot: DomainSlot.passengerProfile,
+                  placeholder: const Text(
+                    'Hi there',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                  ),
+                  data: (context, profile) {
+                    final firstName = profile.firstName?.trim();
+                    final name = firstName != null && firstName.isNotEmpty
+                        ? firstName
+                        : profile.fullName.trim().split(RegExp(r'\s+')).first;
+                    return Text(
+                      name.isEmpty ? 'Hi there' : 'Hi, $name',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    );
+                  },
                 ),
               ),
               ListenableBuilder(
@@ -119,25 +128,51 @@ class _HomeContent extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          const Text(
+            'Where to today?',
+            style: TextStyle(
+              fontSize: 24,
+              height: 1.2,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 18),
-          SbTintedCard(
-            tone: SbTone.brand,
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
-            onTap: () => Navigator.pushNamed(context, '/booking'),
-            child: const Row(
-              children: [
-                Icon(Icons.search, size: 18, color: AppColors.primaryLight),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text('Where are you going?',
-                      style: TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600)),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.panel,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(28),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(28),
+                onTap: () => Navigator.pushNamed(context, '/booking'),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search, size: 18, color: AppColors.muted),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Search destination',
+                          style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.arrow_forward_rounded,
+                          size: 16, color: AppColors.primaryLight),
+                    ],
+                  ),
                 ),
-                Icon(Icons.arrow_forward_rounded,
-                    size: 16, color: AppColors.primaryLight),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -149,8 +184,8 @@ class _HomeContent extends StatelessWidget {
                   child: SbServiceCard(
                     tone: SbTone.ride,
                     icon: Icons.electric_rickshaw_rounded,
-                    title: 'Ride',
-                    subtitle: 'Book a nearby ride',
+                    title: 'Find rider',
+                    subtitle: 'Book a ride now',
                     onTap: () => Navigator.pushNamed(context, '/booking'),
                   ),
                 ),
@@ -162,8 +197,8 @@ class _HomeContent extends StatelessWidget {
                   child: SbServiceCard(
                     tone: SbTone.rent,
                     icon: Icons.directions_car_filled_rounded,
-                    title: 'Rent',
-                    subtitle: 'Vehicles by the day',
+                    title: 'Rent vehicle',
+                    subtitle: 'Bikes, cars, vans',
                     onTap: () => Navigator.pushNamed(context, '/rental'),
                   ),
                 ),
@@ -180,7 +215,7 @@ class _HomeContent extends StatelessWidget {
                     tone: SbTone.pasuyo,
                     icon: Icons.shopping_basket_rounded,
                     title: 'Pasuyo',
-                    subtitle: 'Errands, delivered',
+                    subtitle: 'Errands done for you',
                     onTap: () => Navigator.pushNamed(context, '/pasuyo'),
                   ),
                 ),
@@ -192,8 +227,8 @@ class _HomeContent extends StatelessWidget {
                   child: SbServiceCard(
                     tone: SbTone.assist,
                     icon: Icons.family_restroom_rounded,
-                    title: 'For Someone Else',
-                    subtitle: 'Book a ride for them',
+                    title: 'Book for someone',
+                    subtitle: 'Ride for family or friends',
                     onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(

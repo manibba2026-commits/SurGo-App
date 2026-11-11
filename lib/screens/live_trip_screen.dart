@@ -2,16 +2,96 @@ import 'package:flutter/material.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../repositories/repository_failure.dart';
+import '../repositories/repository_registry.dart';
 import '../services/money.dart';
+import '../services/ride_tracking.dart';
 import '../state/app_state.dart';
 import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
+import '../widgets/flow_scaffold.dart';
 import '../widgets/surgo_map.dart';
 import '../widgets/surgo_notice.dart';
 
-class LiveTripScreen extends StatelessWidget {
+class LiveTripScreen extends StatefulWidget {
   const LiveTripScreen({super.key});
+
+  @override
+  State<LiveTripScreen> createState() => _LiveTripScreenState();
+}
+
+class _LiveTripScreenState extends State<LiveTripScreen> {
+  RideTracking? _tracking;
+  RepositoryRegistry? _trackedRepositories;
+  String? _trackedRideId;
+  String? _trackedRiderId;
+  String? _trackedUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    AppState.instance.addListener(_scheduleTrackingSync);
+    _scheduleTrackingSync();
+  }
+
+  void _scheduleTrackingSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncTracking();
+    });
+  }
+
+  void _syncTracking() {
+    final state = AppState.instance;
+    final ride = state.activeRide;
+    if (_trackedRideId == ride?.id &&
+        _trackedRiderId == ride?.riderId &&
+        identical(_trackedRepositories, state.repositories) &&
+        _trackedUserId == state.identity?.userId) {
+      return;
+    }
+    _tracking?.dispose();
+    _tracking = null;
+    _trackedRepositories = state.repositories;
+    _trackedRideId = ride?.id;
+    _trackedRiderId = ride?.riderId;
+    _trackedUserId = state.identity?.userId;
+    if (ride != null) {
+      state.syncRideRoute(ride);
+      final locations = state.repositories.rideLocations;
+      if (state.usesHostedRideDispatch &&
+          state.identity != null &&
+          locations != null &&
+          ride.riderId != null) {
+        _tracking = RideTracking(
+          rides: state.repositories.rides,
+          locations: locations,
+          realtime: state.repositories.realtime,
+        )..addListener(_trackingChanged);
+        _tracking!.start(ride.id, ride.riderId!);
+      }
+    }
+    setState(() {});
+  }
+
+  void _trackingChanged() {
+    if (!mounted) return;
+    final state = AppState.instance;
+    final latest = _tracking?.latestRide;
+    if (latest != null &&
+        latest.id == state.activeRide?.id &&
+        (latest.status != state.activeRide?.status ||
+            latest.riderId != state.activeRide?.riderId)) {
+      state.applyHostedRideUpdate(latest);
+    }
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    AppState.instance.removeListener(_scheduleTrackingSync);
+    _tracking?.dispose();
+    super.dispose();
+  }
 
   void _showSosDialog(BuildContext context) {
     final contacts = AppState.instance.emergencyContacts;
@@ -21,8 +101,11 @@ class LiveTripScreen extends StatelessWidget {
         backgroundColor: AppColors.panel,
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded,
-                color: Color(0xFFFFB3B3), size: 20),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFFFFB3B3),
+              size: 20,
+            ),
             SizedBox(width: 8),
             Text('Send SOS alert?'),
           ],
@@ -31,12 +114,13 @@ class LiveTripScreen extends StatelessWidget {
           contacts.isEmpty
               ? 'You have no emergency contacts saved yet. Add one from your profile so we know who to alert.'
               : 'This will share your live location and trip details with:\n\n'
-                  '${contacts.map((c) => '• ${c.name} (${c.relation})').join('\n')}',
+                    '${contacts.map((c) => '• ${c.name} (${c.relation})').join('\n')}',
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           if (contacts.isNotEmpty)
             TextButton(
               onPressed: () {
@@ -47,8 +131,10 @@ class LiveTripScreen extends StatelessWidget {
                   tone: SbNoticeTone.success,
                 );
               },
-              child: const Text('Send Alert',
-                  style: TextStyle(color: Color(0xFFFFB3B3))),
+              child: const Text(
+                'Send Alert',
+                style: TextStyle(color: Color(0xFFFFB3B3)),
+              ),
             ),
         ],
       ),
@@ -82,17 +168,22 @@ class LiveTripScreen extends StatelessWidget {
           children: [
             const Icon(Icons.route_outlined, size: 40, color: AppColors.muted2),
             const SizedBox(height: 14),
-            const Text('No active trip',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            const Text(
+              'No active trip',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
             const SizedBox(height: 6),
-            const Text('Book a ride to start a trip.',
-                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            const Text(
+              'Book a ride to start a trip.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
             const SizedBox(height: 20),
             SbOutlineButton(
               label: 'Back to Home',
               block: false,
-              onPressed: () => Navigator.of(context)
-                  .pushNamedAndRemoveUntil('/home', (route) => false),
+              onPressed: () => Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/home', (route) => false),
             ),
           ],
         ),
@@ -100,14 +191,14 @@ class LiveTripScreen extends StatelessWidget {
     );
   }
 
-  Widget _trip(BuildContext context, AppState state, RideRequestItem activeRide) {
+  Widget _trip(
+    BuildContext context,
+    AppState state,
+    RideRequestItem activeRide,
+  ) {
     final db = DbService.instance;
     final earner = db.earner;
-    // A hosted trip has no seeded counterpart: the passenger and rider rows are
-    // protected by RLS and there is no live rider fix streamed to this device,
-    // so the seed's map people and the demo driver's position must not be
-    // borrowed to fill the screen in.
-    final hosted = state.usesHostedIdentity;
+    final hosted = state.usesHostedRideDispatch;
     final myRiderId = state.currentAccount?.riderId;
     final iAmTheRider =
         hosted && myRiderId != null && activeRide.riderId == myRiderId;
@@ -125,15 +216,18 @@ class LiveTripScreen extends StatelessWidget {
         break;
       }
     }
-    final passenger = matchById ??
+    final passenger =
+        matchById ??
         matchByName ??
         (db.mapPassengers.isNotEmpty ? db.mapPassengers.first : null);
 
     final rideMatch = db.mapRideRequests
-        .where((request) =>
-            request.id == activeRide.id ||
-            (activeRide.passengerId != null &&
-                request.passengerId == activeRide.passengerId))
+        .where(
+          (request) =>
+              request.id == activeRide.id ||
+              (activeRide.passengerId != null &&
+                  request.passengerId == activeRide.passengerId),
+        )
         .toList();
     final matchedRequest = rideMatch.isNotEmpty ? rideMatch.first : null;
 
@@ -151,416 +245,422 @@ class LiveTripScreen extends StatelessWidget {
     final driverName = hosted
         ? (iAmTheRider ? (state.currentAccount?.name ?? 'You') : 'Your rider')
         : assignedRider?.name ?? earner.name;
-    final driverInitials =
-        hosted ? _initialsFor(driverName) : assignedRider?.initials ?? earner.initials;
-    final driverModel =
-        hosted ? '' : assignedRider?.vehicleModel ?? earner.vehicleModel;
+    final driverInitials = hosted
+        ? _initialsFor(driverName)
+        : assignedRider?.initials ?? earner.initials;
+    final driverModel = hosted
+        ? ''
+        : assignedRider?.vehicleModel ?? earner.vehicleModel;
     final driverVehicleLabel = hosted
         ? 'Vehicle details are shared after the trip'
         : (assignedRider != null
-            ? '${assignedRider.vehicleType} · ${assignedRider.vehiclePlate}'
-            : '${earner.vehicleType} · ${earner.vehiclePlate}');
+              ? '${assignedRider.vehicleType} · ${assignedRider.vehiclePlate}'
+              : '${earner.vehicleType} · ${earner.vehiclePlate}');
     final driverRating = assignedRider?.rating ?? earner.rating;
     final driverTrips = assignedRider?.totalTrips ?? earner.totalTrips;
-    final driverPosition = (assignedRider ??
-            (db.mapRiders.isNotEmpty ? db.mapRiders.first : null))
-        ?.position ??
+    final driverPosition =
+        (assignedRider ?? (db.mapRiders.isNotEmpty ? db.mapRiders.first : null))
+            ?.position ??
         db.mapConfig.defaultCenter;
-    final pickupPoint = matchedRequest?.pickup ??
-        (activeRide.pickupLatitude != null
-            ? MapPoint(activeRide.pickupLatitude!, activeRide.pickupLongitude!)
-            : (hosted
-                ? db.mapConfig.defaultCenter
-                : (passenger?.position ?? db.mapConfig.defaultCenter)));
+    final pickupPoint =
+        activeRide.pickupLatitude != null && activeRide.pickupLongitude != null
+        ? MapPoint(activeRide.pickupLatitude!, activeRide.pickupLongitude!)
+        : hosted
+        ? db.mapConfig.defaultCenter
+        : matchedRequest?.pickup ??
+              passenger?.position ??
+              db.mapConfig.defaultCenter;
     // Without a rider fix the route is still the honest thing to draw, so the
     // destination falls back to the pickup pin rather than a seeded driver.
-    final destinationPoint = activeRide.dropoffLatitude != null
+    final destinationPoint =
+        activeRide.dropoffLatitude != null &&
+            activeRide.dropoffLongitude != null
         ? MapPoint(activeRide.dropoffLatitude!, activeRide.dropoffLongitude!)
-        : (hosted ? pickupPoint : driverPosition);
+        : pickupPoint;
+    final demoDriverPosition = switch (activeRide.status) {
+      RideStatus.arrived => pickupPoint,
+      RideStatus.inProgress => pickupPoint,
+      _ => driverPosition,
+    };
+
+    final trackedPosition = _tracking?.position;
+    final presence = _tracking?.presence;
+    final hostedPosition = trackedPosition != null
+        ? MapPoint(trackedPosition.latitude, trackedPosition.longitude)
+        : presence?.hasPosition == true
+        ? MapPoint(presence!.latitude!, presence.longitude!)
+        : null;
+    final trackingLabel = trackedPosition != null
+        ? 'Live rider GPS'
+        : presence?.isSimulated == true
+        ? 'Simulated rider position'
+        : presence != null
+        ? 'Last shared presence · trip GPS unavailable'
+        : 'Rider location unavailable';
 
     final markers = <SurgoMapMarker>[
+      if (hosted && hostedPosition != null)
+        SurgoMapMarker(
+          id: 'driver',
+          position: hostedPosition,
+          icon: surgoMarkerIcon(presence?.vehicleType ?? 'motorcycle'),
+          title: driverName,
+          subtitle: trackingLabel,
+          faded: trackedPosition == null && presence?.isSimulated != true,
+          details: [
+            MapEntry('Location', trackingLabel),
+            if (presence?.vehicleLabel != null)
+              MapEntry('Vehicle', presence!.vehicleLabel!),
+          ],
+        ),
       if (!hosted)
         SurgoMapMarker(
           id: 'driver',
-          position: driverPosition,
-          icon: surgoMarkerIcon('motorcycle'),
-          title: 'You',
-          subtitle: driverVehicleLabel,
+          position: demoDriverPosition,
+          icon: surgoMarkerIcon(
+            assignedRider?.vehicleType ?? earner.vehicleType,
+          ),
+          title: driverName,
+          subtitle: 'Demo rider · $driverVehicleLabel',
           details: [
             MapEntry('Name', driverName),
             MapEntry('Vehicle', driverModel),
           ],
         ),
-      SurgoMapMarker(
-        id: 'pickup',
-        position: pickupPoint,
-        icon: surgoMarkerIcon('passenger'),
-        title: activeRide.passengerName,
-        subtitle:
-            '${activeRide.pickupBarangay} · ${activeRide.pickupPurok}',
-        details: [
-          MapEntry('Pick-up', activeRide.pickup),
-          MapEntry('Provider fare', Money.format(activeRide.fare)),
-        ],
-      ),
-      SurgoMapMarker(
-        id: 'destination',
-        position: destinationPoint,
-        icon: surgoMarkerIcon('rental'),
-        title: 'Destination',
-        subtitle:
-            '${activeRide.dropoffBarangay} · ${activeRide.dropoffPurok}',
-        details: [
-          MapEntry('ETA', '${activeRide.etaMinutes} min'),
-          MapEntry('Payment', activeRide.paymentMethod),
-        ],
-      ),
+      if (!hosted ||
+          (activeRide.pickupLatitude != null &&
+              activeRide.pickupLongitude != null))
+        SurgoMapMarker(
+          id: 'pickup',
+          position: pickupPoint,
+          icon: surgoMarkerIcon('passenger'),
+          title: activeRide.passengerName,
+          subtitle: '${activeRide.pickupBarangay} · ${activeRide.pickupPurok}',
+          details: [
+            MapEntry('Pick-up', activeRide.pickup),
+            MapEntry('Provider fare', Money.format(activeRide.fare)),
+          ],
+        ),
+      if (activeRide.dropoffLatitude != null &&
+          activeRide.dropoffLongitude != null)
+        SurgoMapMarker(
+          id: 'destination',
+          position: destinationPoint,
+          icon: Icons.place_outlined,
+          color: const Color(0xFFFFB84D),
+          title: 'Destination',
+          subtitle:
+              '${activeRide.dropoffBarangay} · ${activeRide.dropoffPurok}',
+          details: [
+            MapEntry('ETA', '${activeRide.etaMinutes} min'),
+            MapEntry('Payment', activeRide.paymentMethod),
+          ],
+        ),
     ];
 
-    final mapHeight = MediaQuery.of(context).size.height * 0.5;
-    return Scaffold(
-      body: Column(
-        children: [
-          SizedBox(
-            height: mapHeight,
-            child: Stack(
-              children: [
-                SurgoMap(
-                  height: mapHeight,
-                  borderRadius: BorderRadius.zero,
-                  fallbackCenter: db.mapConfig.defaultCenter,
-                  initialZoom: db.mapConfig.defaultZoom,
-                  markers: markers,
-                  interactive: false,
+    return SbFlowScaffold(
+      title: 'Live trip',
+      stateKey: activeRide.status,
+      sheetFraction: 0.54,
+      actions: [
+        SbIconButton(
+          icon: Icons.warning_amber_rounded,
+          color: AppColors.danger,
+          onTap: () => _showSosDialog(context),
+        ),
+      ],
+      map: SurgoMap(
+        height: MediaQuery.sizeOf(context).height,
+        borderRadius: BorderRadius.zero,
+        fallbackCenter: pickupPoint,
+        initialZoom: db.mapConfig.defaultZoom,
+        markers: markers,
+        showUserLocation: false,
+        interactive: true,
+        cameraPadding: EdgeInsets.fromLTRB(
+          24,
+          80,
+          24,
+          MediaQuery.sizeOf(context).height * 0.54 + 20,
+        ),
+        route:
+            state.rideRouting.route?.points ??
+            (activeRide.pickupLatitude != null &&
+                    activeRide.pickupLongitude != null &&
+                    activeRide.dropoffLatitude != null &&
+                    activeRide.dropoffLongitude != null
+                ? [pickupPoint, destinationPoint]
+                : const []),
+        routeIsEstimate: state.rideRouting.route == null,
+      ),
+      sheet: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 18),
+        child: Column(
+          children: [
+            if (hosted) ...[
+              Text(
+                trackingLabel,
+                style: const TextStyle(color: AppColors.muted),
+              ),
+              Text(
+                _tracking == null
+                    ? 'Hosted tracking unavailable'
+                    : _tracking!.realtimeConnected
+                    ? 'Realtime connected'
+                    : 'Realtime unavailable · checking every 15 seconds',
+                style: const TextStyle(color: AppColors.muted2, fontSize: 12),
+              ),
+              if (_tracking?.failure != null)
+                Text(
+                  _tracking!.failure!.message,
+                  style: const TextStyle(color: AppColors.muted),
                 ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: SafeArea(
-                    bottom: false,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        SbIconButton(
-                            icon: Icons.arrow_back,
-                            onTap: () => Navigator.pop(context)),
-                        GestureDetector(
-                          onTap: () => _showSosDialog(context),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 9),
-                            decoration: BoxDecoration(
-                              color: AppColors.dangerSoft,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                  color:
-                                      AppColors.danger.withValues(alpha: 0.4)),
-                            ),
-                            child: Row(
-                              children: const [
-                                Icon(Icons.warning_amber_rounded,
-                                    size: 14, color: Color(0xFFFFB3B3)),
-                                SizedBox(width: 6),
-                                Text('SOS',
-                                    style: TextStyle(
-                                        color: Color(0xFFFFB3B3),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+              const SizedBox(height: 12),
+            ],
+            SbCard(
+              borderColor: AppColors.secondary.withValues(alpha: 0.3),
               child: Column(
                 children: [
-                  SbCard(
-                    borderColor: AppColors.secondary.withValues(alpha: 0.3),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      SbTag(
+                        '${activeRide.status.shortLabel} · ${activeRide.etaMinutes} min',
+                        secondary: true,
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          driverVehicleLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      SbAvatar(initials: driverInitials),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            SbTag(
-                              '${activeRide.status.shortLabel} · ${activeRide.etaMinutes} min',
-                              secondary: true,
-                            ),
-                            const SizedBox(width: 10),
-                            Flexible(
-                              child: Text(
-                                driverVehicleLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.end,
-                                style: const TextStyle(
-                                    color: AppColors.muted, fontSize: 11.5),
+                            Text(
+                              driverName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            SbAvatar(initials: driverInitials),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                            if (hosted)
+                              Text(
+                                iAmTheRider
+                                    ? 'Signed in as the rider for this trip'
+                                    : 'Rider details are shared after the trip',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 11.5,
+                                ),
+                              )
+                            else
+                              Row(
                                 children: [
-                                  Text(driverName,
+                                  const Icon(
+                                    Icons.star_rounded,
+                                    size: 12,
+                                    color: AppColors.primaryLight,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      '$driverRating · $driverTrips trips',
                                       style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14)),
-                                  Text(
-                                      hosted
-                                          ? (iAmTheRider
-                                              ? 'Signed in as the rider for this trip'
-                                              : 'Rider details are shared after the trip')
-                                          : '⭐ $driverRating · $driverTrips trips',
-                                      style: const TextStyle(
-                                          color: AppColors.muted,
-                                          fontSize: 11.5)),
+                                        color: AppColors.muted,
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
-                            ),
-                            SbIconButton(
-                              icon: Icons.call_outlined,
-                              onTap: () =>
-                                  SurgoNotice.show(context, 'Call $driverName'),
-                            ),
-                            const SizedBox(width: 8),
-                            SbIconButton(
-                              icon: Icons.message_outlined,
-                              // Gated by the ride's own status, not by whether
-                              // a trip happens to be on screen: the chat screen
-                              // explains itself when the thread is closed, so a
-                              // tap is never a dead end.
-                              onTap: () => Navigator.pushNamed(
-                                  context, '/ride_chat'),
-                              color: state.canChatOnRide
-                                  ? AppColors.primaryLight
-                                  : AppColors.muted2,
-                            ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                      SbIconButton(
+                        icon: Icons.call_outlined,
+                        onTap: () =>
+                            SurgoNotice.show(context, 'Call $driverName'),
+                      ),
+                      const SizedBox(width: 8),
+                      SbIconButton(
+                        icon: Icons.message_outlined,
+                        // Gated by the ride's own status, not by whether
+                        // a trip happens to be on screen: the chat screen
+                        // explains itself when the thread is closed, so a
+                        // tap is never a dead end.
+                        onTap: () => Navigator.pushNamed(context, '/ride_chat'),
+                        color: state.canChatOnRide
+                            ? AppColors.primaryLight
+                            : AppColors.muted2,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 14),
-                  SbCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text('Trip status',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12.5)),
-                            const Spacer(),
-                            SbTag(activeRide.status.shortLabel,
-                                secondary: true),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        _RideStatusStepper(status: activeRide.status),
-                        const SizedBox(height: 12),
-                        Text(
-                          activeRide.status == RideStatus.inProgress
-                              ? 'The trip is under way. Complete it to settle '
-                                  'the fare and rate your rider.'
-                              : hosted
-                                  ? 'The trip moves one step at a time. The '
-                                      'database refuses any step that is not '
-                                      'legal for your side of the trip.'
-                                  : 'Rider progress is simulated in this '
-                                      'prototype. Advance the trip to see the '
-                                      'next state.',
-                          style: const TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 11.5,
-                              height: 1.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  SbOutlineButton(
-                    label: 'Share this trip',
-                    icon: Icons.shield_outlined,
-                    onPressed: () => SurgoNotice.show(
-                      context,
-                      'Trip link copied (simulated)',
-                      tone: SbNoticeTone.success,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (activeRide.status.advanceActionLabel != null)
-                    SbPrimaryButton(
-                      label: activeRide.status.advanceActionLabel!,
-                      onPressed: () async {
-                        if (state.usesHostedIdentity) {
-                          try {
-                            final next = await state.advanceHostedRide();
-                            if (!context.mounted) return;
-                            if (next == null) {
-                              SurgoNotice.show(
-                                context,
-                                'The trip cannot move forward yet.',
-                                tone: SbNoticeTone.warning,
-                              );
-                              return;
-                            }
-                            SurgoNotice.show(
-                              context,
-                              next.label,
-                              tone: next == RideStatus.completed
-                                  ? SbNoticeTone.success
-                                  : SbNoticeTone.info,
-                            );
-                            if (next == RideStatus.completed) {
-                              Navigator.of(context).pushNamedAndRemoveUntil(
-                                  '/home', (route) => false);
-                            }
-                          } on RepositoryFailure catch (failure) {
-                            if (!context.mounted) return;
-                            SurgoNotice.show(
-                              context,
-                              failure.message,
-                              tone: SbNoticeTone.warning,
-                              title: 'Trip update failed',
-                            );
-                          }
-                          return;
-                        }
-                        // One action follows the trip's own state machine: the
-                        // earlier steps move it along, and only the last live
-                        // state settles. Settling here (not from `accepted`)
-                        // is what lets a passenger-only demo finish a trip.
-                        if (activeRide.status == RideStatus.inProgress) {
-                          // The rating screen reads the completed ride and its
-                          // fare from state, so settle before navigating.
-                          if (!state.completeActiveRide()) {
-                            SurgoNotice.show(
-                              context,
-                              'The trip cannot be completed yet.',
-                              tone: SbNoticeTone.warning,
-                            );
-                            return;
-                          }
-                          Navigator.pushReplacementNamed(context, '/rate');
-                        } else {
-                          state.advanceRide();
-                          SurgoNotice.show(
-                            context,
-                            activeRide.status.label,
-                            tone: SbNoticeTone.info,
-                          );
-                        }
-                      },
-                    ),
                 ],
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            if (state.rideRouting.route != null) ...[
+              Text(
+                '${(state.rideRouting.route!.distanceMeters / 1000).toStringAsFixed(1)} km by road · ${(state.rideRouting.route!.durationSeconds / 60).ceil()} min estimated travel',
+                style: const TextStyle(color: AppColors.muted),
+              ),
+              const SizedBox(height: 12),
+            ],
+            SbCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Trip status',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      const Spacer(),
+                      SbTag(activeRide.status.shortLabel, secondary: true),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _RideStatusStepper(status: activeRide.status),
+                  const SizedBox(height: 12),
+                  Text(
+                    activeRide.status == RideStatus.inProgress
+                        ? 'The trip is under way. Complete it to settle '
+                              'the fare and rate your rider.'
+                        : hosted
+                        ? 'The trip moves one step at a time. The '
+                              'database refuses any step that is not '
+                              'legal for your side of the trip.'
+                        : 'Rider progress is simulated in this '
+                              'prototype. Advance the trip to see the '
+                              'next state.',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 11.5,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SbOutlineButton(
+              label: 'Share this trip',
+              icon: Icons.shield_outlined,
+              onPressed: () => SurgoNotice.show(
+                context,
+                'Trip link copied (simulated)',
+                tone: SbNoticeTone.success,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (activeRide.status.advanceActionLabel != null)
+              SbPrimaryButton(
+                label: activeRide.status.advanceActionLabel!,
+                foreground: Colors.white,
+                onPressed: () async {
+                  if (state.usesHostedRideDispatch) {
+                    try {
+                      final next = await state.advanceHostedRide();
+                      if (!context.mounted) return;
+                      if (next == null) {
+                        SurgoNotice.show(
+                          context,
+                          'The trip cannot move forward yet.',
+                          tone: SbNoticeTone.warning,
+                        );
+                        return;
+                      }
+                      SurgoNotice.show(
+                        context,
+                        next.label,
+                        tone: next == RideStatus.completed
+                            ? SbNoticeTone.success
+                            : SbNoticeTone.info,
+                      );
+                      if (next == RideStatus.completed) {
+                        Navigator.of(
+                          context,
+                        ).pushNamedAndRemoveUntil('/home', (route) => false);
+                      }
+                    } on RepositoryFailure catch (failure) {
+                      if (!context.mounted) return;
+                      SurgoNotice.show(
+                        context,
+                        failure.message,
+                        tone: SbNoticeTone.warning,
+                        title: 'Trip update failed',
+                      );
+                    }
+                    return;
+                  }
+                  // One action follows the trip's own state machine: the
+                  // earlier steps move it along, and only the last live
+                  // state settles. Settling here (not from `accepted`)
+                  // is what lets a passenger-only demo finish a trip.
+                  if (activeRide.status == RideStatus.inProgress) {
+                    // The rating screen reads the completed ride and its
+                    // fare from state, so settle before navigating.
+                    if (!state.completeActiveRide()) {
+                      SurgoNotice.show(
+                        context,
+                        'The trip cannot be completed yet.',
+                        tone: SbNoticeTone.warning,
+                      );
+                      return;
+                    }
+                    Navigator.pushReplacementNamed(context, '/rate');
+                  } else {
+                    state.advanceRide();
+                    SurgoNotice.show(
+                      context,
+                      activeRide.status.label,
+                      tone: SbNoticeTone.info,
+                    );
+                  }
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Progress along [RideStatus] from acceptance to the trip starting.
-///
-/// The dots come from the same enum the action button reads, so the stepper
-/// cannot show a step the trip has not reached or hide one it has.
 class _RideStatusStepper extends StatelessWidget {
   final RideStatus status;
   const _RideStatusStepper({required this.status});
 
-  static const _milestones = [
-    RideStatus.accepted,
-    RideStatus.headingToPickup,
-    RideStatus.arrived,
-    RideStatus.inProgress,
-  ];
-
   @override
-  Widget build(BuildContext context) {
-    final current = status.index;
-    return Column(
-      children: [
-        Row(
-          children: [
-            for (var i = 0; i < _milestones.length; i++) ...[
-              _dot(_milestones[i], current),
-              if (i != _milestones.length - 1) _line(_milestones[i], current),
-            ],
-          ],
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            for (final milestone in _milestones)
-              Expanded(
-                child: Text(
-                  milestone.shortLabel,
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: milestone.index <= current
-                        ? AppColors.secondaryLight
-                        : AppColors.muted2,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _dot(RideStatus milestone, int current) {
-    final done = milestone.index <= current;
-    return Container(
-      width: 10,
-      height: 10,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: done
-            ? AppColors.secondary
-            : AppColors.muted2.withValues(alpha: 0.35),
-        border: Border.all(
-          color: milestone.index == current
-              ? AppColors.secondaryLight
-              : Colors.transparent,
-          width: 2,
-        ),
-      ),
-    );
-  }
-
-  Widget _line(RideStatus milestone, int current) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        margin: const EdgeInsets.symmetric(horizontal: 3),
-        color: milestone.index < current
-            ? AppColors.secondary
-            : AppColors.muted2.withValues(alpha: 0.35),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SbFlowStepper(
+    labels: const ['Assigned', 'Pickup', 'Arrived', 'Trip', 'Done'],
+    activeStep: switch (status) {
+      RideStatus.headingToPickup => 1,
+      RideStatus.arrived => 2,
+      RideStatus.inProgress => 3,
+      RideStatus.completed => 4,
+      _ => 0,
+    },
+  );
 }
 
 /// Initials for a display name, matching the seed convention: the first

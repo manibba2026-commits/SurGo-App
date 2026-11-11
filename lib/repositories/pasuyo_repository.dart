@@ -98,9 +98,8 @@ const String _requestColumns =
 class SupabasePasuyoRepository implements PasuyoRepository {
   SupabasePasuyoRepository(
     SurgoBackend backend, {
-    SurgoWriteBackend? writer,
-  })  : _backend = backend,
-        _writer = writer;
+    this._writer,
+  })  : _backend = backend;
 
   final SurgoBackend _backend;
   final SurgoWriteBackend? _writer;

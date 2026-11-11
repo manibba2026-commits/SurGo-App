@@ -236,8 +236,7 @@ class _RpcCall {
 /// A backend that records storage and RPC calls instead of reaching Supabase.
 class _FakeBackend
     implements SurgoBackend, SurgoWriteBackend, SurgoStorageBackend {
-  _FakeBackend({bool writable = true, this.failRegister = false})
-      : _writable = writable;
+  _FakeBackend({this._writable = true, this.failRegister = false});
 
   final bool _writable;
   final bool failRegister;

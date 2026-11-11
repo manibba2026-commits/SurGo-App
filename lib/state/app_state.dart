@@ -17,6 +17,7 @@ import '../repositories/repository_registry.dart';
 import '../repositories/ride_location_repository.dart';
 import '../repositories/verification_repository.dart';
 import '../services/fee_calculator.dart';
+import '../services/geoapify_service.dart';
 import '../services/location_publisher.dart';
 import '../services/money.dart';
 import '../services/ride_pricing.dart';
@@ -130,8 +131,14 @@ enum PasuyoAcceptRefusal {
 /// wallet, etc.) just mutates these in-memory lists and calls
 /// notifyListeners().
 class AppState extends ChangeNotifier {
-  AppState._internal();
+  AppState._internal() {
+    bookingRouting.addListener(notifyListeners);
+    rideRouting.addListener(notifyListeners);
+  }
   static final AppState instance = AppState._internal();
+
+  final RideRouting bookingRouting = RideRouting();
+  final RideRouting rideRouting = RideRouting();
 
   final DbService db = DbService.instance;
 
@@ -656,6 +663,13 @@ class AppState extends ChangeNotifier {
   /// seeded business rows as if they belonged to the signed-in account.
   bool get usesHostedIdentity => !_auth.isMock;
 
+  /// True only when the signed-in account and the data layer can both perform
+  /// hosted dispatch. A hosted session on the seeded repositories keeps using
+  /// the local ride flow: the auth provider says who is signed in, not where
+  /// business rows are written.
+  bool get usesHostedRideDispatch =>
+      usesHostedIdentity && repositories.isSupabaseBacked;
+
   /// Persists the first-run details and reloads the identity. Returns the
   /// failure to show, or null when the account is ready for its dashboard.
   Future<AuthFailure?> completeOnboarding({
@@ -821,6 +835,10 @@ class AppState extends ChangeNotifier {
     currentAccount = null;
     identity = null;
     _pinRequired = false;
+    _pickedPickup = null;
+    _pickedDestination = null;
+    bookingRouting.sync(start: null, end: null, enabled: false);
+    rideRouting.sync(start: null, end: null, enabled: false);
     // The hosted session's empty slices must not survive into the signed-out
     // demo, and the seed must not survive into the next hosted session.
     db.endIsolatedSession();
@@ -1153,21 +1171,69 @@ class AppState extends ChangeNotifier {
   // ---- booking draft ----
   String pickupLabel = 'Purok 3, Barangay Poblacion';
   String destinationLabel = 'SM Terminal, Downtown';
+  MapPoint? _pickedPickup;
+  MapPoint? _pickedDestination;
   List<RideOption> rideOptions = MockData.rideOptions;
   RideOption selectedRide = MockData.rideOptions.first;
+
+  MapPoint? get bookingPickup => _pickedPickup ?? _coordinatesFor(pickupLabel);
+  MapPoint? get bookingDestination =>
+      _pickedDestination ?? _coordinatesFor(destinationLabel);
+
+  void refreshBookingRoute({bool retry = false}) {
+    bookingRouting.sync(
+      start: bookingPickup,
+      end: bookingDestination,
+      enabled: usesHostedRideDispatch,
+      retry: retry,
+    );
+  }
+
+  void syncRideRoute(RideRequestItem request) {
+    final start =
+        request.pickupLatitude == null || request.pickupLongitude == null
+        ? null
+        : MapPoint(request.pickupLatitude!, request.pickupLongitude!);
+    final end =
+        request.dropoffLatitude == null || request.dropoffLongitude == null
+        ? null
+        : MapPoint(request.dropoffLatitude!, request.dropoffLongitude!);
+    final matchesDraft =
+        start?.latitude == bookingPickup?.latitude &&
+        start?.longitude == bookingPickup?.longitude &&
+        end?.latitude == bookingDestination?.latitude &&
+        end?.longitude == bookingDestination?.longitude;
+    rideRouting.sync(
+      start: start,
+      end: end,
+      enabled: usesHostedRideDispatch,
+      seed: matchesDraft ? bookingRouting.route : null,
+    );
+  }
+
+  int get bookingTravelMinutes {
+    final route = bookingRouting.route;
+    if (route == null) return selectedRide.etaMinutes;
+    final minutes = (route.durationSeconds / 60).ceil();
+    return minutes < 1 ? 1 : minutes;
+  }
 
   void selectRide(RideOption option) {
     selectedRide = option;
     notifyListeners();
   }
 
-  void setPickup(String label) {
+  void setPickup(String label, {MapPoint? coordinates}) {
     pickupLabel = label;
+    _pickedPickup = coordinates;
+    refreshBookingRoute();
     notifyListeners();
   }
 
-  void setDestination(String label) {
+  void setDestination(String label, {MapPoint? coordinates}) {
     destinationLabel = label;
+    _pickedDestination = coordinates;
+    refreshBookingRoute();
     notifyListeners();
   }
 
@@ -1214,15 +1280,15 @@ class AppState extends ChangeNotifier {
       pickupBarangay: pickup.split(',').first.trim(),
       pickupPurok: _purokFrom(pickup),
       pickup: pickup,
-      pickupLatitude: _coordinatesFor(pickup)?.latitude,
-      pickupLongitude: _coordinatesFor(pickup)?.longitude,
+      pickupLatitude: bookingPickup?.latitude,
+      pickupLongitude: bookingPickup?.longitude,
       dropoffBarangay: destination.split(',').first.trim(),
       dropoffPurok: _purokFrom(destination),
       dropoff: destination,
-      dropoffLatitude: _coordinatesFor(destination)?.latitude,
-      dropoffLongitude: _coordinatesFor(destination)?.longitude,
+      dropoffLatitude: bookingDestination?.latitude,
+      dropoffLongitude: bookingDestination?.longitude,
       distanceKm: bookingDistance.kilometres,
-      etaMinutes: option.etaMinutes,
+      etaMinutes: bookingTravelMinutes,
       fare: option.fare,
       paymentMethod: 'Cash',
       note: '',
@@ -1233,6 +1299,7 @@ class AppState extends ChangeNotifier {
     db.rideRequests.insert(0, request);
     myRideRequest = request;
     rideProposal = null;
+    syncRideRoute(request);
     notifyListeners();
     return request;
   }
@@ -1250,7 +1317,6 @@ class AppState extends ChangeNotifier {
   /// [RepositoryFailure] when the database refused the request, so the booking
   /// screen can show the database's own reason.
   Future<RideRequestItem> createHostedRideRequest({String? forPassenger}) async {
-    final option = selectedRide;
     final pickup = pickupLabel;
     final destination = destinationLabel;
     final price = bookingPrice;
@@ -1268,15 +1334,15 @@ class AppState extends ChangeNotifier {
       // the label, so "Purok 3, San Isidro" still resolves to San Isidro.
       pickupBarangay: pickup,
       pickupPurok: _purokFrom(pickup),
-      pickupLatitude: _coordinatesFor(pickup)?.latitude,
-      pickupLongitude: _coordinatesFor(pickup)?.longitude,
+      pickupLatitude: bookingPickup?.latitude,
+      pickupLongitude: bookingPickup?.longitude,
       dropoffAddress: destination,
       dropoffBarangay: destination,
       dropoffPurok: _purokFrom(destination),
-      dropoffLatitude: _coordinatesFor(destination)?.latitude,
-      dropoffLongitude: _coordinatesFor(destination)?.longitude,
+      dropoffLatitude: bookingDestination?.latitude,
+      dropoffLongitude: bookingDestination?.longitude,
       distanceKm: distance.kilometres,
-      etaMinutes: option.etaMinutes,
+      etaMinutes: bookingTravelMinutes,
       fareCentavos: price.providerFare,
       platformFeeCentavos: price.platformFee,
       note: note,
@@ -1285,6 +1351,7 @@ class AppState extends ChangeNotifier {
     final request = rideRequestFromRecord(record);
     myRideRequest = request;
     rideProposal = null;
+    syncRideRoute(request);
     notifyListeners();
     return request;
   }
@@ -1403,6 +1470,14 @@ class AppState extends ChangeNotifier {
   /// rider's availability and increments the passenger's trip count inside the
   /// database; no money or history is written here. Returns the new status, or
   /// null when there is nothing legal to do.
+  void applyHostedRideUpdate(RideRecord record) {
+    if (!usesHostedRideDispatch || activeRide?.id != record.id) return;
+    final updated = rideRequestFromRecord(record);
+    activeRide = updated.status.isTerminal ? null : updated;
+    if (myRideRequest?.id == updated.id) myRideRequest = updated;
+    notifyListeners();
+  }
+
   Future<RideStatus?> advanceHostedRide() async {
     final request = activeRide ?? myRideRequest;
     if (request == null) return null;
@@ -1865,8 +1940,12 @@ class AppState extends ChangeNotifier {
   /// has no routing engine, so it does not borrow the fare to invent a route
   /// the way the earlier estimate did — an unpriced booking and a mispriced
   /// one are both better answered by saying which number is which.
-  TripDistance get bookingDistance => TripDistance.between(
-      _coordinatesFor(pickupLabel), _coordinatesFor(destinationLabel));
+  TripDistance get bookingDistance => bookingRouting.route == null
+      ? TripDistance.between(bookingPickup, bookingDestination)
+      : TripDistance(
+          kilometres: bookingRouting.route!.distanceMeters / 1000,
+          source: DistanceSource.roadRoute,
+        );
 
   /// What the passenger would pay for the selected vehicle, itemised.
   RidePrice get bookingPrice =>

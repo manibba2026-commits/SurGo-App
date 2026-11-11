@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 
-/// The four primary service tiles on Home. A service card owns its gradient,
-/// icon chip, halo and copy hierarchy so the four read as one family.
 class SbServiceCard extends StatelessWidget {
   final SbTone tone;
   final IconData icon;
@@ -23,105 +21,71 @@ class SbServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = tone.onGradient;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: tone.gradient,
-        borderRadius: SbRadius.card,
-        border: Border.all(color: fg.withValues(alpha: 0.12)),
-        boxShadow: SbShadows.glow(tone.accent, alpha: 0.24, blur: 22),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: SbRadius.card,
-          splashColor: fg.withValues(alpha: 0.12),
-          highlightColor: fg.withValues(alpha: 0.06),
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned(
-                top: -30,
-                right: -22,
-                child: Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: fg.withValues(alpha: 0.08),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: -38,
-                right: 34,
-                child: Container(
-                  width: 74,
-                  height: 74,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: fg.withValues(alpha: 0.05),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(15),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: fg.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(SbRadius.sm - 1),
-                            border: Border.all(
-                              color: fg.withValues(alpha: 0.14),
-                            ),
-                          ),
-                          child: Icon(icon, size: 20, color: fg),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          Icons.arrow_outward_rounded,
-                          size: 16,
-                          color: fg.withValues(alpha: 0.75),
-                        ),
-                      ],
+    var pressed = false;
+    const radius = BorderRadius.all(Radius.circular(22));
+    return StatefulBuilder(
+      builder: (context, setState) => AnimatedScale(
+        scale: pressed ? 0.95 : 1,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        child: Material(
+          color: AppColors.panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: const BorderSide(color: AppColors.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            onHighlightChanged: (value) => setState(() => pressed = value),
+            borderRadius: radius,
+            splashColor: AppColors.primary.withValues(alpha: 0.12),
+            highlightColor: AppColors.primary.withValues(alpha: 0.06),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.20),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    const Spacer(),
-                    Text(
+                    child: Icon(icon, size: 24, color: AppColors.primary),
+                  ),
+                  const SizedBox(height: 10),
+                  Flexible(
+                    child: Text(
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 13.5,
-                        height: 1.1,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 15,
+                        height: 1.15,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.1,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: tone.onGradientMuted,
-                        fontSize: 11,
-                        height: 1.25,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 11,
+                      height: 1.2,
+                      fontWeight: FontWeight.w500,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -67,9 +67,8 @@ const String _rentalColumns =
 class SupabaseRentalRepository implements RentalRepository {
   SupabaseRentalRepository(
     SurgoBackend backend, {
-    SurgoWriteBackend? writer,
-  })  : _backend = backend,
-        _writer = writer;
+    this._writer,
+  })  : _backend = backend;
 
   final SurgoBackend _backend;
   final SurgoWriteBackend? _writer;

@@ -264,6 +264,8 @@ MapRider mapRiderFromCandidate(RiderCandidateRecord candidate) {
     estimatedFare: 0,
     vehiclePlate: candidate.vehiclePlate ?? '',
     totalTrips: candidate.totalTrips,
+    isSimulated: candidate.isSimulated,
+    positionUpdatedAt: candidate.updatedAt,
   );
 }
 

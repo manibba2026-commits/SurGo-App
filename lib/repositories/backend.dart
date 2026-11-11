@@ -29,6 +29,18 @@ abstract interface class SurgoBackend {
   });
 }
 
+/// Optional invalidation signals, using the same authenticated client and RLS
+/// as reads. Events (including subscription/reconnection) request a fresh read;
+/// payloads are deliberately not exposed. Errors are [RepositoryFailure]s and
+/// indicate disconnection until another event arrives.
+abstract interface class SurgoRealtimeBackend {
+  Stream<void> watchRows({
+    required String table,
+    required String column,
+    required String value,
+  });
+}
+
 /// The private-storage surface: signed links out, object cleanup in.
 ///
 /// Kept apart from [SurgoBackend] because most repositories only read tables
@@ -80,14 +92,92 @@ abstract interface class SurgoWriteBackend {
 /// Only the publishable key is ever used here; the service-role key cannot
 /// reach this code path because it is not in the client build.
 class SupabaseBackend
-    implements SurgoBackend, SurgoWriteBackend, SurgoStorageBackend {
+    implements
+        SurgoBackend,
+        SurgoWriteBackend,
+        SurgoStorageBackend,
+        SurgoRealtimeBackend {
   SupabaseBackend({SupabaseClient? client, this.requestTimeout = _timeout})
-      : _client = client ?? Supabase.instance.client;
+    : _client = client ?? Supabase.instance.client;
 
   static const Duration _timeout = Duration(seconds: 20);
+  static int _watchId = 0;
 
   final SupabaseClient _client;
   final Duration requestTimeout;
+
+  @override
+  Stream<void> watchRows({
+    required String table,
+    required String column,
+    required String value,
+  }) {
+    RealtimeChannel? channel;
+    var cancelled = false;
+    late final StreamController<void> events;
+    events = StreamController<void>(
+      onListen: () {
+        try {
+          if (table.isEmpty || column.isEmpty || value.isEmpty) {
+            throw ArgumentError('watchRows() requires an equality filter');
+          }
+          // SupabaseClient supplies and updates the session JWT. Postgres
+          // Changes authorization still applies RLS; the filter is not auth.
+          channel = _client.channel('surgo-rows-${_watchId++}');
+          channel!
+              .onPostgresChanges(
+                event: PostgresChangeEvent.all,
+                schema: 'public',
+                table: table,
+                filter: PostgresChangeFilter(
+                  type: PostgresChangeFilterType.eq,
+                  column: column,
+                  value: value,
+                ),
+                callback: (_) {
+                  if (!cancelled) events.add(null);
+                },
+              )
+              .subscribe((status, error) {
+                if (cancelled) return;
+                switch (status) {
+                  case RealtimeSubscribeStatus.subscribed:
+                    events.add(null);
+                  case RealtimeSubscribeStatus.timedOut:
+                    events.addError(
+                      RepositoryFailure.offline(
+                        error ??
+                            TimeoutException('Realtime subscription timed out'),
+                      ),
+                    );
+                  case RealtimeSubscribeStatus.channelError:
+                  case RealtimeSubscribeStatus.closed:
+                    events.addError(
+                      error == null
+                          ? RepositoryFailure.unavailable(status)
+                          : mapBackendError(error),
+                    );
+                }
+              });
+        } catch (error, stack) {
+          events.addError(mapBackendError(error), stack);
+        }
+      },
+      onCancel: () async {
+        cancelled = true;
+        final ownedChannel = channel;
+        if (ownedChannel != null) {
+          try {
+            // removeChannel also unsubscribes, including SDK rejoin timers.
+            await _client.removeChannel(ownedChannel);
+          } catch (error) {
+            throw mapBackendError(error);
+          }
+        }
+      },
+    );
+    return events.stream;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> rows({

@@ -34,6 +34,7 @@ class SupabaseRideLocationRepository implements RideLocationRepository {
       columns: _columns,
       eq: {'ride_id': rideId},
       orderBy: 'recorded_at',
+      ascending: false,
       limit: limit,
     );
     return [for (final row in rows) RideLocationRecord.fromRow(row)];
@@ -66,7 +67,7 @@ class MockRideLocationRepository implements RideLocationRepository {
         headingDegrees: fix.headingDegrees,
         speedKph: fix.speedKph,
         recordedAt: fix.readAt,
-      )
+      ),
     ];
   }
 }

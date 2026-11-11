@@ -6,6 +6,7 @@ import 'notification_repository.dart';
 import 'pasuyo_repository.dart';
 import 'profile_repository.dart';
 import 'rental_repository.dart';
+import 'ride_location_repository.dart';
 import 'ride_repository.dart';
 import 'vehicle_repository.dart';
 import 'verification_repository.dart';
@@ -30,6 +31,8 @@ class RepositoryRegistry {
     required this.verifications,
     required this.attachments,
     required this.isSupabaseBacked,
+    this.rideLocations,
+    this.realtime,
   });
 
   factory RepositoryRegistry.mock([DbService? database]) {
@@ -64,14 +67,15 @@ class RepositoryRegistry {
       catalog: SupabaseCatalogRepository(backend),
       vehicles: SupabaseVehicleRepository(backend),
       rides: SupabaseRideRepository(backend, writer: writer),
+      rideLocations: SupabaseRideLocationRepository(backend),
+      realtime: backend is SurgoRealtimeBackend
+          ? backend as SurgoRealtimeBackend
+          : null,
       rentals: SupabaseRentalRepository(backend, writer: writer),
       pasuyo: SupabasePasuyoRepository(backend, writer: writer),
       notifications: SupabaseNotificationRepository(backend),
       wallet: SupabaseWalletRepository(backend),
-      verifications: SupabaseVerificationRepository(
-        backend,
-        writer: writer,
-      ),
+      verifications: SupabaseVerificationRepository(backend, writer: writer),
       attachments: SupabaseAttachmentRepository(
         backend,
         writer: writer,
@@ -90,6 +94,11 @@ class RepositoryRegistry {
   final WalletRepository wallet;
   final VerificationRepository verifications;
   final AttachmentRepository attachments;
+
+  /// Optional tracking reads and invalidations. Read-only backends can poll;
+  /// direct constructors and the mock set need not supply either capability.
+  final RideLocationRepository? rideLocations;
+  final SurgoRealtimeBackend? realtime;
 
   /// False for the seeded set. Screens use this to decide whether a failure is
   /// a real outage or a test fixture, never to substitute the other set.

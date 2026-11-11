@@ -1536,7 +1536,12 @@ class MapRider {
     required this.estimatedFare,
     this.vehiclePlate = '',
     this.totalTrips = 0,
+    this.isSimulated = true,
+    this.positionUpdatedAt,
   });
+
+  final bool isSimulated;
+  final DateTime? positionUpdatedAt;
 
   /// Two-letter monogram for the avatar, derived the same way as
   /// [RideMatchProposal.initials] - `substring` rather than `characters`,

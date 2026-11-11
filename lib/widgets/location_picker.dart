@@ -1,5 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../data/db_models.dart';
+import '../data/db_service.dart';
 import '../repositories/backend_rows.dart';
+import '../repositories/repository_failure.dart';
+import '../services/geoapify_service.dart';
+import '../state/app_state.dart';
 import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
 import 'common.dart';
@@ -64,6 +71,187 @@ Future<PickedLocation?> showHostedLocationPicker(
   );
 }
 
+class RideLocationChoice {
+  const RideLocationChoice({required this.label, this.point});
+  final String label;
+  final MapPoint? point;
+}
+
+Future<RideLocationChoice?> showRideLocationPicker(
+  BuildContext context, {
+  required String title,
+}) async {
+  final hosted = AppState.instance.usesHostedRideDispatch;
+  final picked = await showModalBottomSheet<RideLocationChoice>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppColors.panel,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
+    builder: (_) => _RidePlaceSearch(title: title, hosted: hosted),
+  );
+  if (picked == null || !context.mounted) return null;
+  if (hosted) {
+    final area =
+        await showHostedLocationPicker(context, title: 'Confirm service area');
+    if (area == null) return null;
+    return RideLocationChoice(
+      label:
+          picked.label.isEmpty ? area.label : '${picked.label} · ${area.label}',
+      point: picked.point,
+    );
+  }
+  if (picked.label.isNotEmpty) return picked;
+  final label = await showLocationPicker(context, title: title);
+  return label == null ? null : RideLocationChoice(label: label);
+}
+
+class _RidePlaceSearch extends StatefulWidget {
+  const _RidePlaceSearch({required this.title, required this.hosted});
+  final String title;
+  final bool hosted;
+
+  @override
+  State<_RidePlaceSearch> createState() => _RidePlaceSearchState();
+}
+
+class _RidePlaceSearchState extends State<_RidePlaceSearch> {
+  final _service = GeoapifyService();
+  Timer? _debounce;
+  int _generation = 0;
+  String _query = '';
+  String? _error;
+  bool _loading = false;
+  List<GeoPlace> _results = const [];
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _generation++;
+    super.dispose();
+  }
+
+  void _search(String query) {
+    _debounce?.cancel();
+    final generation = ++_generation;
+    setState(() {
+      _query = query.trim();
+      _error = null;
+      _results = const [];
+      _loading = widget.hosted && _query.length >= 2;
+    });
+    if (!_loading) return;
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final places = await _service.autocomplete(query);
+        if (!mounted || generation != _generation) return;
+        setState(() {
+          _results = places;
+          _loading = false;
+        });
+      } on RepositoryFailure catch (failure) {
+        if (!mounted || generation != _generation) return;
+        setState(() {
+          _error = failure.message;
+          _loading = false;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final local = widget.hosted
+        ? const <GeoPlace>[]
+        : [
+            for (final place in DbService.instance.places)
+              if (_query.isEmpty ||
+                  place.label.toLowerCase().contains(_query.toLowerCase()))
+                GeoPlace(
+                    id: place.id,
+                    label: place.label,
+                    point: MapPoint(place.latitude, place.longitude)),
+          ];
+    final places = widget.hosted ? _results : local;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+            16, 20, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.58,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 18)),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                onChanged: _search,
+                maxLength: 160,
+                decoration: const InputDecoration(
+                  hintText: 'Search address or place',
+                  prefixIcon: Icon(Icons.search),
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                  widget.hosted
+                      ? 'Address search · confirm barangay and purok next'
+                      : 'Saved demo places · offline search',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+              const SizedBox(height: 8),
+              if (_loading) const LinearProgressIndicator(),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(_error!,
+                      style: const TextStyle(color: AppColors.muted)),
+                ),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final place in places)
+                      ListTile(
+                        leading: const Icon(Icons.place_outlined,
+                            color: AppColors.primaryLight),
+                        title: Text(place.label,
+                            style: const TextStyle(fontSize: 13)),
+                        onTap: () => Navigator.pop(
+                            context,
+                            RideLocationChoice(
+                                label: place.label, point: place.point)),
+                      ),
+                    if (!_loading && _error == null && places.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Text(
+                            _query.length < 2 && widget.hosted
+                                ? 'Type at least two characters to search.'
+                                : 'No matching places. Choose a barangay and purok instead.',
+                            style: const TextStyle(
+                                color: AppColors.muted, fontSize: 12)),
+                      ),
+                  ],
+                ),
+              ),
+              SbOutlineButton(
+                label: 'Choose barangay and purok',
+                onPressed: () =>
+                    Navigator.pop(context, const RideLocationChoice(label: '')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LocationPickerSheet extends StatefulWidget {
   final String title;
   final bool structured;
@@ -85,13 +273,15 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: DraggableScrollableSheet(
         initialChildSize: 0.72,
         minChildSize: 0.4,
         maxChildSize: 0.92,
         expand: false,
-        builder: (context, scrollController) => RepositoryView<List<BarangayRecord>>(
+        builder: (context, scrollController) =>
+            RepositoryView<List<BarangayRecord>>(
           slot: DomainSlot.barangays,
           empty: (_) => const SbEmptyState(
             message: 'No barangays are listed for this area yet.',
@@ -111,7 +301,9 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
     final barangay = chosen.isEmpty ? null : chosen.first;
     final filtered = _query.isEmpty
         ? all
-        : all.where((b) => b.name.toLowerCase().contains(_query.toLowerCase())).toList();
+        : all
+            .where((b) => b.name.toLowerCase().contains(_query.toLowerCase()))
+            .toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -130,7 +322,8 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
             ),
           ),
           Text(widget.title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              style:
+                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 2),
           Text(
             barangay == null
@@ -153,7 +346,8 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                 decoration: const InputDecoration(
                   border: InputBorder.none,
                   hintText: 'Search barangay…',
-                  prefixIcon: Icon(Icons.search, size: 18, color: AppColors.muted),
+                  prefixIcon:
+                      Icon(Icons.search, size: 18, color: AppColors.muted),
                   isDense: true,
                   contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
@@ -168,17 +362,21 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                 itemBuilder: (context, i) {
                   final b = filtered[i];
                   return SbCard(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 13),
                     onTap: () => setState(() => _barangayId = b.id),
                     child: Row(
                       children: [
-                        const Icon(Icons.location_city, size: 18, color: AppColors.muted),
+                        const Icon(Icons.location_city,
+                            size: 18, color: AppColors.muted),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(b.name,
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 13)),
                         ),
-                        const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+                        const Icon(Icons.chevron_right,
+                            size: 16, color: AppColors.muted),
                       ],
                     ),
                   );
@@ -199,7 +397,8 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(barangay.name,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 14)),
                 ),
               ],
             ),
@@ -230,7 +429,9 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 12.5,
-                          color: selected ? AppColors.primaryLight : AppColors.text,
+                          color: selected
+                              ? AppColors.primaryLight
+                              : AppColors.text,
                         ),
                       ),
                     ),

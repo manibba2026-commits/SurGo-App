@@ -50,9 +50,9 @@ class BackendCall {
 /// mapping. It never touches a network or a Supabase client.
 class FakeBackend implements SurgoBackend {
   FakeBackend({
-    Map<String, List<Map<String, dynamic>>> rowsByTable = const {},
+    this._rowsByTable = const {},
     this.failure,
-  }) : _rowsByTable = rowsByTable;
+  });
 
   final Map<String, List<Map<String, dynamic>>> _rowsByTable;
   final RepositoryFailure? failure;

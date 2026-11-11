@@ -34,11 +34,13 @@ void main() {
       final perKm = RidePricing.perKmFeeCentavos;
       final minimum = RidePricing.minFeeCentavos;
       final maximum = RidePricing.maxFeeCentavos;
-      addTearDown(() => RidePricing.configure(
-            perKm: perKm,
-            minimum: minimum,
-            maximum: maximum,
-          ));
+      addTearDown(
+        () => RidePricing.configure(
+          perKm: perKm,
+          minimum: minimum,
+          maximum: maximum,
+        ),
+      );
 
       RidePricing.configure(perKm: 300, minimum: 1000, maximum: 5000);
       expect(RidePricing.platformFee(TripDistance.seeded(3)), 1000);
@@ -80,9 +82,13 @@ void main() {
           distance: TripDistance.seeded(metres / 1000),
         );
         expect(price.customerTotal, price.providerFare + price.platformFee);
-        expect(price.platformFee,
-            inInclusiveRange(RidePricing.minFeeCentavos,
-                RidePricing.maxFeeCentavos));
+        expect(
+          price.platformFee,
+          inInclusiveRange(
+            RidePricing.minFeeCentavos,
+            RidePricing.maxFeeCentavos,
+          ),
+        );
       }
     });
   });
@@ -105,11 +111,14 @@ void main() {
       );
       expect(distance.source, DistanceSource.straightLine);
       expect(distance.label, endsWith('km straight-line'));
-      expect(distance.caveat, contains('no road routing'));
+      expect(distance.caveat, contains('road route unavailable'));
     });
 
     test('a missing coordinate says distance is unavailable', () {
-      final distance = TripDistance.between(null, const MapPoint(9.079, 126.198));
+      final distance = TripDistance.between(
+        null,
+        const MapPoint(9.079, 126.198),
+      );
       expect(distance.source, DistanceSource.unknown);
       expect(distance.isMeasured, isFalse);
       expect(distance.label, 'distance unavailable');

@@ -220,10 +220,10 @@ class _RpcCall {
 /// A backend that records writes instead of reaching Supabase.
 class _FakeBackend implements SurgoBackend, SurgoWriteBackend {
   _FakeBackend({
-    bool writable = true,
+    this._writable = true,
     this.storedStatus = 'submitted',
     this.storedReason,
-  }) : _writable = writable;
+  });
   final bool _writable;
 
   final String storedStatus;

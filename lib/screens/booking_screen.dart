@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
 import '../repositories/repository_failure.dart';
+import '../services/ride_pricing.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/flow_scaffold.dart';
 import '../widgets/location_picker.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_map.dart';
@@ -21,115 +23,246 @@ class _BookingScreenState extends State<BookingScreen> {
   bool _submitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) AppState.instance.refreshBookingRoute();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
     final db = DbService.instance;
-    return Scaffold(
-      body: ListenableBuilder(
-        listenable: state,
-        builder: (context, _) {
-          return Column(
-            children: [
-              Stack(
-                children: [
-                  SurgoMap(
-                    height: MediaQuery.of(context).size.height * 0.36,
-                    borderRadius: BorderRadius.zero,
-                    fallbackCenter: db.mapConfig.defaultCenter,
-                    initialZoom: db.mapConfig.defaultZoom,
-                    markers: const [],
-                  ),
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: SafeArea(
-                      bottom: false,
-                      child: SbIconButton(
-                        icon: Icons.arrow_back,
-                        onTap: () => Navigator.pop(context),
-                      ),
-                    ),
-                  ),
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) => SbFlowScaffold(
+        title: 'Find rider',
+        stateKey: 'booking',
+        sheetFraction: 0.6,
+        map: SurgoMap(
+          height: MediaQuery.sizeOf(context).height,
+          borderRadius: BorderRadius.zero,
+          fallbackCenter:
+              state.bookingPickup ??
+              state.bookingDestination ??
+              db.mapConfig.defaultCenter,
+          initialZoom: db.mapConfig.defaultZoom,
+          showUserLocation: false,
+          cameraPadding: EdgeInsets.fromLTRB(
+            24,
+            80,
+            24,
+            MediaQuery.sizeOf(context).height * 0.6 + 20,
+          ),
+          routeIsEstimate: state.bookingRouting.route == null,
+          route:
+              state.bookingRouting.route?.points ??
+              [
+                if (state.bookingPickup != null &&
+                    state.bookingDestination != null) ...[
+                  state.bookingPickup!,
+                  state.bookingDestination!,
                 ],
+              ],
+          markers: [
+            if (state.bookingPickup != null)
+              SurgoMapMarker(
+                id: 'pickup',
+                position: state.bookingPickup!,
+                icon: Icons.person_pin_circle_outlined,
+                title: 'Pickup',
+                subtitle: state.pickupLabel,
               ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                  children: [
-                    SbField(
-                      label: 'Pickup',
-                      value: state.pickupLabel,
-                      leading: const _Dot(color: AppColors.secondary, square: false),
-                      onTap: () async {
-                        final picked = await showLocationPicker(context, title: 'Set pickup location');
-                        if (picked != null) state.setPickup(picked);
-                      },
+            if (state.bookingDestination != null)
+              SurgoMapMarker(
+                id: 'destination',
+                position: state.bookingDestination!,
+                icon: Icons.place_outlined,
+                title: 'Destination',
+                subtitle: state.destinationLabel,
+                color: const Color(0xFFFFB84D),
+              ),
+          ],
+        ),
+        sheet: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                children: [
+                  const Text(
+                    'Where to today?',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 12),
+                  SbField(
+                    label: 'Pickup',
+                    value: state.pickupLabel,
+                    leading: const _Dot(
+                      color: AppColors.secondary,
+                      square: false,
                     ),
-                    const SizedBox(height: 8),
-                    SbField(
-                      label: 'Destination',
-                      value: state.destinationLabel,
-                      leading: const _Dot(color: AppColors.primary, square: true),
-                      onTap: () async {
-                        final picked = await showLocationPicker(context, title: 'Set destination');
-                        if (picked != null) state.setDestination(picked);
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    _priceBreakdown(state),
-                    const SizedBox(height: 14),
-                    SbPrimaryButton(
-                      label: 'Find a Ride',
-                      icon: Icons.electric_rickshaw_rounded,
-                      feedback: _submitting
-                          ? SbButtonFeedback.loading
-                          : SbButtonFeedback.idle,
-                      // Creates the request first, then matches it. Navigating on
-                      // its own would leave the matching screen with nothing to
-                      // match against, and no trace of the trip afterwards.
-                      onPressed: _submitting
-                          ? null
-                          : () async {
-                              setState(() => _submitting = true);
-                              try {
-                                if (state.usesHostedIdentity) {
-                                  await state.createHostedRideRequest();
-                                } else {
-                                  state.createRideRequest();
-                                }
-                                if (!context.mounted) return;
-                                Navigator.pushNamed(context, '/matching');
-                              } on RepositoryFailure catch (failure) {
-                                if (!context.mounted) return;
-                                SurgoNotice.show(
-                                  context,
-                                  failure.message,
-                                  tone: SbNoticeTone.warning,
-                                  title: 'Request not sent',
-                                );
-                              } finally {
-                                if (mounted) {
-                                  setState(() => _submitting = false);
-                                }
-                              }
-                            },
+                    onTap: () async {
+                      final picked = await showRideLocationPicker(
+                        context,
+                        title: 'Set pickup location',
+                      );
+                      if (picked != null) {
+                        state.setPickup(
+                          picked.label,
+                          coordinates: picked.point,
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  SbField(
+                    label: 'Destination',
+                    value: state.destinationLabel,
+                    leading: const _Dot(color: Color(0xFFFFB84D), square: true),
+                    onTap: () async {
+                      final picked = await showRideLocationPicker(
+                        context,
+                        title: 'Set destination',
+                      );
+                      if (picked != null) {
+                        state.setDestination(
+                          picked.label,
+                          coordinates: picked.point,
+                        );
+                      }
+                    },
+                  ),
+                  if (!state.repositories.isSupabaseBacked) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        for (final place in db.places.take(6))
+                          ActionChip(
+                            avatar: const Icon(Icons.place_outlined, size: 16),
+                            label: Text(place.label),
+                            onPressed: () => state.setDestination(place.label),
+                          ),
+                      ],
                     ),
                   ],
-                ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Choose your vehicle',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final option in state.rideOptions)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: SbTintedCard(
+                        tone: SbTone.ride,
+                        wash: false,
+                        borderColor: state.selectedRide.name == option.name
+                            ? AppColors.primary
+                            : AppColors.border,
+                        onTap: _submitting
+                            ? null
+                            : () => state.selectRide(option),
+                        child: Row(
+                          children: [
+                            SbToneIcon(
+                              tone: SbTone.brand,
+                              icon: option.icon,
+                              size: 42,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    option.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${option.capacityLabel} · ${option.etaLabel}',
+                                    style: const TextStyle(
+                                      color: AppColors.muted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  Text(
+                                    '+ ${RidePricing.price(providerFare: option.fare, distance: state.bookingDistance).platformFeeLabel} SurGo fee',
+                                    style: const TextStyle(
+                                      color: AppColors.primaryLight,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              RidePricing.price(
+                                providerFare: option.fare,
+                                distance: state.bookingDistance,
+                              ).providerFareLabel,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  _priceBreakdown(state),
+                ],
               ),
-            ],
-          );
-        },
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SbPrimaryButton(
+                label: 'Find a Ride',
+                foreground: Colors.white,
+                icon: Icons.electric_rickshaw_rounded,
+                feedback: _submitting
+                    ? SbButtonFeedback.loading
+                    : SbButtonFeedback.idle,
+                onPressed: _submitting || state.bookingRouting.loading
+                    ? null
+                    : () => _submit(state),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  /// The itemised ride price the passenger is agreeing to.
-  ///
-  /// The distance is a mock estimate (straight line between two seeded places)
-  /// because this build has no routing engine; [TripDistance.caveat] says so
-  /// next to the number. The platform fee is charged on top of the provider
-  /// fare, and the provider keeps the whole fare.
+  Future<void> _submit(AppState state) async {
+    setState(() => _submitting = true);
+    try {
+      if (state.usesHostedRideDispatch) {
+        await state.createHostedRideRequest();
+      } else {
+        state.createRideRequest();
+      }
+      if (!mounted) return;
+      Navigator.pushNamed(context, '/matching');
+    } on RepositoryFailure catch (failure) {
+      if (!mounted) return;
+      SurgoNotice.show(
+        context,
+        failure.message,
+        tone: SbNoticeTone.warning,
+        title: 'Request not sent',
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   Widget _priceBreakdown(AppState state) {
     final price = state.bookingPrice;
     final distance = price.distance;
@@ -157,16 +290,35 @@ class _BookingScreenState extends State<BookingScreen> {
             ],
           ),
           const SizedBox(height: 10),
+          if (state.bookingRouting.loading)
+            const Text(
+              'Finding road route…',
+              style: TextStyle(color: AppColors.muted),
+            ),
+          if (state.bookingRouting.failure != null) ...[
+            Text(
+              'Road route unavailable. Showing a straight-line estimate. ${state.bookingRouting.failure!.message}',
+              style: const TextStyle(color: AppColors.muted),
+            ),
+            TextButton(
+              onPressed: () => state.refreshBookingRoute(retry: true),
+              child: const Text('Retry road route'),
+            ),
+          ],
+          if (state.bookingRouting.route != null)
+            _PriceRow(
+              label: 'Travel ETA',
+              value: '${state.bookingTravelMinutes} min',
+            ),
           _PriceRow(label: 'Provider fare', value: price.providerFareLabel),
           _PriceRow(
-            label: 'Estimated distance',
+            label: state.bookingRouting.route == null
+                ? 'Estimated distance'
+                : 'Road distance',
             value: distance.label,
             note: distance.caveat,
           ),
-          _PriceRow(
-            label: 'SurGo platform fee',
-            value: price.platformFeeLabel,
-          ),
+          _PriceRow(label: 'SurGo platform fee', value: price.platformFeeLabel),
           const SizedBox(height: 6),
           const Divider(color: AppColors.border, height: 1),
           const SizedBox(height: 8),

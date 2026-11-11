@@ -88,9 +88,8 @@ const String _applicationColumns =
     'rejection_reason)';
 
 class SupabaseVerificationRepository implements VerificationRepository {
-  SupabaseVerificationRepository(SurgoBackend backend, {SurgoWriteBackend? writer})
-      : _backend = backend,
-        _writer = writer;
+  SupabaseVerificationRepository(SurgoBackend backend, {this._writer})
+      : _backend = backend;
 
   /// Private bucket; object paths must start with the owner's auth uuid for the
   /// storage policies to accept them.

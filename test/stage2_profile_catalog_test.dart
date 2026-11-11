@@ -211,8 +211,8 @@ void main() {
         (tester) async {
       await openHome(tester);
 
-      expect(find.text('Hello, ${db.passenger.firstName} 👋'), findsOneWidget);
-      expect(find.text('Hello there 👋'), findsNothing,
+      expect(find.text('Hi, ${db.passenger.firstName}'), findsOneWidget);
+      expect(find.text('Hi there'), findsNothing,
           reason: 'the read has landed, so the un-named greeting is gone');
     });
 
@@ -232,8 +232,8 @@ void main() {
 
       await openHome(tester);
 
-      expect(find.text('Hello, Asha 👋'), findsOneWidget);
-      expect(find.text('Hello, ${db.passenger.firstName} 👋'), findsNothing,
+      expect(find.text('Hi, Asha'), findsOneWidget);
+      expect(find.text('Hi, ${db.passenger.firstName}'), findsNothing,
           reason: 'a production read must not greet the seeded passenger');
     });
 
@@ -243,8 +243,8 @@ void main() {
 
       await openHome(tester);
 
-      expect(find.text('Hello there 👋'), findsOneWidget);
-      expect(find.text('Hello, ${db.passenger.firstName} 👋'), findsNothing);
+      expect(find.text('Hi there'), findsOneWidget);
+      expect(find.text('Hi, ${db.passenger.firstName}'), findsNothing);
     });
   });
 

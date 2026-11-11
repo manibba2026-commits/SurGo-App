@@ -376,7 +376,7 @@ class SbPrimaryButton extends StatelessWidget {
             Icon(icon, size: 17),
             const SizedBox(width: 8),
           ],
-          Text(label),
+          Flexible(child: Text(label, textAlign: TextAlign.center)),
         ],
       ),
     );
@@ -416,7 +416,7 @@ class SbOutlineButton extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 8)],
-          Text(label),
+          Flexible(child: Text(label, textAlign: TextAlign.center)),
         ],
       ),
     );
@@ -572,8 +572,22 @@ class SbBottomNav extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(item.icon, size: 20,
-                      color: active ? AppColors.primary : AppColors.muted2),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 56,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: active
+                          ? AppColors.primary.withValues(alpha: 0.30)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Icon(
+                      item.icon,
+                      size: 20,
+                      color: active ? AppColors.primary : AppColors.muted2,
+                    ),
+                  ),
                   const SizedBox(height: 3),
                   Text(
                     item.label,

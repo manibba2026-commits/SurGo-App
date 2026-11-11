@@ -12,16 +12,12 @@ import 'push_transport.dart';
 /// notification was delivered — the server decides that.
 class PushService {
   PushService({
-    required PushTransport transport,
-    required DeviceTokenRegistry registry,
-    required String Function() homeRoute,
-    required void Function(String route) navigate,
-    void Function(PushMessage message)? showInForeground,
-  })  : _transport = transport,
-        _registry = registry,
-        _homeRoute = homeRoute,
-        _navigate = navigate,
-        _showInForeground = showInForeground;
+    required this._transport,
+    required this._registry,
+    required this._homeRoute,
+    required this._navigate,
+    this._showInForeground,
+  });
 
   final PushTransport _transport;
   final DeviceTokenRegistry _registry;

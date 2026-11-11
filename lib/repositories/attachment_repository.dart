@@ -163,11 +163,9 @@ const String _columns = 'id, owner_profile_id, bucket_id, storage_path, '
 class SupabaseAttachmentRepository implements AttachmentRepository {
   SupabaseAttachmentRepository(
     SurgoBackend backend, {
-    SurgoWriteBackend? writer,
-    SurgoStorageBackend? storage,
-  })  : _backend = backend,
-        _writer = writer,
-        _storage = storage;
+    this._writer,
+    this._storage,
+  })  : _backend = backend;
 
   /// Private bucket. Object names are `<owner_profile_id>/<unique>.<ext>`.
   static const String bucket = 'attachments';

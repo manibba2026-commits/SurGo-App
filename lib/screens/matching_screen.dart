@@ -11,7 +11,9 @@ import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/flow_scaffold.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/surgo_map.dart';
 import '../widgets/surgo_notice.dart';
 
 /// Finds nearby riders for the passenger's request and offers them one at a
@@ -29,10 +31,7 @@ class MatchingScreen extends StatefulWidget {
   State<MatchingScreen> createState() => _MatchingScreenState();
 }
 
-class _MatchingScreenState extends State<MatchingScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _spinner;
-
+class _MatchingScreenState extends State<MatchingScreen> {
   /// Riders already shown in this visit. "Find Another" keeps walking down the
   /// ranking, so the same person is never proposed twice.
   final Set<String> _seen = {};
@@ -58,19 +57,12 @@ class _MatchingScreenState extends State<MatchingScreen>
   @override
   void initState() {
     super.initState();
-    _spinner = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_dispatch());
+      if (!mounted) return;
+      final request = state.myRideRequest;
+      if (request != null) state.syncRideRoute(request);
+      unawaited(_dispatch());
     });
-  }
-
-  @override
-  void dispose() {
-    _spinner.dispose();
-    super.dispose();
   }
 
   /// Runs one dispatch round.
@@ -90,9 +82,7 @@ class _MatchingScreenState extends State<MatchingScreen>
         _exhausted = false;
       });
     }
-    await Future.delayed(
-      Duration(milliseconds: nextCandidate ? 250 : 900),
-    );
+    await Future.delayed(Duration(milliseconds: nextCandidate ? 250 : 900));
     if (!mounted) return;
     final request = state.myRideRequest;
     if (request == null) {
@@ -100,7 +90,7 @@ class _MatchingScreenState extends State<MatchingScreen>
       return;
     }
     try {
-      final outcome = state.usesHostedIdentity
+      final outcome = state.usesHostedRideDispatch
           ? await state.proposeHostedRider(request, excludeRiderIds: _seen)
           : state.proposeRider(request, excludeRiderIds: _seen);
       final proposal = state.rideProposal;
@@ -134,7 +124,7 @@ class _MatchingScreenState extends State<MatchingScreen>
     final riderName = proposal.riderName;
     setState(() => _sending = true);
     try {
-      final sent = state.usesHostedIdentity
+      final sent = state.usesHostedRideDispatch
           ? await state.confirmHostedRideMatch()
           : state.confirmRideMatch();
       if (!sent || !mounted) return;
@@ -164,7 +154,7 @@ class _MatchingScreenState extends State<MatchingScreen>
   /// Closes the screen, putting the request back to open so it can be matched
   /// again later instead of pointing at a rider nobody chose.
   void _close() {
-    if (state.usesHostedIdentity) {
+    if (state.usesHostedRideDispatch) {
       unawaited(state.cancelHostedRideRequest(reason: 'Closed matching'));
     } else {
       state.declineRideMatch();
@@ -176,9 +166,21 @@ class _MatchingScreenState extends State<MatchingScreen>
     Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
   }
 
+  void _previewDemoTrip() {
+    if (_sending || state.usesHostedRideDispatch) return;
+    final request = state.myRideRequest;
+    if (request == null || !state.confirmRideMatch()) return;
+    state.riderAccepts(request);
+    if (state.activeRide == request) {
+      Navigator.pushReplacementNamed(context, '/livetrip');
+    }
+  }
+
   void _cancelRequest() {
-    if (state.usesHostedIdentity) {
-      unawaited(state.cancelHostedRideRequest(reason: 'Cancelled by passenger'));
+    if (state.usesHostedRideDispatch) {
+      unawaited(
+        state.cancelHostedRideRequest(reason: 'Cancelled by passenger'),
+      );
     } else {
       state.cancelRideRequest();
     }
@@ -196,60 +198,135 @@ class _MatchingScreenState extends State<MatchingScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: state,
+    builder: (context, _) => _buildFlow(context),
+  );
+
+  Widget _buildFlow(BuildContext context) {
     final request = state.myRideRequest;
-
     if (request == null) return _noRequest();
-
-    // The passenger is returning to a request already sent to a rider.
     if (request.status == RideStatus.awaitingAcceptance) {
       return _shell(
         title: 'Request sent',
+        stateKey: 'sent',
         body: _sent(request),
-        leading: SbIconButton(icon: Icons.close, onTap: _backHome),
+        onBack: _backHome,
       );
     }
-
     final proposal = state.rideProposal;
     if (_searching || (proposal == null && !_exhausted)) {
       return _shell(
         title: 'Finding a ride',
+        stateKey: 'searching',
         body: _searchingBody(request),
-        leading: SbIconButton(icon: Icons.close, onTap: _close),
+        onBack: _close,
       );
     }
-
     if (_exhausted || proposal == null) {
       return _shell(
         title: 'No riders nearby',
+        stateKey: 'exhausted',
         body: _noRiders(),
-        leading: SbIconButton(icon: Icons.close, onTap: _close),
+        onBack: _close,
       );
     }
-
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('Rider found'),
-        leading: SbIconButton(icon: Icons.close, onTap: _close),
+    return _shell(
+      title: 'Rider found',
+      stateKey: proposal.rider.id,
+      onBack: _close,
+      body: Column(
+        children: [
+          Expanded(child: _proposal(request, proposal)),
+          _proposalActions(proposal),
+        ],
       ),
-      body: _proposal(request, proposal),
-      bottomNavigationBar: _proposalActions(proposal),
     );
   }
 
   Widget _shell({
     required String title,
+    required Object stateKey,
     required Widget body,
-    required Widget leading,
+    required VoidCallback onBack,
   }) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: Text(title),
-        leading: leading,
+    final request = state.myRideRequest!;
+    final pickup =
+        request.pickupLatitude == null || request.pickupLongitude == null
+        ? null
+        : MapPoint(request.pickupLatitude!, request.pickupLongitude!);
+    final destination =
+        request.dropoffLatitude == null || request.dropoffLongitude == null
+        ? null
+        : MapPoint(request.dropoffLatitude!, request.dropoffLongitude!);
+    final proposal = _searching ? null : state.rideProposal;
+    return SbFlowScaffold(
+      title: title,
+      stateKey: stateKey,
+      onBack: onBack,
+      sheetFraction: 0.62,
+      map: SurgoMap(
+        height: MediaQuery.sizeOf(context).height,
+        borderRadius: BorderRadius.zero,
+        showUserLocation: false,
+        fallbackCenter: pickup ?? state.db.mapConfig.defaultCenter,
+        cameraPadding: EdgeInsets.fromLTRB(
+          24,
+          80,
+          24,
+          MediaQuery.sizeOf(context).height * 0.62 + 20,
+        ),
+        routeIsEstimate: state.rideRouting.route == null,
+        route:
+            state.rideRouting.route?.points ??
+            [
+              if (pickup != null && destination != null) ...[
+                pickup,
+                destination,
+              ],
+            ],
+        markers: [
+          if (pickup != null)
+            SurgoMapMarker(
+              id: 'pickup',
+              position: pickup,
+              icon: Icons.person_pin_circle_outlined,
+              title: 'Pickup',
+              subtitle: request.pickup,
+            ),
+          if (destination != null)
+            SurgoMapMarker(
+              id: 'destination',
+              position: destination,
+              icon: Icons.place_outlined,
+              title: 'Destination',
+              subtitle: request.dropoff,
+              color: const Color(0xFFFFB84D),
+            ),
+          if (proposal != null)
+            SurgoMapMarker(
+              id: proposal.rider.id,
+              position: proposal.rider.position,
+              icon: surgoMarkerIcon(proposal.rider.vehicleType),
+              title: proposal.riderName,
+              subtitle: proposal.rider.isSimulated
+                  ? 'Simulated position'
+                  : 'Last shared rider position',
+            ),
+        ],
       ),
-      body: body,
+      sheet: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+            child: SbFlowStepper(
+              labels: const ['Choose', 'Search', 'Rider', 'Pickup', 'Trip'],
+              activeStep: _searching ? 1 : 2,
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      ),
     );
   }
 
@@ -258,48 +335,24 @@ class _MatchingScreenState extends State<MatchingScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 110,
-            height: 110,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.panel2, width: 3),
-                  ),
-                ),
-                RotationTransition(
-                  turns: _spinner,
-                  child: const SizedBox(
-                    width: 110,
-                    height: 110,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation(AppColors.primary),
-                      backgroundColor: Colors.transparent,
-                      value: 0.25,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.electric_rickshaw,
-                    size: 36, color: AppColors.primaryLight),
-              ],
-            ),
-          ),
+          const SbSearchRadar(size: 110),
           const SizedBox(height: 22),
-          const Text('Finding you a rider…',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const Text(
+            'Finding you a rider…',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
           const SizedBox(height: 6),
-          Text('Looking for available, verified riders near ${request.pickup}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          Text(
+            'Looking for available, verified riders near ${request.pickup}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+          ),
           const SizedBox(height: 6),
-          Text('${request.pickup} → ${request.dropoff}',
-              textAlign: TextAlign.center,
-              style:
-                  const TextStyle(color: AppColors.muted2, fontSize: 11.5)),
+          Text(
+            '${request.pickup} → ${request.dropoff}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted2, fontSize: 11.5),
+          ),
           const SizedBox(height: 26),
           SbOutlineButton(
             label: 'Cancel request',
@@ -320,19 +373,24 @@ class _MatchingScreenState extends State<MatchingScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.person_off_outlined,
-                size: 40, color: AppColors.muted2),
+            const Icon(
+              Icons.person_off_outlined,
+              size: 40,
+              color: AppColors.muted2,
+            ),
             const SizedBox(height: 14),
-            const Text('No riders available',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            const Text(
+              'No riders available',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
             const SizedBox(height: 6),
             Text(
-              state.usesHostedIdentity
-                  ? 'No demo rider is online and available right now. '
-                      'Search again, or go back and change your route.'
+              state.usesHostedRideDispatch
+                  ? 'No rider is online and available right now. '
+                        'Search again, or go back and change your route.'
                   : 'No other verified rider is free near your pickup right '
-                      'now. Search again in a moment, or go back and change '
-                      'your route.',
+                        'now. Search again in a moment, or go back and change '
+                        'your route.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
             ),
@@ -366,19 +424,23 @@ class _MatchingScreenState extends State<MatchingScreen>
         SbStatusBanner(
           tone: SbTone.info,
           icon: Icons.science_outlined,
-          title: state.usesHostedIdentity
-              ? 'Demo riders, live availability'
+          title: state.usesHostedRideDispatch
+              ? (proposal.rider.isSimulated
+                    ? 'Simulated position, live availability'
+                    : 'Live rider availability')
               : 'Simulated rider fleet',
-          message: state.usesHostedIdentity
-              ? 'These riders are demo accounts stored in the hosted database. '
-                  'Their online state is real; their positions are simulated '
-                  'around Tandag City, not device GPS.'
+          message: state.usesHostedRideDispatch
+              ? (proposal.rider.isSimulated
+                    ? 'Availability comes from the database; this rider’s position is simulated, not device GPS.'
+                    : 'This is the rider’s last shared position. Live trip tracking starts after they accept.')
               : 'Rider positions and ETAs come from the demo fleet in this '
-                  'build. They are not live riders and not a real dispatch.',
+                    'build. They are not live riders and not a real dispatch.',
         ),
         const SizedBox(height: 14),
-        const Text('Closest rider first',
-            style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+        const Text(
+          'Closest rider first',
+          style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+        ),
         const SizedBox(height: 10),
         SbCard(
           borderColor: AppColors.primary,
@@ -392,17 +454,23 @@ class _MatchingScreenState extends State<MatchingScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(proposal.riderName,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text(
+                          proposal.riderName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
                         const SizedBox(height: 2),
                         Text(
                           proposal.rider.vehiclePlate.trim().isEmpty
                               ? proposal.vehicleLabel
                               : '${proposal.vehicleLabel} · '
-                                  '${proposal.rider.vehiclePlate}',
+                                    '${proposal.rider.vehiclePlate}',
                           style: const TextStyle(
-                              color: AppColors.muted, fontSize: 12),
+                            color: AppColors.muted,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -414,11 +482,13 @@ class _MatchingScreenState extends State<MatchingScreen>
               const SizedBox(height: 14),
               Row(
                 children: [
-                  _fact(Icons.star_rounded,
-                      proposal.rider.rating.toStringAsFixed(1), 'rating'),
                   _fact(
-                      Icons.schedule, '${proposal.etaMinutes} min', 'ETA'),
-                  _fact(Icons.near_me, proposal.distanceLabel, 'away'),
+                    Icons.star_rounded,
+                    proposal.rider.rating.toStringAsFixed(1),
+                    'rating',
+                  ),
+                  _fact(Icons.schedule, '${proposal.etaMinutes} min', 'ETA'),
+                  _fact(Icons.near_me, proposal.distanceLabel, 'distance'),
                 ],
               ),
             ],
@@ -449,8 +519,11 @@ class _MatchingScreenState extends State<MatchingScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.info_outline,
-                  size: 16, color: AppColors.primaryLight),
+              const Icon(
+                Icons.info_outline,
+                size: 16,
+                color: AppColors.primaryLight,
+              ),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -458,7 +531,10 @@ class _MatchingScreenState extends State<MatchingScreen>
                   'The trip only starts when they accept, and you can follow '
                   'the request from Home or Activity.',
                   style: const TextStyle(
-                      color: AppColors.muted, fontSize: 11.5, height: 1.5),
+                    color: AppColors.muted,
+                    fontSize: 11.5,
+                    height: 1.5,
+                  ),
                 ),
               ),
             ],
@@ -474,12 +550,15 @@ class _MatchingScreenState extends State<MatchingScreen>
         children: [
           Icon(icon, size: 16, color: AppColors.primaryLight),
           const SizedBox(height: 5),
-          Text(value,
-              style:
-                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+          ),
           const SizedBox(height: 1),
-          Text(label,
-              style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 10),
+          ),
         ],
       ),
     );
@@ -494,28 +573,42 @@ class _MatchingScreenState extends State<MatchingScreen>
           color: AppColors.bg,
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: SbOutlineButton(
-                label: 'Find Another',
-                onPressed: _sending
-                    ? null
-                    : () => unawaited(_dispatch(nextCandidate: true)),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: SbOutlineButton(
+                    label: 'Find Another',
+                    onPressed: _sending
+                        ? null
+                        : () => unawaited(_dispatch(nextCandidate: true)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: SbPrimaryButton(
+                    label: 'Select Rider',
+                    foreground: Colors.white,
+                    icon: Icons.check_rounded,
+                    feedback: _sending
+                        ? SbButtonFeedback.loading
+                        : SbButtonFeedback.idle,
+                    onPressed: _sending
+                        ? null
+                        : () => unawaited(_select(proposal)),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 2,
-              child: SbPrimaryButton(
-                label: 'Select Rider',
-                icon: Icons.check_rounded,
-                feedback: _sending
-                    ? SbButtonFeedback.loading
-                    : SbButtonFeedback.idle,
-                onPressed: _sending ? null : () => unawaited(_select(proposal)),
+            if (!state.usesHostedRideDispatch)
+              TextButton.icon(
+                onPressed: _sending ? null : _previewDemoTrip,
+                icon: const Icon(Icons.science_outlined, size: 16),
+                label: const Text('Preview demo trip'),
               ),
-            ),
           ],
         ),
       ),
@@ -533,17 +626,22 @@ class _MatchingScreenState extends State<MatchingScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.send_rounded,
-                size: 40, color: AppColors.primaryLight),
+            const Icon(
+              Icons.send_rounded,
+              size: 40,
+              color: AppColors.primaryLight,
+            ),
             const SizedBox(height: 14),
-            const Text('Request sent',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const Text(
+              'Request sent',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
             const SizedBox(height: 8),
             Text(
               name == null
                   ? 'Your request is waiting for the rider to accept.'
                   : 'Your request went to $name and is waiting for them to '
-                      'accept.',
+                        'accept.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
             ),
@@ -581,13 +679,16 @@ class _MatchingScreenState extends State<MatchingScreen>
       children: [
         SizedBox(
           width: 92,
-          child: Text(label,
-              style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
         ),
         Expanded(
-          child: Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600, fontSize: 12.5)),
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+          ),
         ),
       ],
     );
@@ -599,14 +700,21 @@ class _MatchingScreenState extends State<MatchingScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.search_off_rounded,
-                size: 40, color: AppColors.muted2),
+            const Icon(
+              Icons.search_off_rounded,
+              size: 40,
+              color: AppColors.muted2,
+            ),
             const SizedBox(height: 14),
-            const Text('No active request',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+            const Text(
+              'No active request',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            ),
             const SizedBox(height: 6),
-            const Text('This request is no longer being matched.',
-                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            const Text(
+              'This request is no longer being matched.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
             const SizedBox(height: 20),
             SbOutlineButton(
               label: 'Back to Home',

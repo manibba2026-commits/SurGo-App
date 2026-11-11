@@ -2,10 +2,8 @@ name: surgo
 description: "SurGo — Ride. Rent. Errand. A multi-service mobility and delivery prototype (rides, vehicle rentals, Pasuyo errands) with an in-app platform fee ledger."
 publish_to: 'none'
 
-# The project targets the Flutter 3.24+ stable line. Raise the lower bound if
-# you upgrade past this and confirm with `flutter analyze` first.
 environment:
-  sdk: '>=3.5.0 <4.0.0'
+  sdk: '>=3.12.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -13,6 +11,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
+  maplibre: 0.3.6
   geolocator: ^13.0.1
   supabase_flutter: ^2.18.3
   # Demo authentication (`SURGO_DEMO_AUTH=true`) keeps its session and PIN in
@@ -26,7 +25,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  fake_async: ^1.3.3
   flutter_lints: ^5.0.0
+  maplibre_platform_interface: 0.3.6
 
 flutter:
   uses-material-design: true

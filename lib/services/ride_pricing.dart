@@ -5,12 +5,9 @@ import '../state/geo.dart';
 import 'fee_calculator.dart';
 import 'money.dart';
 
-/// Where a trip's kilometre figure came from.
-///
-/// SurGo has no routing engine in this build, so the app must never present a
-/// distance as though it had been driven. The source travels with the number
-/// and the screens say what it is.
 enum DistanceSource {
+  roadRoute,
+
   /// The distance that came with the seeded trip record.
   seededRoute,
 
@@ -34,6 +31,7 @@ class TripDistance {
   /// "8.4 km" plus, for anything that is not a driven route, what kind of
   /// estimate it actually is.
   String get label => switch (source) {
+        DistanceSource.roadRoute => '${_km()} km by road',
         DistanceSource.seededRoute => '${_km()} km',
         DistanceSource.straightLine => '${_km()} km straight-line',
         DistanceSource.unknown => 'distance unavailable',
@@ -41,17 +39,21 @@ class TripDistance {
 
   /// The honest caveat a pricing row shows next to the fee.
   String get caveat => switch (source) {
+        DistanceSource.roadRoute =>
+          'Geoapify road route · estimated travel time',
         DistanceSource.seededRoute => 'demo route distance',
         DistanceSource.straightLine =>
-          'mock estimate — no road routing in this build',
+          'straight-line estimate — road route unavailable',
         DistanceSource.unknown => 'minimum platform fee applied',
       };
 
   String _km() => kilometres.toStringAsFixed(1);
 
   /// No distance at all: only the minimum fee can be charged.
-  static const TripDistance unknown =
-      TripDistance(kilometres: 0, source: DistanceSource.unknown);
+  static const TripDistance unknown = TripDistance(
+    kilometres: 0,
+    source: DistanceSource.unknown,
+  );
 
   /// Straight line between two mock places; unknown if either is missing.
   factory TripDistance.between(MapPoint? from, MapPoint? to) {
@@ -73,9 +75,8 @@ class TripDistance {
 /// `0` is not a short trip, it is the absence of a measurement — the same value
 /// the app stores when neither place resolved to a coordinate. Printing it as
 /// "0.0 km" would tell a rider the passenger is standing next to them.
-String distanceLabelKm(double kilometres) => kilometres <= 0
-    ? 'no measured distance'
-    : '${kilometres} km';
+String distanceLabelKm(double kilometres) =>
+    kilometres <= 0 ? 'no measured distance' : '${kilometres} km';
 
 /// The three amounts a ride actually has.
 ///

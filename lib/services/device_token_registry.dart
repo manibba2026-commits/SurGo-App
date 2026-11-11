@@ -15,11 +15,10 @@ import 'push_transport.dart';
 /// it — so a stolen build cannot attach its device to somebody else's account.
 class DeviceTokenRegistry {
   DeviceTokenRegistry({
-    required PushTransport transport,
+    required this._transport,
     required EdgeInvoker Function() invoker,
     String? Function()? platform,
-  })  : _transport = transport,
-        _invokerOf = invoker,
+  })  : _invokerOf = invoker,
         _platformOf = platform ?? pushPlatformName;
 
   static const String functionName = 'register-device-token';

@@ -7,7 +7,12 @@ import '../widgets/common.dart';
 class RateTripScreen extends StatelessWidget {
   const RateTripScreen({super.key});
 
-  static const compliments = ['Safe driving', 'Clean vehicle', 'On time', 'Friendly'];
+  static const compliments = [
+    'Safe driving',
+    'Clean vehicle',
+    'On time',
+    'Friendly'
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -89,27 +94,62 @@ class RateTripScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Text('How was your trip with ${driver.name.split(' ').first}?',
+                    Text(
+                        'How was your trip with ${driver.name.split(' ').first}?',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 16)),
                     const SizedBox(height: 4),
                     Text(
                       '${driver.vehicleType} · provider fare ${Money.format(ride.fare)}',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                      style: const TextStyle(
+                          color: AppColors.muted, fontSize: 11.5),
                     ),
                     if (state.lastRideBreakdown != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Platform fee ${state.lastRideBreakdown!.surgoKeepsLabel} · '
-                        'total paid ${state.lastRideBreakdown!.customerPaysLabel}',
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11),
+                      const SizedBox(height: 16),
+                      SbCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Trip receipt',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w800, fontSize: 16)),
+                            const SizedBox(height: 12),
+                            for (final row in [
+                              MapEntry('Rider receives · 100% fare',
+                                  state.lastRideBreakdown!.providerGetsLabel),
+                              MapEntry('SurGo platform fee',
+                                  state.lastRideBreakdown!.surgoKeepsLabel),
+                              MapEntry('You paid · Cash',
+                                  state.lastRideBreakdown!.customerPaysLabel),
+                            ])
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 5),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                        child: Text(row.key,
+                                            style: const TextStyle(
+                                                color: AppColors.muted,
+                                                fontSize: 12))),
+                                    Text(row.value,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800)),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      isFavorite ? 'Added to your favorite riders' : 'Tap the heart to save as a favorite rider',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                      isFavorite
+                          ? 'Added to your favorite riders'
+                          : 'Tap the heart to save as a favorite rider',
+                      style:
+                          const TextStyle(color: AppColors.muted, fontSize: 11),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -117,13 +157,18 @@ class RateTripScreen extends StatelessWidget {
                       children: List.generate(5, (i) {
                         final filled = i < state.tripRating;
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 4),
                           child: GestureDetector(
                             onTap: () => state.setTripRating(i + 1),
                             child: Icon(
-                              filled ? Icons.star_rounded : Icons.star_border_rounded,
+                              filled
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
                               size: 34,
-                              color: filled ? AppColors.yellow : AppColors.borderLight,
+                              color: filled
+                                  ? AppColors.yellow
+                                  : AppColors.borderLight,
                             ),
                           ),
                         );
@@ -145,6 +190,7 @@ class RateTripScreen extends StatelessWidget {
                     const SizedBox(height: 26),
                     SbPrimaryButton(
                       label: 'Submit Rating',
+                      foreground: Colors.white,
                       onPressed: () {
                         // completeActiveRide already wrote the history row; the
                         // rating updates it in place instead of adding a second.

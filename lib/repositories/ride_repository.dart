@@ -128,9 +128,8 @@ const String _presenceColumns =
     'source, updated_at';
 
 class SupabaseRideRepository implements RideRepository {
-  SupabaseRideRepository(SurgoBackend backend, {SurgoWriteBackend? writer})
-      : _backend = backend,
-        _writer = writer;
+  SupabaseRideRepository(SurgoBackend backend, {this._writer})
+      : _backend = backend;
 
   final SurgoBackend _backend;
   final SurgoWriteBackend? _writer;
@@ -505,6 +504,7 @@ class MockRideRepository implements RideRepository {
                     rider.position.latitude,
                     rider.position.longitude,
                   ),
+            isSimulated: true,
             updatedAt: DateTime.now(),
           ),
     ]..sort((a, b) {
