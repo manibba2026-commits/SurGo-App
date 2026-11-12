@@ -6,6 +6,7 @@ import 'package:maplibre/maplibre.dart' as ml;
 import '../data/db_models.dart';
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
+import 'flow_scaffold.dart';
 import 'surgo_notice.dart';
 
 // ---------------------------------------------------------------------------
@@ -130,6 +131,10 @@ class SurgoMap extends StatefulWidget {
   final List<MapPoint> route;
   final bool routeIsEstimate;
 
+  /// Draws expanding search rings around this point (the pickup while the app
+  /// looks for a rider). Purely visual; it never changes the map camera.
+  final MapPoint? pulseCenter;
+
   /// Space occupied by screen overlays, especially persistent bottom sheets.
   /// Route bounds and marker endpoints are fitted inside the remaining area.
   final EdgeInsets cameraPadding;
@@ -145,6 +150,7 @@ class SurgoMap extends StatefulWidget {
     this.borderRadius,
     this.route = const [],
     this.routeIsEstimate = false,
+    this.pulseCenter,
     this.cameraPadding = EdgeInsets.zero,
   });
 
@@ -153,7 +159,7 @@ class SurgoMap extends StatefulWidget {
 }
 
 class _SurgoMapState extends State<SurgoMap>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // MapLibre owns the controller's native lifetime.
   ml.MapController? _mapController;
   Timer? _loadTimeout;
@@ -161,6 +167,11 @@ class _SurgoMapState extends State<SurgoMap>
   bool _waitingForIdle = true;
   bool _loadTimedOut = false;
   late final AnimationController _routeAnimation;
+
+  /// Interpolates a marker between its old and new coordinates so live rider
+  /// fixes glide instead of jumping.
+  late final AnimationController _markerAnimation;
+  final Map<String, MapPoint> _markerFrom = {};
   late List<MapPoint> _route;
   late Set<String> _markerIds;
   MapPoint? _userPosition;
@@ -182,6 +193,12 @@ class _SurgoMapState extends State<SurgoMap>
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     );
+    _markerAnimation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _markerFrom.clear();
+      });
     if (_hasMapTilerKey) _startLoadTimeout();
     if (widget.showUserLocation) _resolveUserLocation(recenter: false);
   }
@@ -226,6 +243,26 @@ class _SurgoMapState extends State<SurgoMap>
         _markerIds.length != markerIds.length ||
         !_markerIds.containsAll(markerIds);
     _markerIds = markerIds;
+    final previous = {for (final m in oldWidget.markers) m.id: m};
+    var markerMoved = false;
+    for (final marker in widget.markers) {
+      final old = previous[marker.id];
+      if (old == null ||
+          (old.position.latitude == marker.position.latitude &&
+              old.position.longitude == marker.position.longitude)) {
+        continue;
+      }
+      // Start from wherever the pin is mid-glide rather than snapping back.
+      _markerFrom[marker.id] = _displayPoint(marker.id, old.position);
+      markerMoved = true;
+    }
+    if (markerMoved) {
+      if (_reduceMotion == true) {
+        _markerFrom.clear();
+      } else {
+        _markerAnimation.forward(from: 0);
+      }
+    }
     if (routeChanged) {
       _route = List.of(widget.route);
       _animateRoute();
@@ -258,11 +295,24 @@ class _SurgoMapState extends State<SurgoMap>
     }
   }
 
+  /// Where a pin is drawn right now: its live target, or a point along the
+  /// glide from the previous fix while [_markerAnimation] is running.
+  MapPoint _displayPoint(String id, MapPoint target) {
+    final from = _markerFrom[id];
+    if (from == null) return target;
+    final t = Curves.easeInOutCubic.transform(_markerAnimation.value);
+    return MapPoint(
+      from.latitude + (target.latitude - from.latitude) * t,
+      from.longitude + (target.longitude - from.longitude) * t,
+    );
+  }
+
   @override
   void dispose() {
     _loadTimeout?.cancel();
     _mapController = null;
     _routeAnimation.dispose();
+    _markerAnimation.dispose();
     super.dispose();
   }
 
@@ -415,9 +465,20 @@ class _SurgoMapState extends State<SurgoMap>
           ml.WidgetLayer(
             allowInteraction: widget.interactive,
             markers: [
+              if (widget.pulseCenter != null)
+                ml.Marker(
+                  point: _geographic(widget.pulseCenter!),
+                  size: const Size(160, 160),
+                  alignment: Alignment.center,
+                  child: const IgnorePointer(
+                    child: SbSearchRadar(size: 160, showIcon: false),
+                  ),
+                ),
               for (final marker in widget.markers)
                 ml.Marker(
-                  point: _geographic(marker.position),
+                  point: _geographic(
+                    _displayPoint(marker.id, marker.position),
+                  ),
                   size: const Size(42, 48),
                   alignment: Alignment.bottomCenter,
                   child: _markerWidget(marker),
@@ -476,11 +537,25 @@ class _SurgoMapState extends State<SurgoMap>
           ),
           for (final marker in widget.markers)
             Positioned(
-              left: frame.project(marker.position).dx - 21,
-              top: frame.project(marker.position).dy - 48,
+              left:
+                  frame.project(_displayPoint(marker.id, marker.position)).dx -
+                  21,
+              top:
+                  frame.project(_displayPoint(marker.id, marker.position)).dy -
+                  48,
               width: 42,
               height: 48,
               child: _markerWidget(marker),
+            ),
+          if (widget.pulseCenter != null)
+            Positioned(
+              left: frame.project(widget.pulseCenter!).dx - 80,
+              top: frame.project(widget.pulseCenter!).dy - 80,
+              width: 160,
+              height: 160,
+              child: const IgnorePointer(
+                child: SbSearchRadar(size: 160, showIcon: false),
+              ),
             ),
           if (_userPosition != null)
             Positioned(
@@ -511,7 +586,10 @@ class _SurgoMapState extends State<SurgoMap>
               _scheduleCameraFit();
             }
             return AnimatedBuilder(
-              animation: _routeAnimation,
+              animation: Listenable.merge([
+                _routeAnimation,
+                _markerAnimation,
+              ]),
               builder: (context, _) {
                 final frame = _frame;
                 final drawnRoute = _partialRoute(_route, _routeAnimation.value);

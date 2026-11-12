@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../auth/auth_models.dart';
-import '../auth/demo_auth.dart';
 import '../auth/phone_input.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
@@ -174,83 +173,6 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  Widget _demoAccountsCard() {
-    final accounts = state.demoLoginAccounts;
-    if (accounts.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-        decoration: BoxDecoration(
-          color: AppColors.panel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'DEMO ACCOUNTS',
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-                color: AppColors.muted,
-              ),
-            ),
-            const SizedBox(height: 2),
-            for (final account in accounts)
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: _submitting
-                    ? null
-                    : () => setState(() {
-                          phoneCtrl.text =
-                              _pinMode ? account.phone : account.id;
-                          _error = null;
-                          _phoneError = null;
-                        }),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: Row(
-                    children: [
-                      Text(
-                        account.id,
-                        style: const TextStyle(
-                          color: AppColors.primaryLight,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 11.5,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          account.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        demoAccountRefFor(account.id)?.roleLabel ?? '',
-                        style: const TextStyle(
-                          color: AppColors.muted2,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _google() async {
     if (_googleLoading) return;
     FocusScope.of(context).unfocus();
@@ -349,7 +271,6 @@ class _LoginScreenState extends State<LoginScreen> {
             },
             onSubmitted: (_) => _submitPin(),
           ),
-          if (state.demoAuthEnabled) _demoAccountsCard(),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(

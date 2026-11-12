@@ -352,6 +352,7 @@ class _MatchingScreenState extends State<MatchingScreen> {
         borderRadius: BorderRadius.zero,
         showUserLocation: false,
         fallbackCenter: pickup ?? state.db.mapConfig.defaultCenter,
+        pulseCenter: _searching ? pickup : null,
         cameraPadding: EdgeInsets.fromLTRB(
           24,
           80,

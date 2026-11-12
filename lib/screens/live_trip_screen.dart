@@ -598,9 +598,12 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                             : SbNoticeTone.info,
                       );
                       if (next == RideStatus.completed) {
+                        final home = state.mode == UserMode.earner
+                            ? '/earner'
+                            : '/home';
                         Navigator.of(
                           context,
-                        ).pushNamedAndRemoveUntil('/home', (route) => false);
+                        ).pushNamedAndRemoveUntil(home, (route) => false);
                       }
                     } on RepositoryFailure catch (failure) {
                       if (!context.mounted) return;

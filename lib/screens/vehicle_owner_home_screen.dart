@@ -190,12 +190,13 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        RepositoryView<List<WalletEntryRecord>>(
-          slot: DomainSlot.ownerWalletEntries,
+        RepositoryView<List<ServiceTransactionRecord>>(
+          slot: DomainSlot.earnerSettlements,
           loading: const SizedBox.shrink(),
           empty: (_) => _earningsRow(0, 0),
           failure: (_, __) => _earningsRow(0, 0),
           data: (context, entries) {
+            final profileId = state.identity?.userId;
             final now = DateTime.now();
             final todayStart = DateTime(now.year, now.month, now.day);
             final weekStart = todayStart.subtract(
@@ -204,11 +205,13 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
             int earnedSince(DateTime from) => entries
                 .where(
                   (e) =>
-                      e.isCredit &&
-                      e.createdAt != null &&
-                      !e.createdAt!.isBefore(from),
+                      e.serviceType == 'rental' &&
+                      e.providerId == profileId &&
+                      e.status == 'completed' &&
+                      e.settledAt != null &&
+                      !e.settledAt!.isBefore(from),
                 )
-                .fold(0, (sum, e) => sum + e.amountCentavos);
+                .fold(0, (sum, e) => sum + e.providerPayoutCentavos);
             return _earningsRow(
               earnedSince(todayStart),
               earnedSince(weekStart),

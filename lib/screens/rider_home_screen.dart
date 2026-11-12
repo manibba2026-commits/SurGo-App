@@ -44,6 +44,9 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
     // assignment visible without hammering the database.
     _refreshTimer =
         Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
+    // The first read also restores a trip that was already accepted before
+    // the app was reopened, so the rider keeps the banner and its actions.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
   @override
@@ -352,33 +355,38 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           for (final record in active)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: SbCard(
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle_outline,
-                        color: AppColors.secondary, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            record.passengerName == null
-                                ? 'Accepted ride'
-                                : '${record.passengerName} · ${record.status.label}',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 12.5),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${record.pickupAddress} → ${record.dropoffAddress}',
-                            style: const TextStyle(
-                                color: AppColors.muted, fontSize: 11.5),
-                          ),
-                        ],
+              child: GestureDetector(
+                onTap: () => Navigator.pushNamed(context, '/livetrip'),
+                child: SbCard(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_outline,
+                          color: AppColors.secondary, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              record.passengerName == null
+                                  ? 'Accepted ride'
+                                  : '${record.passengerName} · ${record.status.label}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${record.pickupAddress} → ${record.dropoffAddress}',
+                              style: const TextStyle(
+                                  color: AppColors.muted, fontSize: 11.5),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const Icon(Icons.chevron_right,
+                          size: 18, color: AppColors.muted),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -546,44 +554,56 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
     );
   }
 
-  /// Hosted stat row: money comes from the earner's wallet ledger and trips
-  /// from the rides actually assigned to this account.
+  /// Hosted stat row: money comes from the provider's settled service
+  /// transactions and trips from the rides actually assigned to this account.
   Widget _hostedStats() {
+    final profileId = AppState.instance.identity?.userId;
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
-    int earnedSince(List<WalletEntryRecord> entries, DateTime from) => entries
-        .where((e) =>
-            e.isCredit && e.createdAt != null && !e.createdAt!.isBefore(from))
-        .fold(0, (sum, e) => sum + e.amountCentavos);
+    // Cash rides settle into service transactions, not the wallet ledger, so
+    // the tiles read the provider's completed settlements directly. That is
+    // what makes them move the moment a trip completes.
+    int payoutSince(List<ServiceTransactionRecord> rows, DateTime from) => rows
+        .where((r) =>
+            r.providerId == profileId &&
+            r.status == 'completed' &&
+            r.settledAt != null &&
+            !r.settledAt!.isBefore(from))
+        .fold(0, (sum, r) => sum + r.providerPayoutCentavos);
+    int completedRides(List<ServiceTransactionRecord> rows) => rows
+        .where((r) =>
+            r.providerId == profileId &&
+            r.status == 'completed' &&
+            r.serviceType == 'ride')
+        .length;
 
     return Row(
       children: [
         Expanded(
-          child: RepositoryInline<List<WalletEntryRecord>>(
-            slot: DomainSlot.earnerWalletEntries,
+          child: RepositoryInline<List<ServiceTransactionRecord>>(
+            slot: DomainSlot.earnerSettlements,
             placeholder: _statBox('—', 'Earnings'),
-            data: (context, entries) => _statBox(
-                Money.format(earnedSince(entries, todayStart)), 'Earnings'),
+            data: (context, rows) =>
+                _statBox(Money.format(payoutSince(rows, todayStart)), 'Earnings'),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: RepositoryInline<List<RideRecord>>(
-            slot: DomainSlot.riderIncomingRides,
+          child: RepositoryInline<List<ServiceTransactionRecord>>(
+            slot: DomainSlot.earnerSettlements,
             placeholder: _statBox('—', 'Trips'),
-            data: (context, rides) => _statBox(
-                '${rides.where((r) => r.status == RideStatus.completed).length}',
-                'Trips'),
+            data: (context, rows) =>
+                _statBox('${completedRides(rows)}', 'Trips'),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: RepositoryInline<List<WalletEntryRecord>>(
-            slot: DomainSlot.earnerWalletEntries,
+          child: RepositoryInline<List<ServiceTransactionRecord>>(
+            slot: DomainSlot.earnerSettlements,
             placeholder: _statBox('—', 'This Week'),
-            data: (context, entries) => _statBox(
-                Money.format(earnedSince(entries, weekStart)), 'This Week'),
+            data: (context, rows) =>
+                _statBox(Money.format(payoutSince(rows, weekStart)), 'This Week'),
           ),
         ),
       ],
@@ -637,9 +657,13 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
             ],
           ),
           data: (context, records) {
+            final profileId = state.identity?.userId;
+            // An errand the helper posted is not claimable by the helper, so
+            // leaving it in the feed would offer a card that cannot be accepted.
             final open = [
               for (final record in records)
-                if (record.status.isOpen) pasuyoTaskFromRecord(record),
+                if (record.status.isOpen && record.customerId != profileId)
+                  pasuyoTaskFromRecord(record),
             ];
             return _openPasuyoList(open);
           },

@@ -1887,10 +1887,50 @@ class AppState extends ChangeNotifier {
     if (!usesHostedIdentity || !isSignedIn) return;
     await cache.refresh(DomainSlot.riderPresence);
     await cache.refresh(DomainSlot.riderIncomingRides);
+    await cache.refresh(DomainSlot.earnerSettlements);
+    restoreHostedRiderTrip();
     // Helper mode shares the rider account, so the errand slots are part of
     // the same workspace refresh.
     await cache.refresh(DomainSlot.providerErrands);
     await cache.refresh(DomainSlot.openErrands);
+  }
+
+  /// Re-seats the rider's committed hosted trip after a reopen.
+  ///
+  /// The active-trip banner is driven by [activeRide], which only the accept
+  /// tap sets. Without this, reloading or coming back to the rider tab would
+  /// leave a live trip as a read-only card with no way to advance it.
+  void restoreHostedRiderTrip() {
+    if (!usesHostedRideDispatch) return;
+    final profileId = identity?.userId;
+    if (profileId == null) return;
+    final records = cache.dataOf<List<RideRecord>>(
+      DomainSlot.riderIncomingRides,
+    );
+    if (records == null) return;
+    // [isActive] excludes completed and cancelled history, which the same
+    // rider read also returns; re-seating one of those would resurrect a
+    // finished trip as a live banner.
+    RideRecord? mine;
+    for (final record in records) {
+      if (record.riderId == profileId && record.status.isActive) {
+        mine = record;
+        break;
+      }
+    }
+    if (mine == null) {
+      if (activeRide?.riderId == profileId) {
+        activeRide = null;
+        activeRideBreakdown = null;
+        notifyListeners();
+      }
+      return;
+    }
+    if (activeRide?.id == mine.id) return;
+    final updated = rideRequestFromRecord(mine);
+    activeRide = updated;
+    activeRideBreakdown = RidePricing.breakdown(priceFor(updated));
+    notifyListeners();
   }
 
   /// Moves the signed-in participant's hosted trip to its next state.
@@ -1977,6 +2017,7 @@ class AppState extends ChangeNotifier {
     if (full != null) applyHostedRideUpdate(full);
     await cache.refresh(DomainSlot.riderPresence);
     await cache.refresh(DomainSlot.riderIncomingRides);
+    await cache.refresh(DomainSlot.earnerSettlements);
     return (full ?? record).status;
   }
 
@@ -2027,6 +2068,27 @@ class AppState extends ChangeNotifier {
       activeRide = updated;
       activeRideBreakdown = RidePricing.breakdown(priceFor(updated));
       riderOnline = true;
+    }
+    notifyListeners();
+    await cache.refresh(DomainSlot.riderPresence);
+    await cache.refresh(DomainSlot.riderIncomingRides);
+  }
+
+  /// Cancels the hosted trip the signed-in rider is currently running.
+  ///
+  /// The banner's cancel button used to mutate only the in-memory trip, which
+  /// left the database row accepted forever. This goes through the same
+  /// participant-checked RPC the passenger path uses.
+  Future<void> cancelHostedActiveRide({String? reason}) async {
+    final ride = activeRide;
+    if (ride == null || ride.status.isTerminal) return;
+    final record = await repositories.rides.cancelRide(
+      rideId: ride.id,
+      reason: reason ?? 'Cancelled by rider',
+    );
+    if (activeRide?.id == record.id) {
+      activeRide = null;
+      activeRideBreakdown = null;
     }
     notifyListeners();
     await cache.refresh(DomainSlot.riderPresence);
@@ -2402,7 +2464,27 @@ class AppState extends ChangeNotifier {
         return MapPoint(place.latitude, place.longitude);
       }
     }
+    // A saved address often names only its barangay ("Purok 3, Barangay
+    // Poblacion"). The seed has no purok coordinates but every barangay has a
+    // known place, so the first place there stands in for the area. That is
+    // enough to draw the pickup and rank riders, and it is still a real seed
+    // coordinate rather than one invented at the city centre.
+    final barangay = _barangayFrom(label);
+    if (barangay != null) {
+      for (final place in places) {
+        if (place.barangay.toLowerCase().contains(barangay)) {
+          return MapPoint(place.latitude, place.longitude);
+        }
+      }
+    }
     return null;
+  }
+
+  String? _barangayFrom(String label) {
+    final match =
+        RegExp(r'barangay\s+([^,]+)', caseSensitive: false).firstMatch(label);
+    final name = match?.group(1)?.trim().toLowerCase();
+    return (name == null || name.isEmpty) ? null : name;
   }
 
   /// Straight-line distance from [riderAt] to the pickup, or null when either
@@ -3254,6 +3336,9 @@ class AppState extends ChangeNotifier {
     _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedRentals();
+    // Completion settles the owner's payout into a service transaction, so the
+    // owner earnings tab must read it again before it is shown.
+    await cache.refresh(DomainSlot.earnerSettlements);
     return rentalBookingFromRecord(full);
   }
 
@@ -3379,6 +3464,10 @@ class AppState extends ChangeNotifier {
     _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedErrands();
+    // Delivery settles the errand into a service transaction, so the earnings
+    // tiles and settlement history must be read again before the helper
+    // returns to the workspace.
+    await cache.refresh(DomainSlot.earnerSettlements);
     return pasuyoTaskFromRecord(full);
   }
 

@@ -57,6 +57,11 @@ enum DomainSlot {
   earnerWalletEntries,
   ownerWalletEntries,
 
+  /// The settled service transactions where the signed-in account is the
+  /// customer or the provider. Cash earnings land here rather than in the
+  /// wallet ledger, so the earnings tiles read this slot.
+  earnerSettlements,
+
   /// One owner's whole fleet, listing status included.
   ownerFleet,
 
@@ -323,6 +328,9 @@ class DomainCache extends ChangeNotifier {
       ),
       DomainSlot.ownerWalletEntries => registry.wallet.fetchTransactions(
         _keyFor(ActorRole.vehicleOwner),
+      ),
+      DomainSlot.earnerSettlements => registry.wallet.fetchSettlements(
+        _keyFor(ActorRole.earner),
       ),
       DomainSlot.ownerFleet => registry.vehicles.fetchVehiclesOwnedBy(
         _keyFor(ActorRole.vehicleOwner),

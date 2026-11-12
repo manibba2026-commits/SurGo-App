@@ -61,8 +61,11 @@ const String _rentalColumns =
     'platform_fee_centavos, payment_method, accepted_at, started_at, '
     'returned_at, completed_at, declined_at, cancelled_at, '
     'cancellation_reason, '
+    // `owner_id` is covered by two foreign keys to profiles (the single-column
+    // one and the composite vehicle/owner one), so name the constraint.
     'vehicle:vehicles(name, plate_number, vehicle_type, category), '
-    'renter:profiles(full_name), owner:profiles(full_name)';
+    'renter:profiles!rental_bookings_renter_id_fkey(full_name), '
+    'owner:profiles!rental_bookings_owner_id_fkey(full_name)';
 
 class SupabaseRentalRepository implements RentalRepository {
   SupabaseRentalRepository(

@@ -91,7 +91,10 @@ const String _requestColumns =
     'quoted_fee_centavos, platform_fee_centavos, payment_method, '
     'requested_at, accepted_at, picked_up_at, delivered_at, cancelled_at, '
     'cancellation_reason, booked_for_someone, recipient_name, recipient_phone, '
-    'customer:profiles(full_name), provider:profiles(full_name), '
+    // Both ids point at profiles, so the embed must name its foreign key or
+    // PostgREST rejects the whole read as ambiguous.
+    'customer:profiles!service_requests_customer_id_fkey(full_name), '
+    'provider:profiles!service_requests_provider_id_fkey(full_name), '
     'items:service_request_items(id, service_request_id, name, quantity, unit, '
     'estimated_unit_price_centavos, actual_unit_price_centavos, notes)';
 

@@ -70,6 +70,15 @@ RepositoryFailure mapEdgeError(Object error) {
     if (error.status == 400 || error.status == 422) {
       return RepositoryFailure.invalidData('${error.details}', error);
     }
+    if (error.status == 500 &&
+        error.details is Map &&
+        error.details['error'] == 'not_configured') {
+      // The function ran but its provider key is absent. Saying "offline" sends
+      // the user to their connection when the build itself is incomplete.
+      return RepositoryFailure.unsupported(
+        'This service is not configured for this build.',
+      );
+    }
     return RepositoryFailure.unavailable(error);
   }
   if (error is TimeoutException) return RepositoryFailure.offline(error);

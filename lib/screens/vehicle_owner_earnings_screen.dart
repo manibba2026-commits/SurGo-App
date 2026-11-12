@@ -60,16 +60,18 @@ class VehicleOwnerEarningsScreen extends StatelessWidget {
     return Scaffold(appBar: AppBar(title: const Text('Earnings')), body: content);
   }
 
-  /// Hosted owner earnings: credits from the owner's wallet ledger and the
-  /// bookings that produced them. A pending or declined request never appears.
+  /// Hosted owner earnings: settled rental payouts and the bookings that
+  /// produced them. A pending or declined request never appears, and cash
+  /// rentals settle into a service transaction rather than the wallet ledger.
   Widget _hostedBody(AppState state) {
+    final profileId = state.identity?.userId;
     return ListView(
       padding:
           EdgeInsets.fromLTRB(18, embedded ? 0 : 12, 18, embedded ? 90 : 24),
       children: [
         if (embedded) const SbTabHeader(title: 'Earnings'),
-        RepositoryView<List<WalletEntryRecord>>(
-          slot: DomainSlot.ownerWalletEntries,
+        RepositoryView<List<ServiceTransactionRecord>>(
+          slot: DomainSlot.earnerSettlements,
           loading: const SizedBox.shrink(),
           empty: (_) => _statsRow(0, 0, 0),
           failure: (_, __) => _statsRow(0, 0, 0),
@@ -81,10 +83,12 @@ class VehicleOwnerEarningsScreen extends StatelessWidget {
             final monthStart = DateTime(now.year, now.month, 1);
             int earnedSince(DateTime from) => entries
                 .where((e) =>
-                    e.isCredit &&
-                    e.createdAt != null &&
-                    !e.createdAt!.isBefore(from))
-                .fold(0, (sum, e) => sum + e.amountCentavos);
+                    e.serviceType == 'rental' &&
+                    e.providerId == profileId &&
+                    e.status == 'completed' &&
+                    e.settledAt != null &&
+                    !e.settledAt!.isBefore(from))
+                .fold(0, (sum, e) => sum + e.providerPayoutCentavos);
             return _statsRow(earnedSince(todayStart), earnedSince(weekStart),
                 earnedSince(monthStart));
           },

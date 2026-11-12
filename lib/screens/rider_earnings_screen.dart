@@ -141,6 +141,7 @@ class RiderEarningsScreen extends StatelessWidget {
   /// rows. Cash-out and top-up are not wired to a hosted function yet, so the
   /// screen sends the reader to the wallet instead of simulating a payout.
   Widget _hostedBody(BuildContext context, AppState state) {
+    final profileId = state.identity?.userId;
     final now = DateTime.now();
     final weekStart =
         DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
@@ -163,18 +164,19 @@ class RiderEarningsScreen extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: RepositoryView<List<WalletEntryRecord>>(
-                slot: DomainSlot.earnerWalletEntries,
+              child: RepositoryView<List<ServiceTransactionRecord>>(
+                slot: DomainSlot.earnerSettlements,
                 loading: _statCard('—', 'This Week'),
                 empty: (_) => _statCard(Money.format(0), 'This Week'),
                 failure: (_, __) => _statCard('—', 'This Week'),
-                data: (context, entries) {
-                  final earned = entries
-                      .where((e) =>
-                          e.isCredit &&
-                          e.createdAt != null &&
-                          !e.createdAt!.isBefore(weekStart))
-                      .fold(0, (sum, e) => sum + e.amountCentavos);
+                data: (context, rows) {
+                  final earned = rows
+                      .where((r) =>
+                          r.providerId == profileId &&
+                          r.status == 'completed' &&
+                          r.settledAt != null &&
+                          !r.settledAt!.isBefore(weekStart))
+                      .fold(0, (sum, r) => sum + r.providerPayoutCentavos);
                   return _statCard(Money.format(earned), 'This Week');
                 },
               ),
@@ -191,15 +193,88 @@ class RiderEarningsScreen extends StatelessWidget {
                       TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
               SizedBox(height: 8),
               Text(
-                'Completed rides and delivered errands credit the service transaction in the database. '
-                'Your ledger below is the record of those credits.',
+                'Completed rides and delivered errands settle into a service '
+                'transaction in the database. The paid amount is what you kept; '
+                'the platform fee is collected from the customer on top.',
                 style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.5),
               ),
             ],
           ),
         ),
         const SizedBox(height: 20),
-        const Text('Transaction History',
+        const Text('Settlement History',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+        const SizedBox(height: 10),
+        RepositoryView<List<ServiceTransactionRecord>>(
+          slot: DomainSlot.earnerSettlements,
+          empty: (_) => const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No completed services yet',
+                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+          ),
+          data: (context, rows) {
+            final mine = [
+              for (final row in rows)
+                if (row.providerId == profileId && row.status == 'completed')
+                  row,
+            ]..sort((a, b) {
+                final left = a.settledAt ?? a.createdAt;
+                final right = b.settledAt ?? b.createdAt;
+                if (left == null || right == null) return 0;
+                return right.compareTo(left);
+              });
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final row in mine)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: SbCard(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppColors.secondarySoft,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                                _settlementIcon(row.serviceType),
+                                size: 16,
+                                color: AppColors.secondaryLight),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_settlementLabel(row.serviceType),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12.5)),
+                                Text(displayTimestamp(row.settledAt ?? row.createdAt),
+                                    style: const TextStyle(
+                                        color: AppColors.muted, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                          Text(
+                              '+${Money.format(row.providerPayoutCentavos)}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 20),
+        const Text('Wallet History',
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
         const SizedBox(height: 10),
         RepositoryView<List<WalletEntryRecord>>(
@@ -273,6 +348,20 @@ class RiderEarningsScreen extends StatelessWidget {
       ],
     );
   }
+
+  String _settlementLabel(String serviceType) => switch (serviceType) {
+        'ride' => 'Completed ride',
+        'rental' => 'Rental payout',
+        'pasuyo' => 'Errand payout',
+        _ => 'Service payout',
+      };
+
+  IconData _settlementIcon(String serviceType) => switch (serviceType) {
+        'ride' => Icons.local_taxi_outlined,
+        'rental' => Icons.directions_car_filled_outlined,
+        'pasuyo' => Icons.shopping_bag_outlined,
+        _ => Icons.receipt_long_outlined,
+      };
 
   /// Earnings split by what earned them. A ride's fare is kept whole and the
   /// platform fee sits on top of it, so only the Pasuyo row needs a net-of-fee

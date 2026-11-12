@@ -376,7 +376,23 @@ class SbActiveRideBanner extends StatelessWidget {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 11),
                     ),
-                    onPressed: () => state.cancelActiveRide(),
+                    onPressed: () async {
+                      if (!state.usesHostedRideDispatch) {
+                        state.cancelActiveRide();
+                        return;
+                      }
+                      try {
+                        await state.cancelHostedActiveRide();
+                      } on RepositoryFailure catch (failure) {
+                        if (!context.mounted) return;
+                        SurgoNotice.show(
+                          context,
+                          failure.message,
+                          tone: SbNoticeTone.warning,
+                          title: 'Cancel failed',
+                        );
+                      }
+                    },
                     child: const Text('Cancel'),
                   ),
                 ),
@@ -395,7 +411,42 @@ class SbActiveRideBanner extends StatelessWidget {
                         foregroundColor: AppColors.onAccent,
                         padding: const EdgeInsets.symmetric(vertical: 11),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
+                        if (state.usesHostedRideDispatch) {
+                          final completing =
+                              ride.status == RideStatus.inProgress;
+                          try {
+                            final next = await state.advanceHostedRide();
+                            if (!context.mounted) return;
+                            if (next == null) {
+                              SurgoNotice.show(
+                                context,
+                                'The trip cannot move forward yet.',
+                                tone: SbNoticeTone.warning,
+                              );
+                              return;
+                            }
+                            SurgoNotice.show(
+                              context,
+                              completing
+                                  ? 'Trip completed — the fare is settled in '
+                                      'the database'
+                                  : next.label,
+                              tone: completing
+                                  ? SbNoticeTone.success
+                                  : SbNoticeTone.info,
+                            );
+                          } on RepositoryFailure catch (failure) {
+                            if (!context.mounted) return;
+                            SurgoNotice.show(
+                              context,
+                              failure.message,
+                              tone: SbNoticeTone.warning,
+                              title: 'Trip update failed',
+                            );
+                          }
+                          return;
+                        }
                         if (ride.status == RideStatus.inProgress) {
                           state.completeActiveRide();
                           SurgoNotice.show(

@@ -176,8 +176,9 @@ class SbFlowStepper extends StatelessWidget {
 }
 
 class SbSearchRadar extends StatefulWidget {
-  const SbSearchRadar({super.key, this.size = 150});
+  const SbSearchRadar({super.key, this.size = 150, this.showIcon = true});
   final double size;
+  final bool showIcon;
 
   @override
   State<SbSearchRadar> createState() => _SbSearchRadarState();
@@ -231,11 +232,12 @@ class _SbSearchRadarState extends State<SbSearchRadar>
                   ),
                 ),
               ),
-            const Icon(
-              Icons.near_me_rounded,
-              color: AppColors.primaryLight,
-              size: 30,
-            ),
+            if (widget.showIcon)
+              const Icon(
+                Icons.near_me_rounded,
+                color: AppColors.primaryLight,
+                size: 30,
+              ),
           ],
         ),
       ),
