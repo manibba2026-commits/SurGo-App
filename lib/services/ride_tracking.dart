@@ -33,12 +33,18 @@ class RideTracking extends ChangeNotifier {
   final List<RepositoryFailure?> _realtimeFailures = [null, null, null];
   Timer? _poll;
   Timer? _expiry;
+  Timer? _presenceExpiry;
   RideLocationRecord? _position;
   RiderPresenceRecord? _presence;
   RideRecord? _latestRide;
   RepositoryFailure? _readFailure;
 
-  RiderPresenceRecord? get presence => _presence;
+  RiderPresenceRecord? get presence {
+    final record = _presence;
+    return record != null && (record.isSimulated || _freshPresence(record))
+        ? record
+        : null;
+  }
 
   /// Only a verified, fresh point is drawable. No seed or fallback coordinates.
   RideLocationRecord? get position {
@@ -162,17 +168,17 @@ class RideTracking extends ChangeNotifier {
       if (!_current(session)) return;
       _latestRide = ride;
       if (ride == null) {
-        _presence = null;
+        _setPresence(null);
         throw RepositoryFailure.notFound();
       }
       if (ride.id != session.rideId || ride.riderId != session.riderId) {
-        _presence = null;
+        _setPresence(null);
         throw RepositoryFailure.invalidData(
           'This ride is not assigned to the tracked rider.',
         );
       }
       if (ride.status.isTerminal) {
-        _presence = null;
+        _setPresence(null);
         _setPosition(null);
         _readFailure = null;
         notifyListeners();
@@ -180,19 +186,21 @@ class RideTracking extends ChangeNotifier {
       }
       final presence = await rides.fetchPresence(session.riderId);
       if (!_current(session)) return;
-      _presence =
-          presence != null &&
-              presence.profileId == session.riderId &&
-              presence.isOnline &&
-              presence.latitude != null &&
-              presence.longitude != null &&
-              presence.latitude!.isFinite &&
-              presence.longitude!.isFinite &&
-              presence.latitude!.abs() <= 90 &&
-              presence.longitude!.abs() <= 180 &&
-              (presence.latitude != 0 || presence.longitude != 0)
-          ? presence
-          : null;
+      _setPresence(
+        presence != null &&
+                presence.profileId == session.riderId &&
+                presence.isOnline &&
+                presence.latitude != null &&
+                presence.longitude != null &&
+                presence.latitude!.isFinite &&
+                presence.longitude!.isFinite &&
+                presence.latitude!.abs() <= 90 &&
+                presence.longitude!.abs() <= 180 &&
+                (presence.latitude != 0 || presence.longitude != 0) &&
+                (presence.isSimulated || _freshPresence(presence))
+            ? presence
+            : null,
+      );
       final records = await locations.fetchRecentPositions(
         session.rideId,
         limit: 1,
@@ -230,6 +238,29 @@ class RideTracking extends ChangeNotifier {
     if (recordedAt == null) return false;
     final age = _clock().difference(recordedAt);
     return age <= maxPositionAge && age >= -maxFutureSkew;
+  }
+
+  bool _freshPresence(RiderPresenceRecord record) {
+    final updatedAt = record.updatedAt;
+    if (updatedAt == null) return false;
+    final age = _clock().difference(updatedAt);
+    return age <= maxPositionAge && age >= -maxFutureSkew;
+  }
+
+  void _setPresence(RiderPresenceRecord? record) {
+    _presenceExpiry?.cancel();
+    _presenceExpiry = null;
+    _presence = record;
+    final session = _session;
+    if (record == null || record.isSimulated || session == null) return;
+    final remaining = record.updatedAt!
+        .add(maxPositionAge)
+        .difference(_clock());
+    _presenceExpiry = Timer(remaining + const Duration(microseconds: 1), () {
+      if (!_current(session)) return;
+      _setPresence(null);
+      notifyListeners();
+    });
   }
 
   void _setPosition(RideLocationRecord? record) {
@@ -272,6 +303,8 @@ class RideTracking extends ChangeNotifier {
     _poll = null;
     _expiry?.cancel();
     _expiry = null;
+    _presenceExpiry?.cancel();
+    _presenceExpiry = null;
     for (final subscription in _subscriptions) {
       _cancel(subscription);
     }

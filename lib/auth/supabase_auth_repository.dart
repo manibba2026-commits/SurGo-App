@@ -35,7 +35,8 @@ String resolveOAuthRedirect({
 /// The production identity provider. Every credential, session and identity
 /// link lives in Supabase Auth; this class only translates the SDK into the
 /// app's own types.
-class SupabaseAuthRepository implements AuthRepository {
+class SupabaseAuthRepository
+    implements AuthRepository, EmailRecoveryRepository {
   SupabaseAuthRepository({
     SupabaseClient? client,
     ProfileRepository? profiles,
@@ -196,6 +197,91 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<bool> signInWithFacebook() {
+    return _guard(() {
+      return _client.auth.signInWithOAuth(
+        OAuthProvider.facebook,
+        redirectTo: _oauthRedirect,
+      );
+    });
+  }
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) {
+    return _guard(() async {
+      final response = await _client.auth.signInWithPassword(
+        email: email.trim(),
+        password: password,
+      );
+      final user = _authUser(response.user);
+      if (user == null) {
+        throw const AuthFailure(
+          AuthFailureCode.unknown,
+          'Email sign-in did not complete. Try again.',
+        );
+      }
+      return user;
+    });
+  }
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) {
+    return _guard(() async {
+      final response = await _client.auth.signUp(
+        email: email.trim(),
+        password: password,
+        emailRedirectTo: _oauthRedirect,
+        data: fullName == null || fullName.trim().isEmpty
+            ? null
+            : {'full_name': fullName.trim()},
+      );
+      // With email confirmation enabled Supabase returns the user but no
+      // session. That is a successful sign-up, not a sign-in, so the caller
+      // shows the confirmation instruction instead of opening the dashboard.
+      if (response.session == null) return null;
+      return _authUser(response.user);
+    });
+  }
+
+  @override
+  Future<void> requestPasswordReset(String email) {
+    return _guard(() => _client.auth
+        .resetPasswordForEmail(email, redirectTo: _oauthRedirect)
+        .timeout(_timeout));
+  }
+
+  @override
+  Future<void> updatePassword(String password) {
+    return _guard(() async {
+      // Ask the SDK for its current (refreshed) session, not a cached token.
+      final session = await _client.auth.getSession().timeout(_timeout);
+      if (session == null || session.isExpired) {
+        throw const AuthFailure(
+          AuthFailureCode.invalidCredentials,
+          'Your recovery session has expired. Open a new password reset link.',
+        );
+      }
+      await _client.auth
+          .updateUser(UserAttributes(password: password))
+          .timeout(_timeout);
+    });
+  }
+
+  @override
+  Stream<bool> get passwordRecoveryEvents => _client.auth.onAuthStateChange
+      .where((state) =>
+          state.event == AuthChangeEvent.passwordRecovery ||
+          state.event == AuthChangeEvent.signedOut)
+      .map((state) => state.event == AuthChangeEvent.passwordRecovery);
+
+  @override
   Future<void> signOut() {
     return _guard(() => _client.auth.signOut());
   }
@@ -215,7 +301,8 @@ class SupabaseAuthRepository implements AuthRepository {
     }
 
     try {
-      roles.addAll(await _profiles.fetchApprovedRoles(user.id).timeout(_timeout));
+      roles.addAll(
+          await _profiles.fetchApprovedRoles(user.id).timeout(_timeout));
     } catch (error) {
       rolesLoaded = false;
       debugPrint('Could not load SurGo roles: $error');
@@ -403,6 +490,24 @@ class DisabledAuthRepository implements AuthRepository {
 
   @override
   Future<bool> signInWithGoogle() async => throw _offline;
+
+  @override
+  Future<bool> signInWithFacebook() async => throw _offline;
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async =>
+      throw _offline;
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async =>
+      throw _offline;
 
   @override
   Future<void> signOut() async {}

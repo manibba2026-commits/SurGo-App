@@ -92,7 +92,8 @@ class _HomeContent extends StatelessWidget {
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const NotificationsScreen()),
+                              builder: (_) => const NotificationsScreen(),
+                            ),
                           ),
                         ),
                         Positioned(
@@ -138,6 +139,40 @@ class _HomeContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
+          ListenableBuilder(
+            listenable: state,
+            builder: (context, _) {
+              final ride = state.liveRideRequest;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (state.passengerRideLoading)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (state.passengerRideFailure != null)
+                    SbStatusBanner(
+                      tone: SbTone.warning,
+                      icon: Icons.sync_problem,
+                      title: 'Request sync unavailable',
+                      message: state.passengerRideFailure!.message,
+                    ),
+                  if (state.passengerRideFailure != null)
+                    TextButton(
+                      onPressed: state.refreshPassengerRide,
+                      child: const Text('Refresh current request'),
+                    ),
+                  if (ride != null) ...[
+                    const Text(
+                      'Current ride request',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    _liveRideCard(context, ride),
+                    const SizedBox(height: 16),
+                  ],
+                ],
+              );
+            },
+          ),
           Container(
             decoration: BoxDecoration(
               color: AppColors.panel,
@@ -150,7 +185,7 @@ class _HomeContent extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 borderRadius: BorderRadius.circular(28),
-                onTap: () => Navigator.pushNamed(context, '/booking'),
+                onTap: () => _openRide(context),
                 child: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   child: Row(
@@ -167,8 +202,11 @@ class _HomeContent extends StatelessWidget {
                           ),
                         ),
                       ),
-                      Icon(Icons.arrow_forward_rounded,
-                          size: 16, color: AppColors.primaryLight),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 16,
+                        color: AppColors.primaryLight,
+                      ),
                     ],
                   ),
                 ),
@@ -186,7 +224,7 @@ class _HomeContent extends StatelessWidget {
                     icon: Icons.electric_rickshaw_rounded,
                     title: 'Find rider',
                     subtitle: 'Book a ride now',
-                    onTap: () => Navigator.pushNamed(context, '/booking'),
+                    onTap: () => _openRide(context),
                   ),
                 ),
               ),
@@ -230,32 +268,23 @@ class _HomeContent extends StatelessWidget {
                     title: 'Book for someone',
                     subtitle: 'Ride for family or friends',
                     onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const AssistedBookingScreen())),
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AssistedBookingScreen(),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          // Live requests created this run, above the seeded history so the
-          // dashboard reflects what the account is actually doing right now.
           ListenableBuilder(
             listenable: state,
             builder: (context, _) {
-              final ride = state.liveRideRequest;
               final orders = state.livePasuyoOrders;
-              if (ride == null && orders.isEmpty) {
-                return const SizedBox.shrink();
-              }
               return Column(
                 children: [
-                  if (ride != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _liveRideCard(context, ride),
-                    ),
                   for (final t in orders)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -265,7 +294,7 @@ class _HomeContent extends StatelessWidget {
               );
             },
           ),
-          if (state.usesHostedIdentity)
+          if (state.usesHostedRideDispatch)
             // The signed-in renter's own rental, read from Postgres. Only an
             // unfinished booking is shown; a finished one belongs in history.
             RepositoryView<List<RentalRecord>>(
@@ -280,7 +309,9 @@ class _HomeContent extends StatelessWidget {
                 ];
                 if (live.isEmpty) return const SizedBox.shrink();
                 return _rentalCard(
-                    context, rentalBookingFromRecord(live.first));
+                  context,
+                  rentalBookingFromRecord(live.first),
+                );
               },
             )
           else
@@ -292,7 +323,7 @@ class _HomeContent extends StatelessWidget {
                 return _rentalCard(context, booking);
               },
             ),
-          if (state.usesHostedIdentity)
+          if (state.usesHostedRideDispatch)
             // The customer's own open errands; a delivered or cancelled one is
             // history, not a live card.
             RepositoryView<List<ServiceRequestRecord>>(
@@ -334,15 +365,22 @@ class _HomeContent extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('₱30 off your next 3 rides',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                              color: AppColors.primaryLight)),
+                      Text(
+                        '₱30 off your next 3 rides',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: AppColors.primaryLight,
+                        ),
+                      ),
                       SizedBox(height: 2),
-                      Text('Use code SURGO30 · Ends in 2 days',
-                          style: TextStyle(
-                              color: AppColors.muted, fontSize: 11.5)),
+                      Text(
+                        'Use code SURGO30 · Ends in 2 days',
+                        style: TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -353,16 +391,20 @@ class _HomeContent extends StatelessWidget {
           SbSectionHeader(
             title: 'Recent Bookings',
             actionLabel: 'View All',
-            onAction: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const ActivityScreen())),
+            onAction: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ActivityScreen()),
+            ),
           ),
           const SizedBox(height: 12),
           RepositoryView<List<RideRecord>>(
             slot: DomainSlot.passengerRecentRides,
             empty: (_) => const Padding(
               padding: EdgeInsets.only(top: 12),
-              child: Text('No bookings yet',
-                  style: TextStyle(color: AppColors.muted)),
+              child: Text(
+                'No bookings yet',
+                style: TextStyle(color: AppColors.muted),
+              ),
             ),
             data: (context, rides) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -380,74 +422,103 @@ class _HomeContent extends StatelessWidget {
     );
   }
 
+  void _openRide(BuildContext context) {
+    final request = AppState.instance.liveRideRequest;
+    Navigator.pushNamed(context, request == null ? '/booking' : '/matching');
+  }
+
   /// The renter's current rental, whether it came from the seed or Postgres.
   Widget _rentalCard(BuildContext context, RentalBooking booking) {
     final isPending = booking.status.isPending;
+    void openRental() => Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActiveRentalScreen(rentalId: booking.id),
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: SbTintedCard(
-        tone: SbTone.rent,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ActiveRentalScreen()),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                SbToneIcon(
-                  tone: SbTone.rent,
-                  icon: booking.icon,
-                  size: 38,
-                  iconSize: 18,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(booking.vehicleName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 12.5)),
-                      Text('Owned by ${booking.ownerName}',
-                          style: const TextStyle(
-                              color: AppColors.muted, fontSize: 11)),
-                    ],
+      child: Semantics(
+        button: true,
+        label:
+            'Current rental · ${booking.vehicleName} · ${booking.status.label}',
+        onTap: openRental,
+        excludeSemantics: true,
+        child: SbTintedCard(
+          tone: SbTone.rent,
+          onTap: openRental,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SbToneIcon(
+                    tone: SbTone.rent,
+                    icon: booking.icon,
+                    size: 38,
+                    iconSize: 18,
                   ),
-                ),
-                SbTag(booking.status.shortLabel, secondary: !isPending),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (isPending)
-                  const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation(AppColors.primaryLight),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          booking.vehicleName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        Text(
+                          'Owned by ${booking.ownerName}',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
-                  )
-                else
-                  const Icon(Icons.check_circle,
-                      size: 14, color: AppColors.secondaryLight),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    isPending
-                        ? 'Waiting for ${booking.ownerName} to approve your rental request…'
-                        : 'Your rental is active — tap to view details.',
-                    style:
-                        const TextStyle(color: AppColors.muted, fontSize: 11.5),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  SbTag(booking.status.shortLabel, secondary: !isPending),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (isPending)
+                    const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(
+                          AppColors.primaryLight,
+                        ),
+                      ),
+                    )
+                  else
+                    const Icon(
+                      Icons.check_circle,
+                      size: 14,
+                      color: AppColors.secondaryLight,
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isPending
+                          ? 'Waiting for ${booking.ownerName} to approve your rental request…'
+                          : 'Your rental is active — tap to view details.',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -470,13 +541,18 @@ class _HomeContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(b.route,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 12.5)),
+                Text(
+                  b.route,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text('${b.date} · ${Money.format(b.fare)}',
-                    style: const TextStyle(
-                        color: AppColors.muted, fontSize: 11)),
+                Text(
+                  '${b.date} · ${Money.format(b.fare)}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
               ],
             ),
           ),
@@ -493,10 +569,7 @@ class _HomeContent extends StatelessWidget {
   Widget _liveRideCard(BuildContext context, RideRequestItem request) {
     return SbTintedCard(
       tone: SbTone.ride,
-      onTap: () => Navigator.pushNamed(
-        context,
-        request.status.isCommitted ? '/livetrip' : '/matching',
-      ),
+      onTap: () => Navigator.pushNamed(context, '/matching'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -513,15 +586,23 @@ class _HomeContent extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${request.pickup} → ${request.dropoff}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    Text(
+                      '${request.pickup} → ${request.dropoff}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(request.status.label,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11)),
+                    Text(
+                      request.status.label,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -529,8 +610,10 @@ class _HomeContent extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text('${Money.format(request.fare)} · Tap to follow your ride',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          Text(
+            '${Money.format(request.fare)} · Tap to follow your ride',
+            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
         ],
       ),
     );
@@ -561,15 +644,23 @@ class _HomeContent extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(task.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    Text(
+                      task.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(task.status.label,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11)),
+                    Text(
+                      task.status.label,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -577,8 +668,10 @@ class _HomeContent extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text('${Money.format(task.budget)} · Tap to track your errand',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          Text(
+            '${Money.format(task.budget)} · Tap to track your errand',
+            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
         ],
       ),
     );

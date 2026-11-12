@@ -12,8 +12,13 @@ enum AuthStatus { uninitialized, restoring, signedOut, signedIn, error }
 
 enum AuthFailureCode {
   invalidPhone,
+  invalidEmail,
   invalidCode,
   invalidPin,
+  invalidCredentials,
+  weakPassword,
+  emailInUse,
+  emailNotConfirmed,
   accountUnavailable,
   rateLimited,
   noAccount,
@@ -63,6 +68,46 @@ class AuthFailure implements Exception {
   static AuthFailure _fromAuthException(AuthException error) {
     final text = error.message.toLowerCase();
 
+    if (text.contains('invalid email') ||
+        text.contains('email address is invalid') ||
+        text.contains('unable to validate email')) {
+      return const AuthFailure(
+        AuthFailureCode.invalidEmail,
+        'Enter a valid email address.',
+      );
+    }
+    if (text.contains('email not confirmed') ||
+        text.contains('confirm your email')) {
+      return const AuthFailure(
+        AuthFailureCode.emailNotConfirmed,
+        'Confirm your email address before signing in.',
+      );
+    }
+    if (text.contains('already registered') ||
+        text.contains('already exists') ||
+        text.contains('user already registered')) {
+      return const AuthFailure(
+        AuthFailureCode.emailInUse,
+        'An account with that email already exists. Sign in instead.',
+      );
+    }
+    if (text.contains('invalid login credentials') ||
+        text.contains('invalid password') ||
+        text.contains('wrong password')) {
+      return const AuthFailure(
+        AuthFailureCode.invalidCredentials,
+        'That email and password do not match a SurGo account.',
+      );
+    }
+    if (text.contains('password should be') ||
+        text.contains('weak password') ||
+        text.contains('password is too short') ||
+        text.contains('password must be')) {
+      return const AuthFailure(
+        AuthFailureCode.weakPassword,
+        'Use a password with at least 8 characters.',
+      );
+    }
     if (text.contains('token has expired') ||
         text.contains('invalid otp') ||
         (text.contains('token') && text.contains('invalid')) ||
@@ -117,7 +162,10 @@ class AuthFailure implements Exception {
         'Enter a valid phone number with the country code.',
       );
     }
-    return AuthFailure(AuthFailureCode.unknown, error.message);
+    return const AuthFailure(
+      AuthFailureCode.unknown,
+      'Something went wrong signing you in. Please try again.',
+    );
   }
 
   /// Translates the `demo-login` Edge Function's status and JSON body. The

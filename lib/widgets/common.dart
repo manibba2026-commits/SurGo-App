@@ -89,17 +89,22 @@ class SbTag extends StatelessWidget {
   /// Fill colour, when this pill needs a specific one.
   final Color? tint;
 
-  const SbTag(this.label,
-      {super.key, this.secondary = false, this.accent, this.tint});
+  const SbTag(
+    this.label, {
+    super.key,
+    this.secondary = false,
+    this.accent,
+    this.tint,
+  });
 
   @override
   Widget build(BuildContext context) {
     final fg = accent ??
         (secondary ? AppColors.secondaryLight : AppColors.primaryLight);
-    final bg = tint ??
-        (secondary ? AppColors.secondarySoft : AppColors.primarySoft);
-    final border = accent ??
-        (secondary ? AppColors.secondary : AppColors.primary);
+    final bg =
+        tint ?? (secondary ? AppColors.secondarySoft : AppColors.primarySoft);
+    final border =
+        accent ?? (secondary ? AppColors.secondary : AppColors.primary);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -164,7 +169,13 @@ class SbField extends StatelessWidget {
   final String value;
   final Widget? leading;
   final VoidCallback? onTap;
-  const SbField({super.key, required this.label, required this.value, this.leading, this.onTap});
+  const SbField({
+    super.key,
+    required this.label,
+    required this.value,
+    this.leading,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -194,13 +205,17 @@ class SbField extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          if (onTap != null) const Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+          if (onTap != null)
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
         ],
       ),
     );
@@ -386,7 +401,12 @@ class SbPrimaryButton extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: SbRadius.button,
-        boxShadow: SbShadows.glow(fill, alpha: 0.20, blur: 16, offset: const Offset(0, 6)),
+        boxShadow: SbShadows.glow(
+          fill,
+          alpha: 0.20,
+          blur: 16,
+          offset: const Offset(0, 6),
+        ),
       ),
       child: wrapped,
     );
@@ -437,7 +457,10 @@ class SbGoogleMark extends StatelessWidget {
       width: size,
       height: size,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+      ),
       child: Text(
         'G',
         style: TextStyle(
@@ -446,7 +469,12 @@ class SbGoogleMark extends StatelessWidget {
           height: 1,
           foreground: Paint()
             ..shader = const LinearGradient(
-              colors: [Color(0xFF4285F4), Color(0xFFEA4335), Color(0xFFFBBC05), Color(0xFF34A853)],
+              colors: [
+                Color(0xFF4285F4),
+                Color(0xFFEA4335),
+                Color(0xFFFBBC05),
+                Color(0xFF34A853),
+              ],
             ).createShader(Rect.fromLTWH(0, 0, size, size)),
         ),
       ),
@@ -516,13 +544,19 @@ class SbEditableField extends StatelessWidget {
                   obscureText: obscureText,
                   enabled: enabled,
                   onSubmitted: onSubmitted,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                   decoration: InputDecoration(
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(vertical: 4),
                     border: InputBorder.none,
                     hintText: hintText,
-                    hintStyle: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w600),
+                    hintStyle: const TextStyle(
+                      color: AppColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

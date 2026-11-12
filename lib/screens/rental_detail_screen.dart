@@ -14,6 +14,15 @@ import '../widgets/common.dart';
 import '../widgets/surfaces.dart';
 import 'active_rental_screen.dart';
 
+/// Started 24-hour periods, matching the hosted RPC's elapsed-time pricing.
+/// Keep sub-second precision: even one microsecond past 24 hours starts day two.
+int? hostedRentalQuoteDays(DateTime start, DateTime end) {
+  final elapsed = end.difference(start).inMicroseconds;
+  if (elapsed <= 0) return null;
+  return (elapsed + Duration.microsecondsPerDay - 1) ~/
+      Duration.microsecondsPerDay;
+}
+
 class RentalDetailScreen extends StatefulWidget {
   final RentalVehicle vehicle;
   const RentalDetailScreen({super.key, required this.vehicle});
@@ -50,20 +59,27 @@ class _DateField extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+            Text(
+              label,
+              style: const TextStyle(color: AppColors.muted, fontSize: 10.5),
+            ),
             const SizedBox(height: 2),
             Row(
               children: [
-                const Icon(Icons.calendar_today_outlined,
-                    size: 13, color: AppColors.primaryLight),
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 13,
+                  color: AppColors.primaryLight,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     value,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 12.5),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
                   ),
                 ),
               ],
@@ -106,9 +122,9 @@ class _AvailabilityNotice extends StatelessWidget {
   }
 
   static String _verb(RentalAvailability a) => switch (a.reason) {
-        RentalUnavailabilityReason.currentlyRented => 'Free for later dates',
-        _ => 'Available',
-      };
+    RentalUnavailabilityReason.currentlyRented => 'Free for later dates',
+    _ => 'Available',
+  };
 }
 
 /// The pick-up barangay, required by the hosted booking function. A hosted
@@ -138,14 +154,18 @@ class _BarangayPicker extends StatelessWidget {
           value: value,
           isExpanded: true,
           dropdownColor: AppColors.panel,
-          hint: const Text('Pick-up barangay',
-              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          hint: const Text(
+            'Pick-up barangay',
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
           items: [
             for (final barangay in barangays)
               DropdownMenuItem(
                 value: barangay.id,
-                child: Text(barangay.name,
-                    style: const TextStyle(fontSize: 12.5)),
+                child: Text(
+                  barangay.name,
+                  style: const TextStyle(fontSize: 12.5),
+                ),
               ),
           ],
           onChanged: barangays.isEmpty ? null : onChanged,
@@ -168,15 +188,18 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
   String? _barangayId;
   bool _submitting = false;
 
-  bool get _hosted => AppState.instance.usesHostedIdentity;
+  bool get _hosted =>
+      AppState.instance.usesHostedIdentity &&
+      AppState.instance.repositories.isSupabaseBacked;
 
   @override
   void initState() {
     super.initState();
+    AppState.instance.addListener(_onCacheChanged);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    _pickup = today;
-    _return = today.add(const Duration(days: 2));
+    _pickup = _hosted ? now : today;
+    _return = _pickup!.add(const Duration(days: 2));
     if (_hosted) {
       _cache.addListener(_onCacheChanged);
       _cache.ensure(DomainSlot.barangays);
@@ -187,26 +210,28 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
 
   @override
   void dispose() {
+    AppState.instance.removeListener(_onCacheChanged);
     _cache.removeListener(_onCacheChanged);
     super.dispose();
   }
 
   void _onCacheChanged() {
     if (!mounted) return;
-    setState(_syncHostedReads);
+    setState(() {
+      if (_hosted) _syncHostedReads();
+    });
   }
 
   void _syncHostedReads() {
-    final barangays =
-        _cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays);
-    if (barangays.status == RepositoryStatus.data) {
-      _barangays = barangays.data as List<BarangayRecord>;
-    }
-    final bookings =
-        _cache.stateOf<List<RentalRecord>>(DomainSlot.passengerRentalBookings);
-    if (bookings.status == RepositoryStatus.data) {
-      _hostedBookings = bookings.data as List<RentalRecord>;
-    }
+    final barangays = _cache.stateOf<List<BarangayRecord>>(
+      DomainSlot.barangays,
+    );
+    _barangays = barangays.data ?? const [];
+    if (!_barangays.any((b) => b.id == _barangayId)) _barangayId = null;
+    final bookings = _cache.stateOf<List<RentalRecord>>(
+      DomainSlot.passengerRentalBookings,
+    );
+    _hostedBookings = bookings.data ?? const [];
   }
 
   /// True when one of this account's own live bookings already holds a day in
@@ -218,11 +243,8 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
       final from = booking.startAt;
       final to = booking.endAt;
       if (from == null || to == null) continue;
-      final fromDay = DateTime(from.year, from.month, from.day);
-      final toDay = DateTime(to.year, to.month, to.day);
-      final startDay = DateTime(start.year, start.month, start.day);
-      final endDay = DateTime(end.year, end.month, end.day);
-      if (!toDay.isBefore(startDay) && !fromDay.isAfter(endDay)) return true;
+      // Hosted RPCs compare half-open timestamp ranges, not inclusive days.
+      if (from.isBefore(end) && to.isAfter(start)) return true;
     }
     return false;
   }
@@ -248,17 +270,19 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
         child: child!,
       ),
     );
-    if (date == null) return;
+    if (date == null || !mounted) return;
     setState(() {
       if (isPickup) {
-        _pickup = date;
+        _pickup = _hosted && date == first ? DateTime.now() : date;
         // Keep the period ordered: a pickup at or after the return date would
         // be a negative-length rental, and the day count refuses to invent one.
-        if (_return == null || !_return!.isAfter(date)) {
-          _return = date.add(const Duration(days: 1));
+        if (_return == null || !_return!.isAfter(_pickup!)) {
+          _return = _pickup!.add(const Duration(days: 1));
         }
       } else {
-        _return = date.isAfter(_pickup ?? date) ? date : date.add(const Duration(days: 1));
+        _return = date.isAfter(_pickup ?? date)
+            ? date
+            : date.add(const Duration(days: 1));
       }
     });
   }
@@ -278,7 +302,9 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
     // Recomputed every build so a booking made elsewhere in the app is
     // reflected here without a stale cached "available".
     final days = (_pickup != null && _return != null)
-        ? rentalDayCount(_pickup!, _return!)
+        ? (_hosted
+              ? hostedRentalQuoteDays(_pickup!, _return!)
+              : rentalDayCount(_pickup!, _return!))
         : null;
     final total = (days ?? 0) * vehicle.pricePerDay;
     final availability = (_pickup != null && _return != null)
@@ -290,7 +316,8 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
         : const RentalAvailability(canBook: false);
     // RLS hides other renters' bookings, so a hosted build can only pre-check
     // this account's own ones; the server makes the final call on a clash.
-    final hostedClash = _hosted &&
+    final hostedClash =
+        _hosted &&
         _pickup != null &&
         _return != null &&
         _ownRangeClashes(_pickup!, _return!);
@@ -300,13 +327,30 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
         ? _hostedBookings.any((b) => !b.status.isTerminal)
         : state.activeRentalBooking != null;
     final platformFee = HostedFees.rentalPlatformFee((days ?? 0) * 24);
-    final canRequest = _hosted
-        ? days != null &&
-            _barangayId != null &&
-            !blockedByExistingRequest &&
-            !hostedClash &&
-            !_submitting
-        : availability.canBook && !blockedByExistingRequest;
+    final bookingRead = _cache.stateOf<List<RentalRecord>>(
+      DomainSlot.passengerRentalBookings,
+    );
+    final barangayRead = _cache.stateOf<List<BarangayRecord>>(
+      DomainSlot.barangays,
+    );
+    final readsReady =
+        (bookingRead.status == RepositoryStatus.data ||
+            bookingRead.status == RepositoryStatus.empty) &&
+        barangayRead.status == RepositoryStatus.data;
+    final readFailure =
+        bookingRead.failure?.message ?? barangayRead.failure?.message;
+    final periodValid =
+        _return!.difference(_pickup!) <= const Duration(days: 30);
+    final canRequest =
+        !_submitting &&
+        (_hosted
+            ? days != null &&
+                  readsReady &&
+                  periodValid &&
+                  _barangayId != null &&
+                  !blockedByExistingRequest &&
+                  !hostedClash
+            : availability.canBook && !blockedByExistingRequest);
 
     return Scaffold(
       body: Stack(
@@ -323,9 +367,11 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                 child: Stack(
                   children: [
                     Center(
-                      child: Icon(vehicle.icon,
-                          size: 64,
-                          color: SbTone.rent.accent.withValues(alpha: 0.85)),
+                      child: Icon(
+                        vehicle.icon,
+                        size: 64,
+                        color: SbTone.rent.accent.withValues(alpha: 0.85),
+                      ),
                     ),
                     Positioned(
                       top: 12,
@@ -336,19 +382,27 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            SbIconButton(icon: Icons.arrow_back, onTap: () => Navigator.pop(context)),
+                            SbIconButton(
+                              icon: Icons.arrow_back,
+                              onTap: () => Navigator.pop(context),
+                            ),
                             ListenableBuilder(
                               listenable: state,
                               builder: (context, _) {
-                                final isFav = state.isFavoriteVehicleName(vehicle.name);
+                                final isFav = state.isFavoriteVehicleName(
+                                  vehicle.name,
+                                );
                                 return SbIconButton(
-                                  icon: isFav ? Icons.favorite : Icons.favorite_border,
-                                  onTap: () => state.toggleFavoriteVehicleByListing(
-                                    name: vehicle.name,
-                                    type: vehicle.type,
-                                    pricePerDay: vehicle.pricePerDay,
-                                    ownerName: vehicle.ownerName,
-                                  ),
+                                  icon: isFav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  onTap: () =>
+                                      state.toggleFavoriteVehicleByListing(
+                                        name: vehicle.name,
+                                        type: vehicle.type,
+                                        pricePerDay: vehicle.pricePerDay,
+                                        ownerName: vehicle.ownerName,
+                                      ),
                                 );
                               },
                             ),
@@ -368,7 +422,9 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                             height: 6,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: i == 0 ? AppColors.primary : AppColors.borderLight,
+                              color: i == 0
+                                  ? AppColors.primary
+                                  : AppColors.borderLight,
                             ),
                           ),
                         ),
@@ -389,21 +445,42 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(vehicle.name,
-                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+                              Text(
+                                vehicle.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                ),
+                              ),
                               const SizedBox(height: 2),
-                              Text('${vehicle.location}, Tandag City',
-                                  style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+                              Text(
+                                '${vehicle.location}, Tandag City',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 12,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(Money.format(vehicle.pricePerDay),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800, color: AppColors.primaryLight, fontSize: 16)),
-                            const Text('/ day', style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                            Text(
+                              Money.format(vehicle.pricePerDay),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primaryLight,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const Text(
+                              '/ day',
+                              style: TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -416,10 +493,20 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Owned by ${vehicle.ownerName}',
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
-                            Text('⭐ ${vehicle.rating} · Verified owner',
-                                style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                            Text(
+                              'Owned by ${vehicle.ownerName}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            Text(
+                              '⭐ ${vehicle.rating} · Verified owner',
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -459,14 +546,31 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                         icon: blockedByExistingRequest || hostedClash
                             ? Icons.error_outline
                             : Icons.check_circle_outline,
-                        title: blockedByExistingRequest
-                            ? 'You already have a rental request in progress.'
-                            : hostedClash
+                        title:
+                            readFailure ??
+                            (!readsReady
+                                ? 'Checking your rental requests and pick-up barangays…'
+                                : !periodValid
+                                ? 'A rental cannot exceed 30 days.'
+                                : blockedByExistingRequest
+                                ? 'You already have a rental request in progress.'
+                                : hostedClash
                                 ? 'Those dates clash with your current rental.'
                                 : _barangayId == null
-                                    ? 'Choose the pick-up barangay.'
-                                    : 'The owner will confirm these dates.',
+                                ? 'Choose the pick-up barangay.'
+                                : 'The owner will confirm these dates.'),
                       ),
+                      if (readFailure != null)
+                        TextButton.icon(
+                          onPressed: () async {
+                            await _cache.retry(DomainSlot.barangays);
+                            await _cache.retry(
+                              DomainSlot.passengerRentalBookings,
+                            );
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                        ),
                     ] else
                       _AvailabilityNotice(
                         availability: availability,
@@ -475,7 +579,11 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                     const SizedBox(height: 16),
                     Text(
                       '${vehicle.description} ${Money.format(vehicle.depositFee)} refundable deposit.',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.7),
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12.5,
+                        height: 1.7,
+                      ),
                     ),
                   ],
                 ),
@@ -500,19 +608,23 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                            Money.format(
-                                _hosted ? total + platformFee : total),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 15)),
+                          Money.format(_hosted ? total + platformFee : total),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
                         Text(
                           days == null
                               ? 'Pick your dates'
                               : _hosted
-                                  ? '${Money.format(total)} fare + '
-                                      '${Money.format(platformFee)} fee'
-                                  : '$days ${days == 1 ? 'day' : 'days'} total',
+                              ? '${Money.format(total)} fare + '
+                                    '${Money.format(platformFee)} fee'
+                              : '$days ${days == 1 ? 'day' : 'days'} total',
                           style: const TextStyle(
-                              color: AppColors.muted, fontSize: 10.5),
+                            color: AppColors.muted,
+                            fontSize: 10.5,
+                          ),
                         ),
                       ],
                     ),
@@ -538,10 +650,10 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                           _submitting
                               ? 'Sending…'
                               : blockedByExistingRequest
-                                  ? 'Rental Already Requested'
-                                  : _hosted || availability.canBook
-                                      ? 'Request Rental'
-                                      : 'Unavailable',
+                              ? 'Rental Already Requested'
+                              : _hosted || availability.canBook
+                              ? 'Request Rental'
+                              : 'Unavailable',
                         ),
                       ),
                     ),
@@ -555,7 +667,9 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
     );
   }
 
-  void _submitMock(RentalVehicle vehicle, int days, int total) {
+  Future<void> _submitMock(RentalVehicle vehicle, int days, int total) async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
     AppState.instance.requestRental(
       vehicleId: vehicle.id,
       vehicleName: vehicle.name,
@@ -570,40 +684,59 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
       days: days,
       totalFare: total,
     );
-    _showRequestedDialog(vehicle);
+    await _showRequestedDialog(vehicle);
+    if (mounted) setState(() => _submitting = false);
   }
 
-  Future<void> _submitHosted(
-    RentalVehicle vehicle,
-    int total,
-  ) async {
+  Future<void> _submitHosted(RentalVehicle vehicle, int total) async {
+    if (_submitting) return;
     setState(() => _submitting = true);
-    final barangay = _barangays.firstWhere((b) => b.id == _barangayId);
-    final location = vehicle.location.isEmpty
-        ? barangay.name
-        : '${barangay.name}, ${vehicle.location}';
+    final state = AppState.instance;
+    final registry = state.repositories;
+    final userId = state.identity?.userId;
+    bool sameSession() =>
+        mounted &&
+        state.isSignedIn &&
+        identical(state.repositories, registry) &&
+        state.identity?.userId == userId;
     try {
-      await AppState.instance.createHostedRentalRequest(
+      final barangay = _barangays.firstWhere((b) => b.id == _barangayId);
+      final location = vehicle.location.isEmpty
+          ? barangay.name
+          : '${barangay.name}, ${vehicle.location}';
+      final booking = await state.createHostedRentalRequest(
         vehicle: vehicle,
         pickupDate: _pickup!,
         returnDate: _return!,
         pickupBarangayId: barangay.id,
         pickupLocation: location,
       );
-      if (!mounted) return;
-      _showRequestedDialog(vehicle);
+      if (!mounted || !sameSession()) return;
+      await _showRequestedDialog(vehicle, rentalId: booking.id);
     } on RepositoryFailure catch (failure) {
-      if (!mounted) return;
+      if (!mounted || !sameSession()) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
+    } catch (_) {
+      if (!mounted || !sameSession()) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(failure.message)),
+        const SnackBar(
+          content: Text(
+            'Could not request this rental. Refresh and try again.',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
   }
 
-  void _showRequestedDialog(RentalVehicle vehicle) {
-    showDialog(
+  Future<void> _showRequestedDialog(
+    RentalVehicle vehicle, {
+    String? rentalId,
+  }) async {
+    await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.panel,
@@ -620,10 +753,9 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
             // as the only route.
             onPressed: () {
               Navigator.pop(context);
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/home',
-                (route) => false,
-              );
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/home', (route) => false);
             },
             child: const Text('Back to Home'),
           ),
@@ -632,7 +764,9 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
               Navigator.pop(context); // close dialog
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ActiveRentalScreen()),
+                MaterialPageRoute(
+                  builder: (_) => ActiveRentalScreen(rentalId: rentalId),
+                ),
               );
             },
             child: const Text('View Request'),

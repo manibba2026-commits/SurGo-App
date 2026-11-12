@@ -23,9 +23,10 @@ class NotificationsScreen extends StatelessWidget {
     final slot = isRider
         ? DomainSlot.earnerNotificationFeed
         : DomainSlot.passengerNotificationFeed;
-    // Read state lives in the seed; there is no hosted RPC for it yet, so the
-    // actions say that instead of flipping a local flag the database never saw.
-    final hosted = state.usesHostedIdentity;
+    // Hosted notifications support SELECT only, not acknowledgement. A hosted
+    // identity using the offline registry still keeps the seed's mark-read UX.
+    final hosted =
+        state.usesHostedIdentity && state.repositories.isSupabaseBacked;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
@@ -33,30 +34,57 @@ class NotificationsScreen extends StatelessWidget {
           TextButton(
             onPressed: hosted
                 ? () => SurgoNotice.show(
-                      context,
-                      'Marking notifications read is not synced for live '
-                      'accounts yet.',
-                      tone: SbNoticeTone.info,
-                    )
+                    context,
+                    'Marking notifications read is not synced for live '
+                    'accounts yet.',
+                    tone: SbNoticeTone.info,
+                  )
                 : () => isRider
-                    ? state.clearRiderNotifications()
-                    : state.clearNotifications(),
-            child: const Text('Mark all read',
-                style: TextStyle(color: AppColors.primaryLight, fontWeight: FontWeight.w700)),
+                      ? state.clearRiderNotifications()
+                      : state.clearNotifications(),
+            child: const Text(
+              'Mark all read',
+              style: TextStyle(
+                color: AppColors.primaryLight,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ],
       ),
-      body: RepositoryView<List<NotificationRecord>>(
-        slot: slot,
-        empty: (_) => const Center(
-          child: Text('No notifications yet', style: TextStyle(color: AppColors.muted)),
-        ),
-        data: (context, items) => ListView.separated(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, i) =>
-              _tile(state, items[i], markRead: !hosted),
+      body: RefreshIndicator(
+        onRefresh: () => Future.wait([
+          state.cache.refresh(slot),
+          state.cache.refresh(
+            isRider
+                ? DomainSlot.unreadEarnerNotifications
+                : DomainSlot.unreadPassengerNotifications,
+          ),
+        ]),
+        child: RepositoryView<List<NotificationRecord>>(
+          slot: slot,
+          empty: (_) => const CustomScrollView(
+            physics: AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    'No notifications yet',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          data: (context, items) => ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, i) =>
+                _tile(state, items[i], markRead: !hosted),
+          ),
         ),
       ),
     );
@@ -85,8 +113,13 @@ class NotificationsScreen extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(n.title,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                      child: Text(
+                        n.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                     if (!n.isRead)
                       Container(
@@ -100,10 +133,21 @@ class NotificationsScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(n.body, style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                Text(
+                  n.body,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11.5,
+                  ),
+                ),
                 const SizedBox(height: 6),
-                Text(displayAge(n.createdAt),
-                    style: const TextStyle(color: AppColors.muted2, fontSize: 10.5)),
+                Text(
+                  displayAge(n.createdAt),
+                  style: const TextStyle(
+                    color: AppColors.muted2,
+                    fontSize: 10.5,
+                  ),
+                ),
               ],
             ),
           ),

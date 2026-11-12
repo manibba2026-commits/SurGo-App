@@ -39,6 +39,7 @@ void main() {
   /// A Supabase build is whichever provider is installed, not just an identity
   /// object, so a hosted session is established through a non-mock provider.
   Future<void> signInAs(String id) async {
+    addTearDown(() async => state.logout());
     state.configureAuth(_HostedAuth(userId: id));
     final failure = await state.signInWithGoogle();
     expect(failure, isNull, reason: 'the stub provider always signs in');
@@ -156,7 +157,7 @@ void main() {
   group('hosted earner profile', () {
     testWidgets('names the signed-in account and hides the capability switches',
         (tester) async {
-      signInAs(userId);
+      await signInAs(userId);
       await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
         'profiles': [
           {
@@ -226,6 +227,24 @@ class _HostedAuth implements AuthRepository {
     _user = _currentUser();
     return true;
   }
+
+  @override
+  Future<bool> signInWithFacebook() async => false;
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async =>
+      throw UnimplementedError();
 
   @override
   Future<AuthUser> signInWithDemoPin({

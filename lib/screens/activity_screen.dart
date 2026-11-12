@@ -78,7 +78,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
   Widget _rideList(AppState state) {
     if (state.usesHostedIdentity) {
       // A hosted build lists the database's terminal rides, newest first.
-      return RepositoryView<List<RideRecord>>(
+      return Column(
+        children: [
+          if (state.liveRideRequest != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+              child: _LiveRideCard(request: state.liveRideRequest!),
+            ),
+          Expanded(child: RepositoryView<List<RideRecord>>(
         slot: DomainSlot.passengerRideHistory,
         loading: const Center(child: CircularProgressIndicator()),
         empty: (_) => const Center(
@@ -102,6 +109,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 _rideCard(rideHistoryFromRow(records[i])),
           );
         },
+      )),
+        ],
       );
     }
     final live = state.liveRideRequest;

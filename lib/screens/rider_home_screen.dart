@@ -54,7 +54,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
 
   void _refresh() {
     final state = AppState.instance;
-    if (!state.usesHostedIdentity || !state.isSignedIn) return;
+    if (!state.usesHostedRideDispatch || !state.isSignedIn) return;
     unawaited(state.refreshRiderWorkspace().catchError((Object _) {}));
   }
 
@@ -123,7 +123,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
             const SizedBox(height: 16),
             _onlineCard(context, state),
             const SizedBox(height: 14),
-            if (state.usesHostedIdentity)
+            if (state.usesHostedRideDispatch)
               _hostedStats()
             else
               Row(
@@ -167,7 +167,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
   /// The online switch. A hosted build reads the presence row from Postgres;
   /// a seeded build keeps the in-memory flag the prototype has always used.
   Widget _onlineCard(BuildContext context, AppState state) {
-    if (!state.usesHostedIdentity) {
+    if (!state.usesHostedRideDispatch) {
       return _presenceCard(
         online: state.riderOnline,
         subtitle: 'Visible for new ride requests',
@@ -235,8 +235,8 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
                       fontWeight: FontWeight.w800, fontSize: 13),
                 ),
                 Text(subtitle,
-                    style: const TextStyle(
-                        color: AppColors.muted, fontSize: 11)),
+                    style:
+                        const TextStyle(color: AppColors.muted, fontSize: 11)),
               ],
             ),
           ),
@@ -271,7 +271,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
   }
 
   Widget _incomingSection(BuildContext context, AppState state) {
-    if (!state.usesHostedIdentity) return _mockIncoming(state);
+    if (!state.usesHostedRideDispatch) return _mockIncoming(state);
     return RepositoryView<List<RideRecord>>(
       slot: DomainSlot.riderIncomingRides,
       loading: const SbListLoading(label: 'Loading ride requests…'),
@@ -461,8 +461,8 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
                     since == null
                         ? '⭐ ${profile.rating}'
                         : '⭐ ${profile.rating} · Since $since',
-                    style: const TextStyle(
-                        color: AppColors.muted, fontSize: 11),
+                    style:
+                        const TextStyle(color: AppColors.muted, fontSize: 11),
                   ),
                 ],
               ),
@@ -484,8 +484,8 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
         const SizedBox(width: 10),
         Expanded(
           child: Text(message,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w800, fontSize: 14)),
+              style:
+                  const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
         ),
       ],
     );
@@ -495,7 +495,9 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
   /// under the incoming ride requests. An active task takes over the list —
   /// finishing an errand in progress matters more than chasing a new one.
   Widget _pasuyoSection(BuildContext context, AppState state) {
-    if (state.usesHostedIdentity) return _hostedPasuyoSection(context, state);
+    if (state.usesHostedRideDispatch) {
+      return _hostedPasuyoSection(context, state);
+    }
     final active = state.activePasuyoTask;
     final nearby = state.nearbyPasuyoTasks;
     // The feed is gated on capabilities, so an empty list is ambiguous: it can
@@ -561,8 +563,8 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           child: RepositoryInline<List<WalletEntryRecord>>(
             slot: DomainSlot.earnerWalletEntries,
             placeholder: _statBox('—', 'Earnings'),
-            data: (context, entries) =>
-                _statBox(Money.format(earnedSince(entries, todayStart)), 'Earnings'),
+            data: (context, entries) => _statBox(
+                Money.format(earnedSince(entries, todayStart)), 'Earnings'),
           ),
         ),
         const SizedBox(width: 8),
@@ -580,8 +582,8 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           child: RepositoryInline<List<WalletEntryRecord>>(
             slot: DomainSlot.earnerWalletEntries,
             placeholder: _statBox('—', 'This Week'),
-            data: (context, entries) =>
-                _statBox(Money.format(earnedSince(entries, weekStart)), 'This Week'),
+            data: (context, entries) => _statBox(
+                Money.format(earnedSince(entries, weekStart)), 'This Week'),
           ),
         ),
       ],
@@ -601,8 +603,7 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
           loading: const SizedBox.shrink(),
           empty: (_) => const SizedBox.shrink(),
           failure: (_, failure) => Text(failure.message,
-              style:
-                  const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+              style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
           data: (context, records) {
             final active = [
               for (final record in records)
@@ -631,8 +632,8 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
               _pasuyoHeader(0),
               const SizedBox(height: 10),
               Text(failure.message,
-                  style: const TextStyle(
-                      color: AppColors.muted, fontSize: 12.5)),
+                  style:
+                      const TextStyle(color: AppColors.muted, fontSize: 12.5)),
             ],
           ),
           data: (context, records) {

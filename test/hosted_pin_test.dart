@@ -96,6 +96,24 @@ class _HostedAuth implements AuthRepository {
   }
 
   @override
+  Future<bool> signInWithFacebook() async => false;
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
   Future<void> signOut() async {
     _user = null;
   }
@@ -214,7 +232,8 @@ void main() {
     // A new provider instance restores the persisted session, exactly as a
     // browser restart does. The local account id is regenerated, but the PIN
     // is keyed by the auth uuid so the returning account still finds it.
-    final relaunched = _HostedAuth(persisted: AuthUser(
+    final relaunched = _HostedAuth(
+        persisted: AuthUser(
       id: uuidA,
       phone: '+639170009911',
       fullName: 'Hosted Tester',

@@ -21,21 +21,21 @@ void main() {
   setUpAll(() async => db.load());
 
   DomainCache mockCache({String Function()? profileKey}) => DomainCache(
-        registry: () => RepositoryRegistry.mock(db),
-        profileKey: profileKey ?? () => DbService.primaryPassengerId,
-        seedProfileKey: (role) => switch (role) {
-          ActorRole.passenger => db.passenger.id,
-          ActorRole.earner => db.earner.id,
-          ActorRole.vehicleOwner => db.vehicleOwner.id,
-          ActorRole.signedInUser => DbService.primaryPassengerId,
-        },
-      );
+    registry: () => RepositoryRegistry.mock(db),
+    profileKey: profileKey ?? () => DbService.primaryPassengerId,
+    seedProfileKey: (role) => switch (role) {
+      ActorRole.passenger => db.passenger.id,
+      ActorRole.earner => db.earner.id,
+      ActorRole.vehicleOwner => db.vehicleOwner.id,
+      ActorRole.signedInUser => DbService.primaryPassengerId,
+    },
+  );
 
   DomainCache supabaseCache(SurgoBackend backend) => DomainCache(
-        registry: () => RepositoryRegistry.supabase(backend),
-        profileKey: () => 'p1',
-        seedProfileKey: (_) => 'p1',
-      );
+    registry: () => RepositoryRegistry.supabase(backend),
+    profileKey: () => 'p1',
+    seedProfileKey: (_) => 'p1',
+  );
 
   /// The same cache, for a test that changes who is signed in mid-flight.
   DomainCache supabaseCacheFor(SurgoBackend backend, String Function() key) =>
@@ -58,11 +58,13 @@ void main() {
 
   group('one read per slot', () {
     test('ensure reads once and keeps the result', () async {
-      final backend = _CountingBackend(rowsByTable: {
-        'profiles': [
-          {'id': 'p1', 'full_name': 'Asha Bell', 'account_status': 'active'},
-        ],
-      });
+      final backend = _CountingBackend(
+        rowsByTable: {
+          'profiles': [
+            {'id': 'p1', 'full_name': 'Asha Bell', 'account_status': 'active'},
+          ],
+        },
+      );
       final cache = supabaseCache(backend);
 
       await cache.ensure(DomainSlot.profile);
@@ -73,8 +75,11 @@ void main() {
       expect(backend.tables, ['profiles']);
 
       await cache.ensure(DomainSlot.profile);
-      expect(backend.tables, hasLength(1),
-          reason: 'a cached slot is not re-read when a screen reopens');
+      expect(
+        backend.tables,
+        hasLength(1),
+        reason: 'a cached slot is not re-read when a screen reopens',
+      );
 
       cache.dispose();
     });
@@ -85,8 +90,11 @@ void main() {
       await cache.ensure(DomainSlot.barangays);
       final state = cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays);
 
-      expect(state.status, RepositoryStatus.failure,
-          reason: 'no active service area is a real answer, not an empty list');
+      expect(
+        state.status,
+        RepositoryStatus.failure,
+        reason: 'no active service area is a real answer, not an empty list',
+      );
       expect(state.failure!.kind, RepositoryFailureKind.unsupported);
       expect(state.failure!.message, contains('service area'));
 
@@ -107,26 +115,32 @@ void main() {
   });
 
   group('no silent seed fallback', () {
-    test('an unreachable Supabase build fails instead of serving the seed',
-        () async {
-      final cache = supabaseCache(const UnreachableBackend());
+    test(
+      'an unreachable Supabase build fails instead of serving the seed',
+      () async {
+        final cache = supabaseCache(const UnreachableBackend());
 
-      await cache.ensure(DomainSlot.profile);
-      final state = cache.stateOf<ProfileRecord>(DomainSlot.profile);
+        await cache.ensure(DomainSlot.profile);
+        final state = cache.stateOf<ProfileRecord>(DomainSlot.profile);
 
-      expect(state.status, RepositoryStatus.failure);
-      expect(state.failure!.kind, RepositoryFailureKind.unavailable);
-      expect(state.data, isNull,
-          reason: 'a production read that fails shows nothing, never a seeded '
-              'profile');
+        expect(state.status, RepositoryStatus.failure);
+        expect(state.failure!.kind, RepositoryFailureKind.unavailable);
+        expect(
+          state.data,
+          isNull,
+          reason:
+              'a production read that fails shows nothing, never a seeded '
+              'profile',
+        );
 
-      await cache.ensure(DomainSlot.barangays);
-      expect(
-        cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays).data,
-        isNull,
-      );
-      cache.dispose();
-    });
+        await cache.ensure(DomainSlot.barangays);
+        expect(
+          cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays).data,
+          isNull,
+        );
+        cache.dispose();
+      },
+    );
 
     test('a Supabase slot is not re-read when app data changes', () async {
       final backend = _CountingBackend();
@@ -138,8 +152,11 @@ void main() {
       cache.onAppDataChanged();
       await settle();
 
-      expect(backend.tables.length, reads,
-          reason: 'unrelated app writes must not hammer the database');
+      expect(
+        backend.tables.length,
+        reads,
+        reason: 'unrelated app writes must not hammer the database',
+      );
       cache.dispose();
     });
 
@@ -149,8 +166,11 @@ void main() {
 
       await cache.prefill();
 
-      expect(backend.tables, isEmpty,
-          reason: 'boot must not fetch data no screen has asked for yet');
+      expect(
+        backend.tables,
+        isEmpty,
+        reason: 'boot must not fetch data no screen has asked for yet',
+      );
       expect(cache.stateOf<ProfileRecord>(DomainSlot.profile).isIdle, isTrue);
       cache.dispose();
     });
@@ -180,25 +200,34 @@ void main() {
     test('the cached list follows the seed when it changes', () async {
       final cache = mockCache();
       await cache.ensure(DomainSlot.barangays);
-      final before =
-          cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays).data!.length;
+      final before = cache
+          .stateOf<List<BarangayRecord>>(DomainSlot.barangays)
+          .data!
+          .length;
 
       db.barangays.add(Barangay(name: 'Probe Barangay', puroks: const []));
       try {
         cache.onAppDataChanged();
         await settle();
 
-        final after =
-            cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays).data!;
+        final after = cache
+            .stateOf<List<BarangayRecord>>(DomainSlot.barangays)
+            .data!;
         expect(after.length, before + 1);
-        expect(after.any((barangay) => barangay.name == 'Probe Barangay'),
-            isTrue);
+        expect(
+          after.any((barangay) => barangay.name == 'Probe Barangay'),
+          isTrue,
+        );
       } finally {
-        db.barangays.removeWhere((barangay) => barangay.name == 'Probe Barangay');
+        db.barangays.removeWhere(
+          (barangay) => barangay.name == 'Probe Barangay',
+        );
         cache.onAppDataChanged();
         await settle();
         expect(
-          cache.stateOf<List<BarangayRecord>>(DomainSlot.barangays).data!
+          cache
+              .stateOf<List<BarangayRecord>>(DomainSlot.barangays)
+              .data!
               .any((barangay) => barangay.name == 'Probe Barangay'),
           isFalse,
         );
@@ -206,21 +235,26 @@ void main() {
       }
     });
 
-    test('a refresh keeps the previous answer on screen until it lands',
-        () async {
-      final cache = mockCache();
-      await cache.ensure(DomainSlot.profile);
+    test(
+      'a refresh keeps the previous answer on screen until it lands',
+      () async {
+        final cache = mockCache();
+        await cache.ensure(DomainSlot.profile);
 
-      final pending = cache.refresh(DomainSlot.profile);
-      expect(
-        cache.stateOf<ProfileRecord>(DomainSlot.profile).status,
-        RepositoryStatus.data,
-        reason: 'a refresh must not blank an already-visible record',
-      );
-      await pending;
-      expect(cache.stateOf<ProfileRecord>(DomainSlot.profile).data, isNotNull);
-      cache.dispose();
-    });
+        final pending = cache.refresh(DomainSlot.profile);
+        expect(
+          cache.stateOf<ProfileRecord>(DomainSlot.profile).status,
+          RepositoryStatus.data,
+          reason: 'a refresh must not blank an already-visible record',
+        );
+        await pending;
+        expect(
+          cache.stateOf<ProfileRecord>(DomainSlot.profile).data,
+          isNotNull,
+        );
+        cache.dispose();
+      },
+    );
 
     test('a mock refresh settles instead of re-notifying forever', () async {
       var appNotifications = 0;
@@ -239,34 +273,36 @@ void main() {
       await settle();
 
       expect(settled, greaterThan(0));
-      expect(appNotifications, settled,
-          reason: 'the cache must not re-trigger itself through the app state');
       expect(
-        cache.stateOf<ProfileRecord>(DomainSlot.profile).hasData,
-        isTrue,
+        appNotifications,
+        settled,
+        reason: 'the cache must not re-trigger itself through the app state',
       );
+      expect(cache.stateOf<ProfileRecord>(DomainSlot.profile).hasData, isTrue);
       cache.dispose();
     });
   });
 
   group('session changes', () {
-    test('a new profile key reads the new person, not the cached answer',
-        () async {
-      var key = DbService.primaryPassengerId;
-      final cache = mockCache(profileKey: () => key);
+    test(
+      'a new profile key reads the new person, not the cached answer',
+      () async {
+        var key = DbService.primaryPassengerId;
+        final cache = mockCache(profileKey: () => key);
 
-      await cache.ensure(DomainSlot.profile);
-      final original = cache.stateOf<ProfileRecord>(DomainSlot.profile).data!;
+        await cache.ensure(DomainSlot.profile);
+        final original = cache.stateOf<ProfileRecord>(DomainSlot.profile).data!;
 
-      key = 'P002';
-      cache.restart();
-      await settle();
+        key = 'P002';
+        cache.restart();
+        await settle();
 
-      final next = cache.stateOf<ProfileRecord>(DomainSlot.profile).data!;
-      expect(next.id, isNot(original.id));
-      expect(next.fullName, isNot(original.fullName));
-      cache.dispose();
-    });
+        final next = cache.stateOf<ProfileRecord>(DomainSlot.profile).data!;
+        expect(next.id, isNot(original.id));
+        expect(next.fullName, isNot(original.fullName));
+        cache.dispose();
+      },
+    );
 
     test('a finished read reaches the app state', () async {
       var forwarded = 0;
@@ -282,106 +318,163 @@ void main() {
   });
 
   group('session changes during a parked read', () {
-    test('a read in flight when the session changes cannot land its answer',
-        () async {
-      var key = 'p-old';
-      final backend = _GatedProfileBackend(rowsById: {
-        'p-old': const {
-          'id': 'p-old',
-          'full_name': 'Marta Old',
-          'account_status': 'active'
+    test('refresh callers await the coalesced authoritative read', () async {
+      final backend = _GatedProfileBackend(
+        rowsById: {
+          'p1': const {
+            'id': 'p1',
+            'full_name': 'Current',
+            'account_status': 'active',
+          },
         },
-        'p-new': const {
-          'id': 'p-new',
-          'full_name': 'Nadia New',
-          'account_status': 'active'
-        },
-      });
-      final cache = supabaseCacheFor(backend, () => key);
-
-      unawaited(cache.ensure(DomainSlot.profile));
-      await settle();
-      expect(backend.requestedIds, ['p-old']);
-
-      key = 'p-new';
-      cache.restart();
-      await settle();
-      expect(
-        cache.stateOf<ProfileRecord>(DomainSlot.profile).isLoading,
-        isTrue,
-        reason: 'a retired slot waits on a new read, not on nothing at all',
       );
-
-      // The answer the previous session was owed arrives now.
+      final cache = supabaseCache(backend);
+      final first = cache.ensure(DomainSlot.profile);
+      final ensured = cache.ensure(DomainSlot.profile);
+      final refresh = cache.refresh(DomainSlot.profile);
+      final another = cache.refresh(DomainSlot.profile);
+      expect(ensured, same(first));
+      expect(refresh, same(first));
+      expect(another, same(first));
+      var completed = false;
+      unawaited(refresh.then((_) => completed = true));
       backend.release();
       await drain();
-
-      expect(
-        cache.stateOf<ProfileRecord>(DomainSlot.profile).data,
-        isNull,
-        reason: 'the person signed in a moment ago must not reach the new '
-            'session, not even as a frame of data',
-      );
-      expect(backend.requestedIds, ['p-old', 'p-new']);
-
+      expect(backend.requestedIds, ['p1', 'p1']);
+      expect(completed, isFalse);
       backend.release();
-      await drain();
-
+      await Future.wait([first, refresh, another]);
+      expect(completed, isTrue);
       expect(
         cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
-        'Nadia New',
+        'Current',
       );
       cache.dispose();
     });
 
-    test('several session changes in a row leave only the last one cached',
-        () async {
-      var key = 'p-a';
-      final backend = _GatedProfileBackend(rowsById: {
-        'p-a': const {'id': 'p-a', 'full_name': 'Ann A', 'account_status': 'active'},
-        'p-b': const {'id': 'p-b', 'full_name': 'Bea B', 'account_status': 'active'},
-        'p-c': const {'id': 'p-c', 'full_name': 'Cy C', 'account_status': 'active'},
-      });
-      final cache = supabaseCacheFor(backend, () => key);
+    test(
+      'a read in flight when the session changes cannot land its answer',
+      () async {
+        var key = 'p-old';
+        final backend = _GatedProfileBackend(
+          rowsById: {
+            'p-old': const {
+              'id': 'p-old',
+              'full_name': 'Marta Old',
+              'account_status': 'active',
+            },
+            'p-new': const {
+              'id': 'p-new',
+              'full_name': 'Nadia New',
+              'account_status': 'active',
+            },
+          },
+        );
+        final cache = supabaseCacheFor(backend, () => key);
 
-      unawaited(cache.ensure(DomainSlot.profile));
-      await settle();
+        unawaited(cache.ensure(DomainSlot.profile));
+        await settle();
+        expect(backend.requestedIds, ['p-old']);
 
-      key = 'p-b';
-      cache.restart();
-      key = 'p-c';
-      cache.restart();
-      await settle();
+        key = 'p-new';
+        cache.restart();
+        await settle();
+        expect(
+          cache.stateOf<ProfileRecord>(DomainSlot.profile).isLoading,
+          isTrue,
+          reason: 'a retired slot waits on a new read, not on nothing at all',
+        );
 
-      // Two requests were parked behind one read; the rerun is a single read
-      // for whoever is signed in now, not one per restart.
-      backend.release();
-      await drain();
-      expect(backend.requestedIds, ['p-a', 'p-c']);
+        // The answer the previous session was owed arrives now.
+        backend.release();
+        await drain();
 
-      backend.release();
-      await drain();
-      expect(
-        cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
-        'Cy C',
-      );
-      cache.dispose();
-    });
+        expect(
+          cache.stateOf<ProfileRecord>(DomainSlot.profile).data,
+          isNull,
+          reason:
+              'the person signed in a moment ago must not reach the new '
+              'session, not even as a frame of data',
+        );
+        expect(backend.requestedIds, ['p-old', 'p-new']);
+
+        backend.release();
+        await drain();
+
+        expect(
+          cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
+          'Nadia New',
+        );
+        cache.dispose();
+      },
+    );
+
+    test(
+      'several session changes in a row leave only the last one cached',
+      () async {
+        var key = 'p-a';
+        final backend = _GatedProfileBackend(
+          rowsById: {
+            'p-a': const {
+              'id': 'p-a',
+              'full_name': 'Ann A',
+              'account_status': 'active',
+            },
+            'p-b': const {
+              'id': 'p-b',
+              'full_name': 'Bea B',
+              'account_status': 'active',
+            },
+            'p-c': const {
+              'id': 'p-c',
+              'full_name': 'Cy C',
+              'account_status': 'active',
+            },
+          },
+        );
+        final cache = supabaseCacheFor(backend, () => key);
+
+        unawaited(cache.ensure(DomainSlot.profile));
+        await settle();
+
+        key = 'p-b';
+        cache.restart();
+        key = 'p-c';
+        cache.restart();
+        await settle();
+
+        // Two requests were parked behind one read; the rerun is a single read
+        // for whoever is signed in now, not one per restart.
+        backend.release();
+        await drain();
+        expect(backend.requestedIds, ['p-a', 'p-c']);
+
+        backend.release();
+        await drain();
+        expect(
+          cache.stateOf<ProfileRecord>(DomainSlot.profile).data!.fullName,
+          'Cy C',
+        );
+        cache.dispose();
+      },
+    );
 
     test('a rerun that fails stays a failure the screen can retry', () async {
       var key = 'p-old';
-      final backend = _GatedProfileBackend(rowsById: {
-        'p-old': const {
-          'id': 'p-old',
-          'full_name': 'Marta Old',
-          'account_status': 'active'
+      final backend = _GatedProfileBackend(
+        rowsById: {
+          'p-old': const {
+            'id': 'p-old',
+            'full_name': 'Marta Old',
+            'account_status': 'active',
+          },
+          'p-new': const {
+            'id': 'p-new',
+            'full_name': 'Nadia New',
+            'account_status': 'active',
+          },
         },
-        'p-new': const {
-          'id': 'p-new',
-          'full_name': 'Nadia New',
-          'account_status': 'active'
-        },
-      });
+      );
       final cache = supabaseCacheFor(backend, () => key);
 
       unawaited(cache.ensure(DomainSlot.profile));
@@ -399,8 +492,11 @@ void main() {
       final state = cache.stateOf<ProfileRecord>(DomainSlot.profile);
       expect(state.status, RepositoryStatus.failure);
       expect(state.failure!.kind, RepositoryFailureKind.offline);
-      expect(state.data, isNull,
-          reason: 'a failed rerun shows no one rather than the previous person');
+      expect(
+        state.data,
+        isNull,
+        reason: 'a failed rerun shows no one rather than the previous person',
+      );
 
       // Retrying a settled failure reads again, exactly as the screen's button
       // asks it to.

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:surgo/auth/mock_auth_repository.dart';
 import 'package:surgo/data/db_models.dart';
 import 'package:surgo/data/db_service.dart';
 import 'package:surgo/repositories/backend.dart';
@@ -89,6 +92,7 @@ void main() {
       ..addAll(earnerNotifications);
     restoreReadFlags(db.passengerNotifications, passengerReadFlags);
     restoreReadFlags(db.earnerNotifications, earnerReadFlags);
+    state.configureAuth(MockAuthRepository());
     await use(RepositoryRegistry.mock(db));
   });
 
@@ -448,17 +452,161 @@ void main() {
       expect(find.byType(SbTintedCard), findsNothing);
     });
 
-    testWidgets('an unreachable feed fails visibly instead of showing the seed',
+    for (final isRider in [false, true]) {
+      testWidgets('hosted feed cannot fake acknowledgements; rider=$isRider', (
+        tester,
+      ) async {
+        makeUnread(db.passengerNotifications);
+        makeUnread(db.earnerNotifications);
+        state.configureAuth(_HostedIdentity());
+        final backend = _FixedBackend(
+          rowsByTable: {
+            'notifications': [
+              {
+                'id': (isRider
+                        ? db.earnerNotifications
+                        : db.passengerNotifications)
+                    .first
+                    .id,
+                'notification_type': 'ride',
+                'title': 'Hosted notification',
+                'body': 'SELECT only',
+              },
+            ],
+          },
+        );
+        await use(RepositoryRegistry.supabase(backend));
+        await open(tester, NotificationsScreen(isRider: isRider));
+        final reads = backend.notificationReads;
+        expect(
+          tester.widget<SbTintedCard>(find.byType(SbTintedCard)).onTap,
+          isNull,
+        );
+        await tester.tap(find.byType(SbTintedCard));
+        await tester.tap(find.text('Mark all read'));
+        await land(tester);
+        expect(
+          find.text(
+            'Marking notifications read is not synced for live '
+            'accounts yet.',
+          ),
+          findsOneWidget,
+        );
+        expect(unreadDots(), findsOneWidget);
+        expect(db.passengerNotifications.every((n) => !n.read), isTrue);
+        expect(db.earnerNotifications.every((n) => !n.read), isTrue);
+        expect(backend.notificationReads, reads);
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+
+      testWidgets(
+          'hosted identity with offline registry still marks; '
+          'rider=$isRider', (tester) async {
+        makeUnread(db.passengerNotifications);
+        makeUnread(db.earnerNotifications);
+        state.configureAuth(_HostedIdentity());
+        await use(RepositoryRegistry.mock(db));
+        await open(tester, NotificationsScreen(isRider: isRider));
+        final items =
+            isRider ? db.earnerNotifications : db.passengerNotifications;
+        await tester.tap(find.byType(SbTintedCard).first);
+        await land(tester);
+        expect(items.first.read, isTrue);
+        await tester.tap(find.text('Mark all read'));
+        await land(tester);
+        expect(items.every((n) => n.read), isTrue);
+        expect(unreadDots(), findsNothing);
+        expect(find.textContaining('not synced'), findsNothing);
+      });
+    }
+
+    for (final empty in [false, true]) {
+      testWidgets(
+        'pull-to-refresh works with ${empty ? 'empty' : 'short'} feed',
         (tester) async {
-      expect(db.passengerNotifications, isNotEmpty);
-      await use(RepositoryRegistry.supabase(const UnreachableBackend()));
+          final rows = <Map<String, dynamic>>[];
+          if (!empty) {
+            rows.add({
+              'id': 'n-pull',
+              'notification_type': 'ride',
+              'title': 'Before refresh',
+              'body': 'SELECT only',
+            });
+          }
+          final backend = _FixedBackend(rowsByTable: {'notifications': rows});
+          await use(RepositoryRegistry.supabase(backend));
+          await open(tester, const NotificationsScreen());
+          final before = backend.notificationReads;
+          rows
+            ..clear()
+            ..add({
+              'id': 'n-pull',
+              'notification_type': 'ride',
+              'title': 'After refresh',
+              'body': 'New repository answer',
+            });
+          await tester.drag(
+            find.byType(Scrollable).first,
+            const Offset(0, 400),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            backend.notificationReads,
+            before + 2,
+            reason: 'refresh reads both the feed and its unread badge',
+          );
+          expect(find.text('After refresh'), findsOneWidget);
+          expect(find.text('No notifications yet'), findsNothing);
+          expect(find.text('Before refresh'), findsNothing);
+        },
+      );
+    }
 
-      await open(tester, const NotificationsScreen());
+    testWidgets(
+      'refresh awaits parked cache reads and safely outlives the screen',
+      (tester) async {
+        final backend = _FixedBackend();
+        await use(RepositoryRegistry.supabase(backend));
+        await open(tester, const NotificationsScreen());
+        final gates = <Completer<List<Map<String, dynamic>>>>[];
+        backend.notificationRead = () {
+          final done = Completer<List<Map<String, dynamic>>>();
+          gates.add(done);
+          return done.future;
+        };
+        final indicator = tester.widget<RefreshIndicator>(
+          find.byType(RefreshIndicator),
+        );
+        var finished = false;
+        final refresh = indicator.onRefresh().then((_) => finished = true);
+        await settle();
+        expect(gates, hasLength(2));
+        expect(finished, isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+        gates.first.complete([]);
+        await settle();
+        expect(finished, isFalse);
+        gates.last.complete([]);
+        await refresh;
+        await tester.pump();
+        expect(finished, isTrue);
+        expect(tester.takeException(), isNull);
+      },
+    );
 
-      expect(find.text('The data service is unavailable'), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
-      expect(find.byType(SbTintedCard), findsNothing);
-    });
+    testWidgets(
+      'an unreachable feed fails visibly instead of showing the seed',
+      (tester) async {
+        expect(db.passengerNotifications, isNotEmpty);
+        await use(RepositoryRegistry.supabase(const UnreachableBackend()));
+
+        await open(tester, const NotificationsScreen());
+
+        expect(find.text('The data service is unavailable'), findsOneWidget);
+        expect(find.text('Try again'), findsOneWidget);
+        expect(find.byType(SbTintedCard), findsNothing);
+      },
+    );
   });
 }
 
@@ -468,6 +616,8 @@ class _FixedBackend implements SurgoBackend {
   _FixedBackend({this.rowsByTable = const {}});
 
   final Map<String, List<Map<String, dynamic>>> rowsByTable;
+  int notificationReads = 0;
+  Future<List<Map<String, dynamic>>> Function()? notificationRead;
 
   @override
   Future<List<Map<String, dynamic>>> rows({
@@ -480,6 +630,11 @@ class _FixedBackend implements SurgoBackend {
     bool ascending = false,
     int? limit,
   }) async {
+    if (table == 'notifications') {
+      notificationReads++;
+      final read = notificationRead;
+      if (read != null) return await read();
+    }
     final found = rowsByTable[table] ?? const [];
     return limit == null ? found : found.take(limit).toList();
   }
@@ -499,4 +654,10 @@ class _FixedBackend implements SurgoBackend {
     }
     return found.first;
   }
+}
+
+/// Identity flag only: no hosted session, network, or credentials are needed.
+class _HostedIdentity extends MockAuthRepository {
+  @override
+  bool get isMock => false;
 }

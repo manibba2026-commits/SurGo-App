@@ -35,3 +35,7 @@ supabase/tests/node_modules/
 
 # Private demo credentials: keep the filled copy local
 docs/final-presentation/demo-accounts.local.*
+
+# Local build-time API keys (e.g. MAPTILER_API_KEY)
+dart_defines.local.json
+dart_defines*.local.json

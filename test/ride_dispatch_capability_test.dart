@@ -57,6 +57,22 @@ class _HostedAuth implements AuthRepository {
   Future<bool> signInWithGoogle() async => false;
 
   @override
+  Future<bool> signInWithFacebook() async => false;
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async => throw UnimplementedError();
+
+  @override
   Future<void> signOut() async {}
 
   @override

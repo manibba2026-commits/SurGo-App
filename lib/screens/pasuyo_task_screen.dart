@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../data/db_models.dart';
+import '../repositories/backend.dart';
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_failure.dart';
 import '../repositories/repository_mappers.dart';
+import '../repositories/repository_registry.dart';
+import '../widgets/flow_scaffold.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
 import '../state/app_state.dart';
@@ -30,31 +35,39 @@ class PasuyoTaskScreen extends StatelessWidget {
   /// an accept button. The caller therefore states which side it is on.
   final bool helperMode;
 
-  const PasuyoTaskScreen(
-      {super.key, required this.taskId, this.helperMode = false});
+  const PasuyoTaskScreen({
+    super.key,
+    required this.taskId,
+    this.helperMode = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
 
-    if (state.usesHostedIdentity) {
-      return _HostedPasuyoTaskScreen(taskId: taskId, helperMode: helperMode);
-    }
-
     return ListenableBuilder(
       listenable: state,
       builder: (context, _) {
-        final matches =
-            state.pasuyoTasks.where((t) => t.id == taskId).toList();
+        if (state.usesHostedIdentity && state.repositories.isSupabaseBacked) {
+          return _HostedPasuyoTaskScreen(
+            taskId: taskId,
+            helperMode: helperMode,
+          );
+        }
+        final matches = state.pasuyoTasks.where((t) => t.id == taskId).toList();
         if (matches.isEmpty) {
           return Scaffold(
             appBar: AppBar(title: const Text('Pasuyo')),
-            body: const Center(child: Text('This task is no longer available.')),
+            body: const Center(
+              child: Text('This task is no longer available.'),
+            ),
           );
         }
         final task = matches.first;
-        final breakdown =
-            FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
+        final breakdown = FeeCalculator.breakdownFor(
+          ServiceType.pasuyo,
+          task.budget,
+        );
         final helper = _helperFor(state, task);
 
         return Scaffold(
@@ -72,21 +85,32 @@ class PasuyoTaskScreen extends StatelessWidget {
                       color: AppColors.yellow.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(task.category.icon,
-                        size: 19, color: AppColors.yellow),
+                    child: Icon(
+                      task.category.icon,
+                      size: 19,
+                      color: AppColors.yellow,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(task.title,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 14)),
+                        Text(
+                          task.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text('${task.category.label} · ${task.requestedAt}',
-                            style: const TextStyle(
-                                color: AppColors.muted, fontSize: 11)),
+                        Text(
+                          '${task.category.label} · ${task.requestedAt}',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -99,23 +123,50 @@ class PasuyoTaskScreen extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(task.statusLabel,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 12.5)),
+                        Text(
+                          task.statusLabel,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
+                        ),
                         const Spacer(),
-                        Text(task.stepLabel,
-                            style: const TextStyle(
-                                color: AppColors.muted, fontSize: 11)),
+                        Text(
+                          task.stepLabel,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 14),
-                    PasuyoStepper(task: task),
+                    _PasuyoProgress(task: task),
                     const SizedBox(height: 16),
-                    _line(Icons.storefront_outlined, 'Pickup', task.pickup,
-                        AppColors.secondary),
+                    _line(
+                      Icons.storefront_outlined,
+                      'Pickup',
+                      task.pickup,
+                      AppColors.secondary,
+                    ),
                     const SizedBox(height: 10),
-                    _line(Icons.place_outlined, 'Drop-off', task.dropoff,
-                        AppColors.primary),
+                    _line(
+                      Icons.place_outlined,
+                      'Drop-off',
+                      task.dropoff,
+                      AppColors.primary,
+                    ),
+                    if (task.bookedForSomeone) ...[
+                      const SizedBox(height: 10),
+                      _line(
+                        Icons.person_outline,
+                        'Recipient',
+                        task.recipientPhone.isEmpty
+                            ? task.recipientName
+                            : '${task.recipientName} · ${task.recipientPhone}',
+                        AppColors.yellow,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -125,31 +176,45 @@ class PasuyoTaskScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Items',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w700, fontSize: 12.5)),
+                      const Text(
+                        'Items',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      ...task.items.map((item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.circle, size: 5,
-                                    color: AppColors.muted2),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(item,
-                                      style: const TextStyle(fontSize: 12)),
+                      ...task.items.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.circle,
+                                size: 5,
+                                color: AppColors.muted2,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  item,
+                                  style: const TextStyle(fontSize: 12),
                                 ),
-                              ],
-                            ),
-                          )),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       if (task.note.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        Text('“${task.note}”',
-                            style: const TextStyle(
-                                color: AppColors.muted,
-                                fontSize: 11.5,
-                                fontStyle: FontStyle.italic)),
+                        Text(
+                          '“${task.note}”',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 11.5,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -165,18 +230,28 @@ class PasuyoTaskScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(helper.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 12.5)),
                             Text(
-                                '★ ${helper.rating.toStringAsFixed(1)} · ${helper.vehicleModel}',
-                                style: const TextStyle(
-                                    color: AppColors.muted, fontSize: 11)),
+                              helper.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            Text(
+                              '★ ${helper.rating.toStringAsFixed(1)} · ${helper.vehicleModel}',
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const Icon(Icons.verified,
-                          size: 16, color: AppColors.secondaryLight),
+                      const Icon(
+                        Icons.verified,
+                        size: 16,
+                        color: AppColors.secondaryLight,
+                      ),
                     ],
                   ),
                 ),
@@ -216,13 +291,16 @@ class PasuyoTaskScreen extends StatelessWidget {
                   icon: Icons.arrow_forward_rounded,
                   onPressed: () {
                     state.advancePasuyoTask(task);
-                    SurgoNotice.show(context, task.status.label,
-                        tone: SbNoticeTone.info);
+                    SurgoNotice.show(
+                      context,
+                      task.status.label,
+                      tone: SbNoticeTone.info,
+                    );
                   },
                 ),
                 const SizedBox(height: 10),
               ],
-              if (task.isComplete && !task.rated)
+              if (!helperMode && task.isComplete && !task.rated)
                 _ratePrompt(context, state, task)
               else if (task.isActive)
                 Row(
@@ -248,7 +326,7 @@ class PasuyoTaskScreen extends StatelessWidget {
               // errand often only shows up once the goods have arrived, so
               // hiding this behind the in-progress state left completed tasks
               // with no way to raise an issue at all.
-              if (task.isComplete && task.rated)
+              if (task.isComplete && (helperMode || task.rated))
                 SbOutlineButton(
                   label: 'Report issue',
                   icon: Icons.flag_outlined,
@@ -263,6 +341,8 @@ class PasuyoTaskScreen extends StatelessWidget {
                     style: TextStyle(color: AppColors.muted, fontSize: 11.5),
                   ),
                 ),
+              const SizedBox(height: 14),
+              const _BackToHome(),
             ],
           ),
         );
@@ -278,13 +358,18 @@ class PasuyoTaskScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Fee breakdown',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
+          const Text(
+            'Fee breakdown',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+          ),
           const SizedBox(height: 12),
           _row('Customer pays', b.customerPaysLabel, bold: true),
           const SizedBox(height: 7),
-          _row('Helper gets', b.providerGetsLabel,
-              color: AppColors.secondaryLight),
+          _row(
+            'Helper gets',
+            b.providerGetsLabel,
+            color: AppColors.secondaryLight,
+          ),
           const SizedBox(height: 7),
           _row('SurGo keeps (15%)', b.surgoKeepsLabel, color: AppColors.yellow),
         ],
@@ -292,23 +377,27 @@ class PasuyoTaskScreen extends StatelessWidget {
     );
   }
 
-  Widget _ratePrompt(
-      BuildContext context, AppState state, PasuyoTask task) {
+  Widget _ratePrompt(BuildContext context, AppState state, PasuyoTask task) {
     var stars = 5;
     return StatefulBuilder(
       builder: (ctx, setSheet) => SbCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Rate your helper',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
+            const Text(
+              'Rate your helper',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+            ),
             const SizedBox(height: 10),
             Row(
               children: List.generate(5, (i) {
                 final filled = i < stars;
                 return IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                   onPressed: () => setSheet(() => stars = i + 1),
                   icon: Icon(
                     filled ? Icons.star_rounded : Icons.star_border_rounded,
@@ -352,8 +441,10 @@ class PasuyoTaskScreen extends StatelessWidget {
               state.cancelPasuyoTask(task);
               Navigator.pop(dialogContext);
             },
-            child: const Text('Cancel task',
-                style: TextStyle(color: AppColors.danger)),
+            child: const Text(
+              'Cancel task',
+              style: TextStyle(color: AppColors.danger),
+            ),
           ),
         ],
       ),
@@ -363,15 +454,16 @@ class PasuyoTaskScreen extends StatelessWidget {
   void _report(BuildContext context, PasuyoTask task) {
     SurgoNotice.show(
       context,
-      'Report sent. Our team will review it within 24 hours.',
-      tone: SbNoticeTone.success,
+      'Demo only: issue reporting is not connected. No report or support ticket was sent.',
+      tone: SbNoticeTone.info,
     );
   }
 
   MapRider? _helperFor(AppState state, PasuyoTask task) {
     if (task.helperId == null) return null;
-    final matches =
-        state.db.mapRiders.where((r) => r.id == task.helperId).toList();
+    final matches = state.db.mapRiders
+        .where((r) => r.id == task.helperId)
+        .toList();
     return matches.isEmpty ? null : matches.first;
   }
 
@@ -390,12 +482,16 @@ class PasuyoTaskScreen extends StatelessWidget {
         const SizedBox(width: 9),
         SizedBox(
           width: 62,
-          child: Text(label,
-              style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+          ),
         ),
         Expanded(
-          child: Text(value,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -405,23 +501,28 @@ class PasuyoTaskScreen extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Text(label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-                color: bold ? AppColors.text : AppColors.muted,
-              )),
-        ),
-        Text(value,
+          child: Text(
+            label,
             style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: color ?? AppColors.text,
-            )),
+              fontSize: 12,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              color: bold ? AppColors.text : AppColors.muted,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: color ?? AppColors.text,
+          ),
+        ),
       ],
     );
   }
 }
+
 /// Hosted errand detail: reads the database row by id and offers only the
 /// actions the row's owner allows. Every button calls a database function that
 /// re-checks the role and the legal transition, so a stale screen cannot push
@@ -436,7 +537,8 @@ class _HostedPasuyoTaskScreen extends StatefulWidget {
   final bool helperMode;
 
   @override
-  State<_HostedPasuyoTaskScreen> createState() => _HostedPasuyoTaskScreenState();
+  State<_HostedPasuyoTaskScreen> createState() =>
+      _HostedPasuyoTaskScreenState();
 }
 
 class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
@@ -444,39 +546,174 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
   String? _error;
   bool _loading = true;
   bool _busy = false;
+  bool _writing = false;
+  bool _reloadPending = false;
+  int _generation = 0;
+  int _revision = 0;
+  Future<void>? _readDrain;
+  RepositoryRegistry? _registry;
+  String? _userId;
+  String? _accountId;
+  StreamSubscription<void>? _subscription;
+  Timer? _reconciliation;
   final Map<String, TextEditingController> _costCtrls = {};
+  final Map<String, String> _serverCostTexts = {};
 
   @override
   void initState() {
     super.initState();
-    _load();
+    AppState.instance.addListener(_onAppChanged);
+    _bindSession();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HostedPasuyoTaskScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.taskId != widget.taskId) _bindSession();
+  }
+
+  bool get _sessionMatches {
+    final state = AppState.instance;
+    return identical(_registry, state.repositories) &&
+        _userId == state.identity?.userId &&
+        _accountId == state.currentAccount?.id &&
+        state.usesHostedIdentity &&
+        state.repositories.isSupabaseBacked;
+  }
+
+  bool _isCurrent(int generation) =>
+      mounted && generation == _generation && _sessionMatches;
+
+  void _onAppChanged() {
+    if (!mounted) return;
+    if (!_sessionMatches) {
+      setState(_bindSession);
+    }
+  }
+
+  void _bindSession() {
+    _generation++;
+    _revision++;
+    unawaited(_subscription?.cancel().catchError((Object _) {}));
+    _subscription = null;
+    _reconciliation?.cancel();
+    _reconciliation = null;
+    _readDrain = null;
+    _reloadPending = false;
+    _busy = false;
+    _writing = false;
+    _record = null;
+    for (final ctrl in _costCtrls.values) {
+      ctrl.dispose();
+    }
+    _costCtrls.clear();
+    _serverCostTexts.clear();
+    final state = AppState.instance;
+    _registry = state.repositories;
+    _userId = state.identity?.userId;
+    _accountId = state.currentAccount?.id;
+    _loading = _sessionMatches && _userId != null && state.isSignedIn;
+    _error = _loading ? null : 'Sign in again to view this errand.';
+    if (!_loading) return;
+    final generation = _generation;
+    // Events are invalidations only. The authenticated repository and RLS own
+    // the status, participants and receipt, never the event payload.
+    try {
+      _subscription = _registry!.realtime
+          ?.watchRows(
+            table: 'service_requests',
+            column: 'id',
+            value: widget.taskId,
+          )
+          .listen(
+            (_) {
+              if (_isCurrent(generation)) unawaited(_load());
+            },
+            onError: (Object error) {
+              if (_isCurrent(generation)) unawaited(_load());
+            },
+          );
+    } catch (_) {
+      // Reconciliation remains available if subscribing is unavailable.
+    }
+    _reconciliation = Timer.periodic(const Duration(seconds: 15), (_) {
+      _onAppChanged();
+      if (_isCurrent(generation)) unawaited(_load());
+    });
+    unawaited(_load());
   }
 
   @override
   void dispose() {
+    _generation++;
+    AppState.instance.removeListener(_onAppChanged);
+    unawaited(_subscription?.cancel().catchError((Object _) {}));
+    _reconciliation?.cancel();
     for (final ctrl in _costCtrls.values) {
       ctrl.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load() {
+    if (!_isCurrent(_generation) ||
+        _userId == null ||
+        !AppState.instance.isSignedIn) {
+      return Future<void>.value();
+    }
+    _reloadPending = true;
+    if (_writing) return _readDrain ?? Future<void>.value();
+    // Install the future before starting: a burst of events shares one drain
+    // and at most one queued reconciliation read, not parallel snapshots.
+    final generation = _generation;
+    return _readDrain ??= Future<void>.microtask(() => _drainReads(generation));
+  }
+
+  Future<void> _drainReads(int generation) async {
+    if (!_isCurrent(generation)) return;
+    final registry = _registry!;
+    final taskId = widget.taskId;
     try {
-      final record = await AppState.instance.repositories.pasuyo
-          .fetchRequest(widget.taskId);
-      if (!mounted) return;
-      _syncCostControllers(record);
-      setState(() {
-        _record = record;
-        _error = record == null ? 'This task is no longer available.' : null;
-        _loading = false;
-      });
-    } on RepositoryFailure catch (failure) {
-      if (!mounted) return;
-      setState(() {
-        _error = failure.message;
-        _loading = false;
-      });
+      while (_isCurrent(generation) && _reloadPending && !_writing) {
+        _reloadPending = false;
+        final revision = _revision;
+        try {
+          final record = await registry.pasuyo
+              .fetchRequest(taskId)
+              .timeout(const Duration(seconds: 20));
+          if (!_isCurrent(generation)) return;
+          if (revision != _revision) continue;
+          if (record != null && record.id != taskId) {
+            throw RepositoryFailure.invalidData(
+              'The errand service returned a different task.',
+            );
+          }
+          _syncCostControllers(record);
+          setState(() {
+            _record = record;
+            _error = record == null
+                ? 'This task is no longer available.'
+                : null;
+            _loading = false;
+          });
+        } catch (error) {
+          if (!_isCurrent(generation)) return;
+          if (revision != _revision) continue;
+          final failure = mapBackendError(error);
+          setState(() {
+            _error = failure.message;
+            _loading = false;
+            // An authorization refusal must not leave another account's data
+            // on screen; transient outages keep the last confirmed receipt.
+            if (failure.isPermissionProblem ||
+                failure.kind == RepositoryFailureKind.notFound) {
+              _record = null;
+            }
+          });
+        }
+      }
+    } finally {
+      if (mounted && generation == _generation) _readDrain = null;
     }
   }
 
@@ -484,59 +721,80 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
     if (record == null) return;
     for (final item in record.items) {
       final actual = item.actualUnitPriceCentavos;
-      _costCtrls.putIfAbsent(
-        item.id,
-        () => TextEditingController(
-          text: actual == null ? '' : (actual / 100).toStringAsFixed(2),
-        ),
-      );
+      final text = actual == null ? '' : (actual / 100).toStringAsFixed(2);
+      final ctrl = _costCtrls[item.id];
+      if (ctrl == null) {
+        _costCtrls[item.id] = TextEditingController(text: text);
+      } else if (ctrl.text == _serverCostTexts[item.id] && ctrl.text != text) {
+        // Refresh clean fields, but never erase an unsaved helper draft when
+        // a reconciliation read arrives while they are typing.
+        ctrl.text = text;
+      }
+      _serverCostTexts[item.id] = text;
     }
   }
 
   /// Runs one database action, reloads the row afterwards, and surfaces the
   /// server's refusal instead of pretending the button worked.
   Future<void> _run(Future<void> Function() action, String success) async {
-    setState(() => _busy = true);
+    if (_busy || !_isCurrent(_generation) || _record == null) return;
+    final generation = _generation;
+    _revision++;
+    setState(() {
+      _busy = true;
+      _writing = true;
+    });
     try {
       await action();
-      await _load();
-      if (!mounted) return;
+      if (!mounted || !_isCurrent(generation)) return;
       SurgoNotice.show(context, success, tone: SbNoticeTone.success);
-    } on RepositoryFailure catch (failure) {
-      if (!mounted) return;
-      SurgoNotice.show(context, failure.message, tone: SbNoticeTone.warning);
-      await _load();
+    } catch (error) {
+      if (!mounted || !_isCurrent(generation)) return;
+      SurgoNotice.show(
+        context,
+        mapBackendError(error).message,
+        tone: SbNoticeTone.warning,
+      );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (_isCurrent(generation)) {
+        _writing = false;
+        _revision++;
+        // Invalidate even on a refusal: an intervening helper/customer action
+        // may have changed the legal controls. Pre-write reads cannot apply.
+        await _load();
+        if (_isCurrent(generation)) setState(() => _busy = false);
+      }
     }
   }
 
-  Future<void> _accept(PasuyoTask task) => _run(
-        () async {
-          await AppState.instance.acceptHostedErrand(task);
-        },
-        'Accepted — this is now your active errand.',
-      );
+  Future<void> _accept(PasuyoTask task) => _run(() async {
+    await AppState.instance.acceptHostedErrand(task);
+  }, 'Accepted — this is now your active errand.');
 
-  Future<void> _advance(PasuyoTask task) => _run(
-        () async {
-          final updated = await AppState.instance.advanceHostedErrand(task);
-          if (updated == null) {
-            throw RepositoryFailure.unsupported('This errand has no next step.');
-          }
-        },
-        'Errand updated.',
-      );
+  Future<void> _advance(PasuyoTask task) => _run(() async {
+    final updated = await AppState.instance.advanceHostedErrand(task);
+    if (updated == null) {
+      throw RepositoryFailure.unsupported('This errand has no next step.');
+    }
+  }, 'Errand updated.');
 
   Future<void> _saveActuals(PasuyoTask task) async {
+    if (_busy || _record == null || !_isCurrent(_generation)) return;
     final items = <Map<String, dynamic>>[];
     for (final item in _record!.items) {
       final raw = _costCtrls[item.id]?.text.trim() ?? '';
       if (raw.isEmpty) continue;
       final pesos = double.tryParse(raw);
-      if (pesos == null || pesos < 0) {
-        SurgoNotice.show(context, 'Enter a valid amount for ${item.name}.',
-            tone: SbNoticeTone.warning);
+      if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(raw) ||
+          pesos == null ||
+          !pesos.isFinite ||
+          pesos < 0 ||
+          !(pesos * 100).isFinite) {
+        SurgoNotice.show(
+          context,
+          'Enter a valid amount for ${item.name}.',
+          tone: SbNoticeTone.warning,
+        );
         return;
       }
       items.add({
@@ -546,8 +804,11 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
       });
     }
     if (items.isEmpty) {
-      SurgoNotice.show(context, 'Enter at least one item price.',
-          tone: SbNoticeTone.warning);
+      SurgoNotice.show(
+        context,
+        'Enter at least one item price.',
+        tone: SbNoticeTone.warning,
+      );
       return;
     }
     await _run(
@@ -557,6 +818,8 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
   }
 
   void _confirmCancel(PasuyoTask task) {
+    if (_busy || !_isCurrent(_generation)) return;
+    final generation = _generation;
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -576,13 +839,19 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              if (!_isCurrent(generation) ||
+                  _record?.status.isTerminal != false) {
+                return;
+              }
               _run(
                 () => AppState.instance.cancelHostedErrand(task),
                 'Errand cancelled.',
               );
             },
-            child: const Text('Cancel errand',
-                style: TextStyle(color: AppColors.danger)),
+            child: const Text(
+              'Cancel errand',
+              style: TextStyle(color: AppColors.danger),
+            ),
           ),
         ],
       ),
@@ -591,6 +860,15 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_sessionMatches) {
+      // Repository installation does not necessarily notify AppState. Hide the
+      // previous snapshot immediately and bind after this build completes.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onAppChanged());
+      return Scaffold(
+        appBar: AppBar(title: const Text('Pasuyo Task')),
+        body: const Center(child: _BackToHome()),
+      );
+    }
     if (_loading) {
       return Scaffold(
         appBar: AppBar(title: const Text('Pasuyo Task')),
@@ -604,9 +882,21 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(_error ?? 'This task is no longer available.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.muted)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _error ?? 'This task is no longer available.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.muted),
+                ),
+                const SizedBox(height: 14),
+                if (_userId != null && AppState.instance.isSignedIn)
+                  SbOutlineButton(label: 'Retry', onPressed: () => _load()),
+                const SizedBox(height: 10),
+                const _BackToHome(),
+              ],
+            ),
           ),
         ),
       );
@@ -617,11 +907,16 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
     final userId = AppState.instance.identity?.userId;
     final isAssignedHelper =
         record.providerId != null && record.providerId == userId;
-    final canEnterCosts = widget.helperMode &&
+    final isCustomer = record.customerId == userId;
+    final canAccept = widget.helperMode && record.status.isOpen && !isCustomer;
+    final canCancel = widget.helperMode ? isAssignedHelper : isCustomer;
+    final canEnterCosts =
+        widget.helperMode &&
         isAssignedHelper &&
         !record.status.isTerminal &&
         record.status != PasuyoStatus.available;
-    final helperAction = widget.helperMode &&
+    final helperAction =
+        widget.helperMode &&
             isAssignedHelper &&
             record.status.advanceActionLabel != null
         ? record.status.advanceActionLabel
@@ -630,223 +925,316 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Pasuyo Task')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.yellow.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child:
-                    Icon(task.category.icon, size: 19, color: AppColors.yellow),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+          children: [
+            if (_error != null) ...[
+              Text(
+                'Could not refresh: $_error',
+                style: const TextStyle(color: AppColors.danger, fontSize: 12),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(task.title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 14)),
-                    const SizedBox(height: 2),
-                    Text('${task.category.label} · ${task.requestedAt}',
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11)),
-                  ],
-                ),
-              ),
-              SbTag(record.status.shortLabel,
-                  secondary: record.status == PasuyoStatus.delivered),
+              const SizedBox(height: 12),
             ],
-          ),
-          const SizedBox(height: 20),
-          SbCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Row(
               children: [
-                Row(
-                  children: [
-                    Text(task.statusLabel,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 12.5)),
-                    const Spacer(),
-                    Text(task.stepLabel,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11)),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                PasuyoStepper(task: task),
-                const SizedBox(height: 16),
-                _line(Icons.storefront_outlined, 'Pickup', task.pickup,
-                    AppColors.secondary),
-                if (task.dropoff.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _line(Icons.place_outlined, 'Drop-off', task.dropoff,
-                      AppColors.primary),
-                ],
-                if (task.bookedForSomeone) ...[
-                  const SizedBox(height: 10),
-                  _line(
-                    Icons.person_outline,
-                    'Recipient',
-                    task.recipientPhone.isEmpty
-                        ? task.recipientName
-                        : '${task.recipientName} · ${task.recipientPhone}',
-                    AppColors.yellow,
+                Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.yellow.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(11),
                   ),
-                ],
+                  child: Icon(
+                    task.category.icon,
+                    size: 19,
+                    color: AppColors.yellow,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${task.category.label} · ${task.requestedAt}',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SbTag(
+                  record.status.shortLabel,
+                  secondary: record.status == PasuyoStatus.delivered,
+                ),
               ],
             ),
-          ),
-          const SizedBox(height: 14),
-          if (record.items.isNotEmpty)
+            const SizedBox(height: 20),
             SbCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Items',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 12.5)),
-                  const SizedBox(height: 8),
-                  ...record.items.map((item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.circle,
-                                size: 5, color: AppColors.muted2),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(item.name,
-                                  style: const TextStyle(fontSize: 12)),
-                            ),
-                            Text(
-                              item.actualUnitPriceCentavos != null
-                                  ? Money.format(
-                                      item.actualUnitPriceCentavos!)
-                                  : item.estimatedUnitPriceCentavos != null
-                                      ? '~${Money.format(item.estimatedUnitPriceCentavos!)}'
-                                      : '',
-                              style: const TextStyle(
-                                  color: AppColors.muted, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      )),
-                  if (record.description != null &&
-                      record.description!.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text('“${record.description}”',
+                  Row(
+                    children: [
+                      Text(
+                        task.statusLabel,
                         style: const TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 11.5,
-                            fontStyle: FontStyle.italic)),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        task.stepLabel,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _PasuyoProgress(task: task),
+                  const SizedBox(height: 16),
+                  _line(
+                    Icons.storefront_outlined,
+                    'Pickup',
+                    task.pickup,
+                    AppColors.secondary,
+                  ),
+                  if (task.dropoff.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _line(
+                      Icons.place_outlined,
+                      'Drop-off',
+                      task.dropoff,
+                      AppColors.primary,
+                    ),
+                  ],
+                  if (task.bookedForSomeone) ...[
+                    const SizedBox(height: 10),
+                    _line(
+                      Icons.person_outline,
+                      'Recipient',
+                      task.recipientPhone.isEmpty
+                          ? task.recipientName
+                          : '${task.recipientName} · ${task.recipientPhone}',
+                      AppColors.yellow,
+                    ),
                   ],
                 ],
               ),
             ),
-          if (record.providerName != null) ...[
+            const SizedBox(height: 14),
+            if (record.items.isNotEmpty)
+              SbCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Items',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...record.items.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.circle,
+                              size: 5,
+                              color: AppColors.muted2,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                item.name,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            Text(
+                              item.actualUnitPriceCentavos != null
+                                  ? Money.format(item.actualUnitPriceCentavos!)
+                                  : item.estimatedUnitPriceCentavos != null
+                                  ? '~${Money.format(item.estimatedUnitPriceCentavos!)}'
+                                  : '',
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (record.description != null &&
+                        record.description!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '“${record.description}”',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11.5,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            if (record.providerName != null) ...[
+              const SizedBox(height: 14),
+              SbCard(
+                child: Row(
+                  children: [
+                    SbAvatar(
+                      initials: _initials(record.providerName!),
+                      size: 38,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record.providerName!,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const Text(
+                            'Assigned helper',
+                            style: TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.verified,
+                      size: 16,
+                      color: AppColors.secondaryLight,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             SbCard(
-              child: Row(
+              borderColor: AppColors.secondary.withValues(alpha: 0.3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SbAvatar(initials: _initials(record.providerName!), size: 38),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(record.providerName!,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 12.5)),
-                        const Text('Assigned helper',
-                            style: TextStyle(
-                                color: AppColors.muted, fontSize: 11)),
-                      ],
+                  const Text(
+                    'Fee breakdown',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
                     ),
                   ),
-                  const Icon(Icons.verified,
-                      size: 16, color: AppColors.secondaryLight),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          SbCard(
-            borderColor: AppColors.secondary.withValues(alpha: 0.3),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Fee breakdown',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 12.5)),
-                const SizedBox(height: 12),
-                _row('Helper fee', Money.format(task.budget)),
-                const SizedBox(height: 7),
-                _row('Platform fee', Money.format(breakdown.surgoKeeps),
-                    color: AppColors.yellow),
-                if (task.itemCost > 0) ...[
+                  const SizedBox(height: 12),
+                  _row('Helper fee', Money.format(task.budget)),
                   const SizedBox(height: 7),
-                  _row('Item cost (paid in cash)',
+                  _row(
+                    'Platform fee',
+                    Money.format(breakdown.surgoKeeps),
+                    color: AppColors.yellow,
+                  ),
+                  if (task.itemCost > 0) ...[
+                    const SizedBox(height: 7),
+                    _row(
+                      'Item cost (paid in cash)',
                       Money.format(task.itemCost),
-                      color: AppColors.secondaryLight),
-                ],
-                const Divider(height: 20),
-                _row('Customer pays in cash', Money.format(customerPays),
-                    bold: true),
-                const SizedBox(height: 3),
-                const Text(
+                      color: AppColors.secondaryLight,
+                    ),
+                  ],
+                  const Divider(height: 20),
+                  _row(
+                    'Customer pays in cash',
+                    Money.format(customerPays),
+                    bold: true,
+                  ),
+                  const SizedBox(height: 3),
+                  const Text(
                     'Cash changes hands on delivery; SurGo does not hold the money.',
-                    style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
-              ],
-            ),
-          ),
-          if (canEnterCosts) ...[
-            const SizedBox(height: 14),
-            _actualsCard(task),
-          ],
-          const SizedBox(height: 18),
-          if (widget.helperMode && record.status.isOpen) ...[
-            SbPrimaryButton(
-              label: _busy ? 'Accepting…' : 'Accept task',
-              icon: Icons.handshake_outlined,
-              background: AppColors.yellow,
-              onAccent: true,
-              onPressed: _busy ? null : () => _accept(task),
-            ),
-            const SizedBox(height: 10),
-          ] else if (helperAction != null) ...[
-            SbPrimaryButton(
-              label: _busy ? 'Saving…' : helperAction,
-              icon: Icons.arrow_forward_rounded,
-              onPressed: _busy ? null : () => _advance(task),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (!record.status.isTerminal)
-            SbOutlineButton(
-              label: 'Cancel errand',
-              icon: Icons.close_rounded,
-              onPressed: _busy ? null : () => _confirmCancel(task),
-            ),
-          if (record.status == PasuyoStatus.cancelled)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                record.cancellationReason == null
-                    ? 'This errand was cancelled. No payment was taken.'
-                    : 'Cancelled: ${record.cancellationReason}',
-                style:
-                    const TextStyle(color: AppColors.muted, fontSize: 11.5),
+                    style: TextStyle(color: AppColors.muted, fontSize: 10.5),
+                  ),
+                ],
               ),
             ),
-        ],
+            if (canEnterCosts) ...[
+              const SizedBox(height: 14),
+              _actualsCard(task),
+            ],
+            const SizedBox(height: 18),
+            if (canAccept) ...[
+              SbPrimaryButton(
+                label: _busy ? 'Accepting…' : 'Accept task',
+                icon: Icons.handshake_outlined,
+                background: AppColors.yellow,
+                onAccent: true,
+                onPressed: _busy ? null : () => _accept(task),
+              ),
+              const SizedBox(height: 10),
+            ] else if (helperAction != null) ...[
+              SbPrimaryButton(
+                label: _busy ? 'Saving…' : helperAction,
+                icon: Icons.arrow_forward_rounded,
+                onPressed: _busy ? null : () => _advance(task),
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (canCancel && !record.status.isTerminal)
+              SbOutlineButton(
+                label: 'Cancel errand',
+                icon: Icons.close_rounded,
+                onPressed: _busy ? null : () => _confirmCancel(task),
+              ),
+            if (record.status == PasuyoStatus.cancelled)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  record.cancellationReason == null
+                      ? 'This errand was cancelled. No payment was taken.'
+                      : 'Cancelled: ${record.cancellationReason}',
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ),
+            if (task.isComplete) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Errand delivered. Your cash receipt stays available here.',
+                style: TextStyle(color: AppColors.secondaryLight, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 14),
+            const _BackToHome(),
+          ],
+        ),
       ),
     );
   }
@@ -856,40 +1244,47 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('What did you actually pay?',
-              style:
-                  TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
+          const Text(
+            'What did you actually pay?',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+          ),
           const SizedBox(height: 4),
           const Text(
-              'Record the unit price for each item so the customer is reimbursed the real amount.',
-              style: TextStyle(color: AppColors.muted, fontSize: 11)),
+            'Record the unit price for each item so the cash receipt uses the real amount.',
+            style: TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
           const SizedBox(height: 12),
-          ..._record!.items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(item.name,
-                          style: const TextStyle(fontSize: 12)),
+          ..._record!.items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.name,
+                      style: const TextStyle(fontSize: 12),
                     ),
-                    SizedBox(
-                      width: 110,
-                      child: TextField(
-                        controller: _costCtrls[item.id],
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        style: const TextStyle(fontSize: 12.5),
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          prefixText: '₱ ',
-                          hintText: '0.00',
-                          border: OutlineInputBorder(),
-                        ),
+                  ),
+                  SizedBox(
+                    width: 110,
+                    child: TextField(
+                      controller: _costCtrls[item.id],
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: const TextStyle(fontSize: 12.5),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        prefixText: '₱ ',
+                        hintText: '0.00',
+                        border: OutlineInputBorder(),
                       ),
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
           SbPrimaryButton(
             label: _busy ? 'Saving…' : 'Save item costs',
             icon: Icons.save_outlined,
@@ -915,13 +1310,16 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
         const SizedBox(width: 9),
         SizedBox(
           width: 62,
-          child: Text(label,
-              style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+          ),
         ),
         Expanded(
-          child: Text(value,
-              style:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -931,19 +1329,102 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-                color: bold ? AppColors.text : AppColors.muted,
-              )),
-        ),
-        Text(value,
+          child: Text(
+            label,
             style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: color ?? AppColors.text,
-            )),
+              fontSize: 12,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              color: bold ? AppColors.text : AppColors.muted,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: color ?? AppColors.text,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BackToHome extends StatelessWidget {
+  const _BackToHome();
+
+  @override
+  Widget build(BuildContext context) => SbOutlineButton(
+    label: 'Back to Home',
+    icon: Icons.home_outlined,
+    onPressed: () => Navigator.of(context).popUntil(
+      (route) =>
+          route.isFirst ||
+          const {'/home', '/earner', '/owner'}.contains(route.settings.name),
+    ),
+  );
+}
+
+class _PasuyoProgress extends StatelessWidget {
+  const _PasuyoProgress({required this.task});
+  final PasuyoTask task;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 250);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          liveRegion: true,
+          child: AnimatedSwitcher(
+            duration: duration,
+            child: task.isOpen
+                ? const Center(
+                    key: ValueKey(PasuyoStatus.available),
+                    child: SbSearchRadar(size: 76),
+                  )
+                : Row(
+                    key: ValueKey(task.status),
+                    children: [
+                      Icon(
+                        task.isComplete
+                            ? Icons.check_circle_outline
+                            : task.isCancelled
+                            ? Icons.cancel_outlined
+                            : Icons.handshake_outlined,
+                        size: 20,
+                        color: AppColors.secondaryLight,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          task.statusLabel,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        PasuyoStepper(task: task),
+        if (!task.isCancelled) ...[
+          const SizedBox(height: 10),
+          TweenAnimationBuilder<double>(
+            duration: duration,
+            tween: Tween(end: task.stepIndex / (PasuyoStatus.flow.length - 1)),
+            builder: (context, value, _) => LinearProgressIndicator(
+              value: value,
+              color: AppColors.yellow,
+              backgroundColor: AppColors.panel3,
+              semanticsLabel: task.statusLabel,
+            ),
+          ),
+        ],
       ],
     );
   }

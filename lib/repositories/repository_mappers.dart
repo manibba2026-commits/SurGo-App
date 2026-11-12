@@ -228,6 +228,8 @@ RideRequestItem rideRequestFromRecord(RideRecord record) {
     distanceKm: record.distanceKm,
     etaMinutes: record.etaMinutes,
     fare: record.fareCentavos,
+    platformFeeCentavos: record.platformFeeCentavos,
+    riderName: record.riderName,
     paymentMethod: paymentMethodLabel(record.paymentMethod),
     note: record.note ?? '',
     requestedAt: displayTimestamp(record.requestedAt, fallback: 'Just now'),

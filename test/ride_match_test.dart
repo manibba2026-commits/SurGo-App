@@ -133,21 +133,18 @@ void main() {
       expect(request.dropoffLatitude, isNotNull);
     });
 
-    test('gives a second request its own id, so two can never collide', () {
+    test('a repeated submission reuses the one live request', () {
       final first = newRequest();
-
       final second = state.createRideRequest();
 
-      expect(second.id, isNot(first.id));
-      expect(db.rideRequests.length, originalCount + 2);
-      // The pointer follows the newest request; the older one is still in the
-      // list so the rider can see it, which is why the booking screen must not
-      // offer "find ride" twice without checking.
-      expect(state.myRideRequest, same(second));
+      expect(second, same(first));
+      expect(db.rideRequests.length, originalCount + 1);
+      expect(state.myRideRequest, same(first));
     });
 
-    test('two requests in the same microsecond still get distinct ids', () {
+    test('a request after cancellation receives a distinct id', () {
       final first = newRequest();
+      state.cancelRideRequest();
       final second = state.createRideRequest();
 
       expect(second.id, isNot(first.id));

@@ -175,25 +175,109 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<bool> signInWithGoogle() async {
+    return _signInWithProvider('google');
+  }
+
+  @override
+  Future<bool> signInWithFacebook() async {
+    return _signInWithProvider('facebook');
+  }
+
+  Future<bool> _signInWithProvider(String provider) async {
     final accounts = DbService.instance.accounts;
     if (accounts.isEmpty) {
-      throw const AuthFailure(
+      throw AuthFailure(
         AuthFailureCode.providerUnavailable,
-        'Google sign-in is unavailable in this preview.',
+        '${_providerLabel(provider)} sign-in is unavailable in this preview.',
       );
     }
     final account = accounts.first;
     final user = AuthUser(
-      id: account.authUserId ?? 'mock:google:${account.id}',
+      id: account.authUserId ?? 'mock:$provider:${account.id}',
       phone: account.phone,
       email: account.email,
       fullName: account.name,
-      providers: const {'google'},
+      providers: {provider},
     );
     _user = user;
     await _persist(user);
     _emit(user);
     return true;
+  }
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    if (!_isValidEmail(email)) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidEmail,
+        'Enter a valid email address.',
+      );
+    }
+    if (password.length < 8) {
+      throw const AuthFailure(
+        AuthFailureCode.weakPassword,
+        'Use a password with at least 8 characters.',
+      );
+    }
+    final account = _accountForEmail(email);
+    if (account == null) {
+      throw const AuthFailure(
+        AuthFailureCode.noAccount,
+        'We could not find a SurGo account with that email. Create one first.',
+      );
+    }
+    final user = AuthUser(
+      id: account.authUserId ?? 'mock:email:${account.id}',
+      phone: account.phone,
+      email: account.email,
+      fullName: account.name,
+      providers: const {'email'},
+    );
+    _user = user;
+    await _persist(user);
+    _emit(user);
+    return user;
+  }
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async {
+    if (!_isValidEmail(email)) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidEmail,
+        'Enter a valid email address.',
+      );
+    }
+    if (password.length < 8) {
+      throw const AuthFailure(
+        AuthFailureCode.weakPassword,
+        'Use a password with at least 8 characters.',
+      );
+    }
+    if (_accountForEmail(email) != null) {
+      throw const AuthFailure(
+        AuthFailureCode.emailInUse,
+        'An account with that email already exists. Sign in instead.',
+      );
+    }
+    final name = fullName?.trim();
+    final user = AuthUser(
+      id: 'mock:email:${email.trim().toLowerCase()}',
+      email: email.trim().toLowerCase(),
+      fullName: name == null || name.isEmpty ? null : name,
+      providers: const {'email'},
+      metadata: const {'surgo_onboarded': true},
+    );
+    _user = user;
+    await _persist(user);
+    _emit(user);
+    return user;
   }
 
   @override
@@ -210,8 +294,8 @@ class MockAuthRepository implements AuthRepository {
     final account = _accountForUser(user);
     final capabilities = account?.approvedCapabilities ??
         const <CapabilityType>{CapabilityType.passenger};
-    final eligible = account?.eligibleCapabilities ??
-        eligibleCapabilitiesFor(capabilities);
+    final eligible =
+        account?.eligibleCapabilities ?? eligibleCapabilitiesFor(capabilities);
 
     return SurgoIdentity(
       userId: user.id,
@@ -342,6 +426,15 @@ class MockAuthRepository implements AuthRepository {
     return null;
   }
 
+  Account? _accountForEmail(String email) {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    for (final account in DbService.instance.accounts) {
+      if (account.email.trim().toLowerCase() == normalized) return account;
+    }
+    return null;
+  }
+
   Account? _accountForUser(AuthUser user) {
     for (final account in DbService.instance.accounts) {
       if (account.authUserId == user.id) return account;
@@ -350,14 +443,16 @@ class MockAuthRepository implements AuthRepository {
       final phone = _accountForPhone(user.phone!);
       if (phone != null) return phone;
     }
-    final email = user.email?.trim().toLowerCase();
-    if (email != null && email.isNotEmpty) {
-      for (final account in DbService.instance.accounts) {
-        if (account.email.trim().toLowerCase() == email) return account;
-      }
-    }
-    return null;
+    final email = user.email;
+    return email == null ? null : _accountForEmail(email);
   }
+
+  bool _isValidEmail(String raw) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(raw.trim());
+
+  String _providerLabel(String provider) => provider.isEmpty
+      ? 'Social'
+      : '${provider[0].toUpperCase()}${provider.substring(1)}';
 
   Set<String> _rolesFromCapabilities(Set<CapabilityType> capabilities) {
     return {

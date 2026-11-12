@@ -10,6 +10,7 @@ import '../data/models.dart';
 import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../data/verification_policy.dart';
+import '../repositories/backend.dart' show mapBackendError;
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_failure.dart';
 import '../repositories/repository_mappers.dart';
@@ -19,7 +20,10 @@ import '../repositories/verification_repository.dart';
 import '../services/fee_calculator.dart';
 import '../services/geoapify_service.dart';
 import '../services/location_publisher.dart';
+import '../services/location_service.dart';
 import '../services/money.dart';
+import '../services/notification_session.dart';
+import '../services/passenger_ride_session.dart';
 import '../services/ride_pricing.dart';
 import 'domain_cache.dart';
 import 'geo.dart';
@@ -54,17 +58,16 @@ enum VerificationSubmitResult {
   alreadyInReview;
 
   String get message => switch (this) {
-        VerificationSubmitResult.ok =>
-          'Submitted — the demo auto-approves after a few seconds.',
-        VerificationSubmitResult.notFound =>
-          'That application no longer exists.',
-        VerificationSubmitResult.incomplete =>
-          'Upload every required document before submitting.',
-        VerificationSubmitResult.notEligible =>
-          'You are not eligible to apply for this yet.',
-        VerificationSubmitResult.alreadyInReview =>
-          'This application is already under review.',
-      };
+    VerificationSubmitResult.ok =>
+      'Submitted — the demo auto-approves after a few seconds.',
+    VerificationSubmitResult.notFound => 'That application no longer exists.',
+    VerificationSubmitResult.incomplete =>
+      'Upload every required document before submitting.',
+    VerificationSubmitResult.notEligible =>
+      'You are not eligible to apply for this yet.',
+    VerificationSubmitResult.alreadyInReview =>
+      'This application is already under review.',
+  };
 }
 
 /// Outcome of submitting a verification application for a hosted account.
@@ -76,7 +79,7 @@ class HostedVerificationResult {
   const HostedVerificationResult._(this.application, this.error);
 
   const HostedVerificationResult.submitted(VerificationApplicationRecord record)
-      : this._(record, null);
+    : this._(record, null);
 
   const HostedVerificationResult.failed(String message) : this._(null, message);
 
@@ -115,12 +118,12 @@ enum PasuyoAcceptRefusal {
   /// refusal needs different advice, and a rejected tap with no explanation
   /// reads as a broken button rather than a rule.
   String get label => switch (this) {
-        PasuyoAcceptRefusal.notOpen => 'Someone already claimed this errand.',
-        PasuyoAcceptRefusal.alreadyHasTask =>
-          'Finish your current errand before taking another.',
-        PasuyoAcceptRefusal.ownCustomer =>
-          'You posted this errand, so you cannot be the helper for it.',
-      };
+    PasuyoAcceptRefusal.notOpen => 'Someone already claimed this errand.',
+    PasuyoAcceptRefusal.alreadyHasTask =>
+      'Finish your current errand before taking another.',
+    PasuyoAcceptRefusal.ownCustomer =>
+      'You posted this errand, so you cannot be the helper for it.',
+  };
 }
 
 /// Everything here lives only in memory for the lifetime of the app run.
@@ -150,7 +153,160 @@ class AppState extends ChangeNotifier {
   /// Installs the data layer. Safe to call before [init]; nothing reads it
   /// until a screen is wired to a repository.
   void configureRepositories(RepositoryRegistry registry) {
+    final monitored = _notifications != null;
+    _stopNotifications();
+    _passengerRides?.stop();
+    _passengerRides = null;
+    _passengerRideGeneration++;
+    _creatingHostedRide = null;
     repositories = registry;
+    if (monitored) _cache?.restart();
+    _startNotifications();
+  }
+
+  NotificationSession? _notifications;
+
+  void _stopNotifications() {
+    _notifications?.stop();
+    _notifications = null;
+  }
+
+  void _startNotifications() {
+    final profileId = identity?.userId;
+    if (!ready ||
+        !isSignedIn ||
+        !usesHostedRideDispatch ||
+        profileId == null ||
+        _notifications != null) {
+      return;
+    }
+    final session = NotificationSession(
+      cache: cache,
+      profileId: profileId,
+      realtime: repositories.realtime,
+    );
+    _notifications = session;
+    session.start();
+    unawaited(session.refresh());
+  }
+
+  DemoRideRequestStore? demoRideStore;
+  PassengerRideSession? _passengerRides;
+  int _passengerRideGeneration = 0;
+  bool _restoringPassengerRide = false;
+  String? _persistedDemoRide;
+  RepositoryFailure? passengerRideFailure;
+  bool passengerRideLoading = false;
+  Future<RideRequestItem>? _creatingHostedRide;
+
+  Future<void> restorePassengerRide() async {
+    final generation = ++_passengerRideGeneration;
+    _passengerRides?.stop();
+    _passengerRides = null;
+    _restoringPassengerRide = true;
+    passengerRideLoading = true;
+    passengerRideFailure = null;
+    try {
+      if (usesHostedRideDispatch) {
+        final profileId = identity?.userId;
+        if (profileId == null) return;
+        final session = PassengerRideSession(
+          rides: repositories.rides,
+          realtime: repositories.realtime,
+          profileId: profileId,
+          onChanged: (record, failure) {
+            if (generation != _passengerRideGeneration) return;
+            passengerRideFailure = failure;
+            if (failure == null) {
+              if (record != null) {
+                applyHostedRideUpdate(record);
+              } else if (liveRideRequest != null) {
+                final requestId = myRideRequest?.id;
+                myRideRequest = null;
+                rideProposal = null;
+                if (activeRide?.id == requestId) {
+                  activeRide = null;
+                  activeRideBreakdown = null;
+                }
+              }
+            }
+            notifyListeners();
+          },
+        );
+        _passengerRides = session;
+        session.start();
+        await session.refresh();
+      } else if (demoRideStore != null) {
+        final profileId = cache.profileKeyFor(ActorRole.passenger);
+        final request = await demoRideStore!.read(profileId);
+        if (generation != _passengerRideGeneration) return;
+        myRideRequest = request;
+        rideProposal = null;
+        activeRide = request != null && request.status.isCommitted
+            ? request
+            : null;
+        activeRideBreakdown = activeRide == null
+            ? null
+            : RidePricing.breakdown(priceFor(activeRide!));
+        if (request != null) {
+          db.rideRequests.removeWhere((ride) => ride.id == request.id);
+          db.rideRequests.insert(0, request);
+          syncRideRoute(request);
+        }
+        _persistedDemoRide = null;
+      }
+    } catch (error) {
+      if (generation == _passengerRideGeneration) {
+        passengerRideFailure = mapBackendError(error);
+      }
+    } finally {
+      if (generation == _passengerRideGeneration) {
+        _restoringPassengerRide = false;
+        passengerRideLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> refreshPassengerRide() async {
+    if (!usesHostedRideDispatch || identity == null) return;
+    if (_passengerRides == null) {
+      await restorePassengerRide();
+      return;
+    }
+    final generation = _passengerRideGeneration;
+    passengerRideLoading = true;
+    notifyListeners();
+    try {
+      await _passengerRides!.refresh();
+    } finally {
+      if (generation == _passengerRideGeneration) {
+        passengerRideLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _persistDemoRide() {
+    if (!ready ||
+        usesHostedRideDispatch ||
+        _restoringPassengerRide ||
+        demoRideStore == null ||
+        !isSignedIn) {
+      return;
+    }
+    final profileId = cache.profileKeyFor(ActorRole.passenger);
+    final request = liveRideRequest;
+    final fingerprint =
+        '$profileId:${request?.id}:${request?.status.wireValue}:${request?.riderId}';
+    if (_persistedDemoRide == fingerprint) return;
+    _persistedDemoRide = fingerprint;
+    unawaited(
+      demoRideStore!.write(profileId, request).catchError((Object error) {
+        _persistedDemoRide = null;
+        passengerRideFailure = RepositoryFailure.unavailable();
+      }),
+    );
   }
 
   DomainCache? _cache;
@@ -171,8 +327,8 @@ class AppState extends ChangeNotifier {
       // to use the auth uuid, because that is what `profiles.id` is there.
       profileKey: () => repositories.isSupabaseBacked
           ? identity?.userId ??
-              currentAccount?.id ??
-              DbService.primaryPassengerId
+                currentAccount?.id ??
+                DbService.primaryPassengerId
           : currentAccount?.id ?? DbService.primaryPassengerId,
       // The seed keeps one profile row per role, so a read for a role is keyed
       // by that row rather than by the demo account that unlocks it.
@@ -229,6 +385,7 @@ class AppState extends ChangeNotifier {
         _syncingLocation = false;
       }
     }
+    _persistDemoRide();
     super.notifyListeners();
   }
 
@@ -265,12 +422,14 @@ class AppState extends ChangeNotifier {
       // settlements are measured the same way.
       completedRides: [
         for (final t in db.riderTrips.where(
-            (t) => t.status == 'Completed' && t.fare > 0))
+          (t) => t.status == 'Completed' && t.fare > 0,
+        ))
           (
             fare: t.fare,
-            platformFee:
-                RidePricing.platformFee(TripDistance.seeded(t.distanceKm))
-          )
+            platformFee: RidePricing.platformFee(
+              TripDistance.seeded(t.distanceKm),
+            ),
+          ),
       ],
       completedRentalTotals: db.rentalHistory
           .where((r) => r.status == 'Completed' || r.status == 'Active')
@@ -291,8 +450,13 @@ class AppState extends ChangeNotifier {
     authStatus = AuthStatus.restoring;
     notifyListeners();
 
+    final provider = _auth;
+    final revision = _authSessionRevision;
     try {
-      final user = await _auth.restoreSession();
+      final user = await provider.restoreSession();
+      if (!identical(provider, _auth) || revision != _authSessionRevision) {
+        return;
+      }
       if (user == null) {
         authStatus = AuthStatus.signedOut;
         notifyListeners();
@@ -303,10 +467,16 @@ class AppState extends ChangeNotifier {
         await _applyAuthUser(user);
       }
     } on AuthFailure catch (failure) {
+      if (!identical(provider, _auth) || revision != _authSessionRevision) {
+        return;
+      }
       authStatus = AuthStatus.error;
       authError = failure;
       notifyListeners();
     } catch (error) {
+      if (!identical(provider, _auth) || revision != _authSessionRevision) {
+        return;
+      }
       authStatus = AuthStatus.error;
       authError = AuthFailure.from(error);
       notifyListeners();
@@ -319,6 +489,50 @@ class AppState extends ChangeNotifier {
   /// `main`; tests and previews keep the in-memory implementation.
   AuthRepository _auth = MockAuthRepository();
   StreamSubscription<AuthUser?>? _authSubscription;
+  StreamSubscription<bool>? _recoverySubscription;
+  int _authProviderGeneration = 0;
+  int _authSessionRevision = 0;
+  bool passwordRecoveryRequired = false;
+  int recoveryEpoch = 0;
+
+  EmailRecoveryRepository? get emailRecovery {
+    final provider = _auth;
+    return provider is EmailRecoveryRepository
+        ? provider as EmailRecoveryRepository
+        : null;
+  }
+
+  Future<void> completePasswordRecovery({
+    required EmailRecoveryRepository repository,
+    required int epoch,
+    required String? userId,
+  }) async {
+    final revision = _authSessionRevision;
+    bool valid() =>
+        passwordRecoveryRequired &&
+        identical(repository, emailRecovery) &&
+        recoveryEpoch == epoch &&
+        isSignedIn &&
+        userId != null &&
+        identity?.userId == userId &&
+        _authSessionRevision == revision;
+    if (!valid()) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidCredentials,
+        'Your recovery session changed. Open a new reset link.',
+      );
+    }
+    final user = await _auth.restoreSession();
+    if (!valid() || user?.id != userId) {
+      throw const AuthFailure(
+        AuthFailureCode.invalidCredentials,
+        'Your recovery session expired. Open a new reset link.',
+      );
+    }
+    passwordRecoveryRequired = false;
+    _pinRequired = devicePinEnabled && !isDemoAccount;
+    notifyListeners();
+  }
 
   /// In-flight identity loads. It is created on first use and cleared once it
   /// drains so every chain starts in its caller's zone.
@@ -336,12 +550,35 @@ class AppState extends ChangeNotifier {
   /// Installs the identity provider and starts listening for session changes.
   /// Safe to call before [init]; events wait for the seed to load.
   void configureAuth(AuthRepository repository) {
+    final monitored = _notifications != null;
+    _stopNotifications();
+    if (monitored) _cache?.restart();
     _authSubscription?.cancel();
+    _recoverySubscription?.cancel();
+    final generation = ++_authProviderGeneration;
+    _authSessionRevision++;
     _auth = repository;
     _pinRequired = false;
-    _authSubscription = repository.authStateChanges.listen(
-      (user) => unawaited(_handleAuthEvent(user)),
+    passwordRecoveryRequired = false;
+    recoveryEpoch++;
+    final recovery = emailRecovery;
+    _recoverySubscription = recovery?.passwordRecoveryEvents.listen(
+      (required) {
+        if (generation != _authProviderGeneration) return;
+        passwordRecoveryRequired = required;
+        recoveryEpoch++;
+        notifyListeners();
+      },
       onError: (Object error) {
+        if (generation != _authProviderGeneration) return;
+        authError = AuthFailure.from(error);
+        notifyListeners();
+      },
+    );
+    _authSubscription = repository.authStateChanges.listen(
+      (user) => unawaited(_handleAuthEvent(user, generation)),
+      onError: (Object error) {
+        if (generation != _authProviderGeneration) return;
         authError = AuthFailure.from(error);
         authStatus = AuthStatus.error;
         notifyListeners();
@@ -349,12 +586,21 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<void> _handleAuthEvent(AuthUser? user) async {
+  Future<void> _handleAuthEvent(AuthUser? user, int generation) async {
+    final revision = _authSessionRevision;
     if (!ready) await init();
+    if (generation != _authProviderGeneration ||
+        revision != _authSessionRevision) {
+      return;
+    }
     // Trust the provider's current session rather than the event payload: an
     // initialSession emitted before a failed refresh must not resurrect a
     // revoked session. restoreSession() validates (and refreshes) it first.
     final current = user == null ? null : await _auth.restoreSession();
+    if (generation != _authProviderGeneration ||
+        revision != _authSessionRevision) {
+      return;
+    }
     if (current == null) {
       if (currentAccount != null || identity != null) {
         _clearSession();
@@ -380,8 +626,11 @@ class AppState extends ChangeNotifier {
   /// restore after verification can both fire for the same sign-in; queuing
   /// keeps the newest identity from being overwritten by an older load.
   Future<void> _applyAuthUser(AuthUser user) {
+    final provider = _auth;
+    final revision = _authSessionRevision;
     final next = (_identityQueue ?? Future<void>.value())
-        .then((_) => _applyAuthUserNow(user));
+        .catchError((Object _) {})
+        .then((_) => _applyAuthUserNow(user, provider, revision));
     late final Future<void> tracked;
     tracked = next.whenComplete(() {
       if (identical(_identityQueue, tracked)) _identityQueue = null;
@@ -390,10 +639,19 @@ class AppState extends ChangeNotifier {
     return tracked;
   }
 
-  Future<void> _applyAuthUserNow(AuthUser user) async {
+  Future<void> _applyAuthUserNow(
+    AuthUser user,
+    AuthRepository provider,
+    int revision,
+  ) async {
+    bool valid() =>
+        identical(provider, _auth) && revision == _authSessionRevision;
+    if (!valid()) return;
     try {
-      final loaded = await _auth.loadIdentity(user);
-      final unchanged = currentAccount != null &&
+      final loaded = await provider.loadIdentity(user);
+      if (!valid()) return;
+      final unchanged =
+          currentAccount != null &&
           identity?.userId == loaded.userId &&
           identity?.phone == loaded.phone &&
           identity?.email == loaded.email &&
@@ -404,9 +662,27 @@ class AppState extends ChangeNotifier {
           setEquals(identity!.capabilities, loaded.capabilities);
       if (unchanged) {
         authStatus = AuthStatus.signedIn;
+        _startNotifications();
         return;
       }
 
+      _stopNotifications();
+      _restoringPassengerRide = true;
+      if (identity?.userId != loaded.userId) {
+        if (passwordRecoveryRequired) recoveryEpoch++;
+        _rentalApprovalTimer?.cancel();
+        _rentalApprovalTimer = null;
+        activeRentalBooking = null;
+        _rentalBookings.clear();
+        lastRentalBreakdown = null;
+        myRideRequest = null;
+        rideProposal = null;
+        activeRide = null;
+        activeRideBreakdown = null;
+        lastCompletedRide = null;
+        lastCompletedRideDriver = null;
+        lastRideBreakdown = null;
+      }
       identity = loaded;
       // A demo identity signed in with its server-verified PIN, so any lock
       // carried in from a restored session is released here.
@@ -427,12 +703,18 @@ class AppState extends ChangeNotifier {
       mode = _preferredModeFor(account);
       authStatus = AuthStatus.signedIn;
       authError = null;
-      notifyListeners();
+      _startNotifications();
+      await restorePassengerRide();
+      if (valid()) notifyListeners();
     } on AuthFailure catch (failure) {
+      if (!valid()) return;
+      _restoringPassengerRide = false;
       authStatus = AuthStatus.error;
       authError = failure;
       notifyListeners();
     } catch (error) {
+      if (!valid()) return;
+      _restoringPassengerRide = false;
       authStatus = AuthStatus.error;
       authError = AuthFailure.from(error);
       notifyListeners();
@@ -452,7 +734,8 @@ class AppState extends ChangeNotifier {
       // same auth user id.
       allowContactMatch: _auth.isMock,
     );
-    final base = existing ??
+    final base =
+        existing ??
         db.registerAccount(
           name: loaded.displayName,
           phone: loaded.phone ?? '',
@@ -490,11 +773,13 @@ class AppState extends ChangeNotifier {
     String? fullName,
     bool createUser = false,
   }) {
-    return _performAuth(() => _auth.requestPhoneOtp(
-          phone: phone,
-          fullName: fullName,
-          createUser: createUser,
-        ));
+    return _performAuth(
+      () => _auth.requestPhoneOtp(
+        phone: phone,
+        fullName: fullName,
+        createUser: createUser,
+      ),
+    );
   }
 
   Future<AuthFailure?> verifyPhoneOtp({
@@ -535,18 +820,75 @@ class AppState extends ChangeNotifier {
   }
 
   Future<AuthFailure?> signInWithGoogle() async {
+    return _signInWithOAuth(
+      launch: _auth.signInWithGoogle,
+      unavailableMessage: 'Google sign-in could not open. Try again.',
+    );
+  }
+
+  Future<AuthFailure?> signInWithFacebook() async {
+    return _signInWithOAuth(
+      launch: _auth.signInWithFacebook,
+      unavailableMessage: 'Facebook sign-in could not open. Try again.',
+    );
+  }
+
+  Future<AuthFailure?> _signInWithOAuth({
+    required Future<bool> Function() launch,
+    required String unavailableMessage,
+  }) async {
     _pinRequired = devicePinEnabled;
     final failure = await _performAuth(() async {
-      final launched = await _auth.signInWithGoogle();
+      final launched = await launch();
       if (!launched) {
-        throw const AuthFailure(
+        throw AuthFailure(
           AuthFailureCode.providerUnavailable,
-          'Google sign-in could not open. Try again.',
+          unavailableMessage,
         );
       }
       // The browser returns through the auth listener. Restoring here also
       // completes immediately for the in-memory provider used by tests.
       final user = await _auth.restoreSession();
+      if (user != null) await _applyAuthUser(user);
+    });
+    if (!devicePinEnabled) _pinRequired = false;
+    return failure;
+  }
+
+  /// Signs in with the email/password identity Supabase already holds. A new
+  /// email account still passes through onboarding because it has no verified
+  /// phone identity yet.
+  Future<AuthFailure?> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    _pinRequired = devicePinEnabled;
+    final failure = await _performAuth(() async {
+      final user = await _auth.signInWithEmail(
+        email: email,
+        password: password,
+      );
+      await _applyAuthUser(user);
+    });
+    if (!devicePinEnabled) _pinRequired = false;
+    return failure;
+  }
+
+  /// Creates an email/password account. A null failure with no signed-in
+  /// account means the project requires email confirmation first; the screen
+  /// shows that instruction instead of treating it as an error.
+  Future<AuthFailure?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async {
+    _pinRequired = devicePinEnabled;
+    final failure = await _performAuth(() async {
+      final user = await _auth.signUpWithEmail(
+        email: email,
+        password: password,
+        fullName: fullName,
+      );
       if (user != null) await _applyAuthUser(user);
     });
     if (!devicePinEnabled) _pinRequired = false;
@@ -779,8 +1121,9 @@ class AppState extends ChangeNotifier {
   /// keeps the existing first-mode behaviour. Normal Supabase sign-in is
   /// untouched because this only runs with the demo provider installed.
   UserMode _preferredModeFor(Account account) {
-    final fallback =
-        availableModes.isEmpty ? UserMode.passenger : availableModes.first;
+    final fallback = availableModes.isEmpty
+        ? UserMode.passenger
+        : availableModes.first;
     if (!demoAuthEnabled) return fallback;
     final preferred = switch (demoAccountRefFor(account.id)?.role) {
       DemoRole.rider || DemoRole.helper => UserMode.earner,
@@ -832,6 +1175,30 @@ class AppState extends ChangeNotifier {
   }
 
   void _clearSession() {
+    _stopNotifications();
+    _rentalApprovalTimer?.cancel();
+    _rentalApprovalTimer = null;
+    activeRentalBooking = null;
+    _rentalBookings.clear();
+    lastRentalBreakdown = null;
+    _authSessionRevision++;
+    passwordRecoveryRequired = false;
+    recoveryEpoch++;
+    _passengerRideGeneration++;
+    _creatingHostedRide = null;
+    passengerRideLoading = false;
+    _passengerRides?.stop();
+    _passengerRides = null;
+    _restoringPassengerRide = false;
+    _persistedDemoRide = null;
+    myRideRequest = null;
+    rideProposal = null;
+    activeRide = null;
+    activeRideBreakdown = null;
+    lastCompletedRide = null;
+    lastCompletedRideDriver = null;
+    lastRideBreakdown = null;
+    passengerRideFailure = null;
     currentAccount = null;
     identity = null;
     _pinRequired = false;
@@ -867,10 +1234,10 @@ class AppState extends ChangeNotifier {
   /// The dashboard route for the current [mode], so sign-in and registration
   /// land a passenger, rider or owner on their own shell.
   String get homeRoute => switch (mode) {
-        UserMode.passenger => '/home',
-        UserMode.earner => '/earner',
-        UserMode.vehicleOwner => '/owner',
-      };
+    UserMode.passenger => '/home',
+    UserMode.earner => '/earner',
+    UserMode.vehicleOwner => '/owner',
+  };
 
   // ---- verification & document requirements ----
 
@@ -920,10 +1287,12 @@ class AppState extends ChangeNotifier {
         .where((c) => c != CapabilityType.passenger)
         .toList();
     if (open.isEmpty) return 'Fully verified';
-    final inFlight = myVerifications.any((a) =>
-        a.status == VerificationStatus.draft ||
-        a.status == VerificationStatus.submitted ||
-        a.status == VerificationStatus.underReview);
+    final inFlight = myVerifications.any(
+      (a) =>
+          a.status == VerificationStatus.draft ||
+          a.status == VerificationStatus.submitted ||
+          a.status == VerificationStatus.underReview,
+    );
     if (inFlight) return 'In progress';
     return '${open.length} ${open.length == 1 ? 'step' : 'steps'} to go';
   }
@@ -939,15 +1308,17 @@ class AppState extends ChangeNotifier {
   /// the slot has been read, and empty for a demo account.
   List<VerificationApplicationRecord> get hostedVerificationApplications =>
       cache.dataOf<List<VerificationApplicationRecord>>(
-          DomainSlot.verificationApplications) ??
+        DomainSlot.verificationApplications,
+      ) ??
       const [];
 
   /// True once the backend has answered for this account, including the empty
   /// answer; the screen uses it to tell "no application yet" from "loading".
-  bool get hostedVerificationLoaded =>
-      cache.stateOf<List<VerificationApplicationRecord>>(
-              DomainSlot.verificationApplications)
-          .isSettled;
+  bool get hostedVerificationLoaded => cache
+      .stateOf<List<VerificationApplicationRecord>>(
+        DomainSlot.verificationApplications,
+      )
+      .isSettled;
 
   /// Makes sure the hosted application list has been read at least once.
   Future<void> ensureHostedVerification() async {
@@ -1151,7 +1522,9 @@ class AppState extends ChangeNotifier {
   }
 
   VerificationApplication? _applicationFor(
-      String accountId, CapabilityType capability) {
+    String accountId,
+    CapabilityType capability,
+  ) {
     for (final app in db.verificationApplications) {
       if (app.accountId == accountId && app.capabilityType == capability) {
         return app;
@@ -1161,7 +1534,9 @@ class AppState extends ChangeNotifier {
   }
 
   VerificationApplication? _applicationForAccount(
-      Account account, String appId) {
+    Account account,
+    String appId,
+  ) {
     for (final app in db.verificationApplications) {
       if (app.id == appId && app.accountId == account.id) return app;
     }
@@ -1173,8 +1548,7 @@ class AppState extends ChangeNotifier {
   String destinationLabel = 'SM Terminal, Downtown';
   MapPoint? _pickedPickup;
   MapPoint? _pickedDestination;
-  List<RideOption> rideOptions = MockData.rideOptions;
-  RideOption selectedRide = MockData.rideOptions.first;
+  RideOption get rideQuote => MockData.rideOptions.first;
 
   MapPoint? get bookingPickup => _pickedPickup ?? _coordinatesFor(pickupLabel);
   MapPoint? get bookingDestination =>
@@ -1213,14 +1587,9 @@ class AppState extends ChangeNotifier {
 
   int get bookingTravelMinutes {
     final route = bookingRouting.route;
-    if (route == null) return selectedRide.etaMinutes;
+    if (route == null) return rideQuote.etaMinutes;
     final minutes = (route.durationSeconds / 60).ceil();
     return minutes < 1 ? 1 : minutes;
-  }
-
-  void selectRide(RideOption option) {
-    selectedRide = option;
-    notifyListeners();
   }
 
   void setPickup(String label, {MapPoint? coordinates}) {
@@ -1237,9 +1606,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Name of the currently chosen vehicle type, for the matching screen.
-  String get rideOptionName => selectedRide.name;
-
   // ---- ride request lifecycle (passenger side) ----
 
   /// The request the passenger just created and is currently matching, or null.
@@ -1255,8 +1621,14 @@ class AppState extends ChangeNotifier {
   /// Returns the stored request so the matching screen can follow it. The
   /// request is inserted before any matching happens: an unpersisted request
   /// would mean a proposal the app cannot trace back to a trip.
-  RideRequestItem createRideRequest({String? forPassenger}) {
-    final option = selectedRide;
+  RideRequestItem createRideRequest({
+    String? forPassenger,
+    String? contactNumber,
+    String? requestChannel,
+  }) {
+    final existing = liveRideRequest;
+    if (existing != null) return existing;
+    final option = rideQuote;
     final pickup = pickupLabel;
     final destination = destinationLabel;
 
@@ -1290,8 +1662,11 @@ class AppState extends ChangeNotifier {
       distanceKm: bookingDistance.kilometres,
       etaMinutes: bookingTravelMinutes,
       fare: option.fare,
+      platformFeeCentavos: bookingPrice.platformFee,
       paymentMethod: 'Cash',
-      note: '',
+      note: assistedName == null || assistedName.isEmpty
+          ? ''
+          : 'Booking for $assistedName${contactNumber == null ? '' : ' · Contact: $contactNumber'}${requestChannel == null ? '' : ' · Requested via $requestChannel'}',
       requestedAt: 'Just now',
       status: RideStatus.searching,
     );
@@ -1316,7 +1691,38 @@ class AppState extends ChangeNotifier {
   /// Returns the presentation model for the inserted row. Throws a
   /// [RepositoryFailure] when the database refused the request, so the booking
   /// screen can show the database's own reason.
-  Future<RideRequestItem> createHostedRideRequest({String? forPassenger}) async {
+  Future<RideRequestItem> createHostedRideRequest({
+    String? forPassenger,
+    String? contactNumber,
+    String? requestChannel,
+  }) {
+    if (!usesHostedRideDispatch) {
+      return Future.error(
+        RepositoryFailure.unsupported('Hosted ride dispatch is not enabled.'),
+      );
+    }
+    final existing = liveRideRequest;
+    if (existing != null) return Future.value(existing);
+    final pending = _creatingHostedRide;
+    if (pending != null) return pending;
+    final operation = _createHostedRideRequest(
+      forPassenger: forPassenger,
+      contactNumber: contactNumber,
+      requestChannel: requestChannel,
+    );
+    _creatingHostedRide = operation;
+    return operation.whenComplete(() {
+      if (identical(_creatingHostedRide, operation)) _creatingHostedRide = null;
+    });
+  }
+
+  Future<RideRequestItem> _createHostedRideRequest({
+    String? forPassenger,
+    String? contactNumber,
+    String? requestChannel,
+  }) async {
+    final generation = _passengerRideGeneration;
+    final rides = repositories.rides;
     final pickup = pickupLabel;
     final destination = destinationLabel;
     final price = bookingPrice;
@@ -1325,9 +1731,9 @@ class AppState extends ChangeNotifier {
     final assistedName = forPassenger?.trim();
     final note = (assistedName == null || assistedName.isEmpty)
         ? null
-        : 'Booking for $assistedName';
+        : 'Booking for $assistedName${contactNumber == null ? '' : ' · Contact: $contactNumber'}${requestChannel == null ? '' : ' · Requested via $requestChannel'}';
 
-    final record = await repositories.rides.createRideRequest(
+    final record = await rides.createRideRequest(
       pickupAddress: pickup,
       // The full label is passed as the barangay hint. The database function
       // strips a leading "Barangay" and matches the known barangay name inside
@@ -1348,9 +1754,16 @@ class AppState extends ChangeNotifier {
       note: note,
     );
 
+    if (generation != _passengerRideGeneration) {
+      throw RepositoryFailure.conflict(
+        'Your session changed. Reopen your current request after signing in.',
+      );
+    }
+    _passengerRides?.recordWrite(record);
     final request = rideRequestFromRecord(record);
     myRideRequest = request;
     rideProposal = null;
+    passengerRideFailure = null;
     syncRideRoute(request);
     notifyListeners();
     return request;
@@ -1365,15 +1778,21 @@ class AppState extends ChangeNotifier {
     RideRequestItem request, {
     Set<String> excludeRiderIds = const {},
   }) async {
-    if (request.status != RideStatus.searching) {
+    if (request.status != RideStatus.searching ||
+        myRideRequest?.id != request.id) {
       return MatchOutcome.noRidersAvailable;
     }
-
+    final generation = _passengerRideGeneration;
     final candidates = await repositories.rides.findAvailableRiders(
       pickupLatitude: request.pickupLatitude,
       pickupLongitude: request.pickupLongitude,
       excludeProfileId: currentAccount?.riderId,
     );
+    if (generation != _passengerRideGeneration ||
+        myRideRequest?.id != request.id ||
+        myRideRequest?.status != RideStatus.searching) {
+      return MatchOutcome.noRidersAvailable;
+    }
 
     final available = [
       for (final candidate in candidates)
@@ -1414,14 +1833,19 @@ class AppState extends ChangeNotifier {
     final proposal = rideProposal;
     if (request == null || proposal == null) return false;
 
+    final generation = _passengerRideGeneration;
     final record = await repositories.rides.assignRider(
       rideId: request.id,
       riderId: proposal.rider.id,
     );
-
-    request.status = record.status;
-    request.riderId = record.riderId ?? proposal.rider.id;
+    if (generation != _passengerRideGeneration ||
+        myRideRequest?.id != record.id) {
+      return false;
+    }
+    _passengerRides?.recordWrite(record);
+    myRideRequest = rideRequestFromRecord(record);
     rideProposal = null;
+    passengerRideFailure = null;
     notifyListeners();
     return true;
   }
@@ -1433,17 +1857,23 @@ class AppState extends ChangeNotifier {
   Future<void> cancelHostedRideRequest({String? reason}) async {
     final request = myRideRequest;
     if (request == null || request.status.isTerminal) return;
-    try {
-      await repositories.rides.cancelRide(
-        rideId: request.id,
-        reason: reason ?? 'Cancelled from matching',
-      );
-    } on RepositoryFailure {
-      // The row may already have been cancelled on the other side. Clearing the
-      // local pointer is still the right screen state.
+    final generation = _passengerRideGeneration;
+    final record = await repositories.rides.cancelRide(
+      rideId: request.id,
+      reason: reason ?? 'Cancelled by passenger',
+    );
+    if (generation != _passengerRideGeneration ||
+        myRideRequest?.id != record.id) {
+      return;
     }
-    myRideRequest = null;
+    _passengerRides?.recordWrite(record);
+    myRideRequest = rideRequestFromRecord(record);
+    if (activeRide?.id == record.id) {
+      activeRide = null;
+      activeRideBreakdown = null;
+    }
     rideProposal = null;
+    passengerRideFailure = null;
     notifyListeners();
   }
 
@@ -1471,10 +1901,54 @@ class AppState extends ChangeNotifier {
   /// database; no money or history is written here. Returns the new status, or
   /// null when there is nothing legal to do.
   void applyHostedRideUpdate(RideRecord record) {
-    if (!usesHostedRideDispatch || activeRide?.id != record.id) return;
+    if (!usesHostedRideDispatch) return;
+    final profileId = identity?.userId;
+    final ownsRequest = profileId != null && record.passengerId == profileId;
+    final ownsActiveTrip =
+        profileId != null &&
+        record.riderId == profileId &&
+        activeRide?.id == record.id;
+    if (!ownsRequest && !ownsActiveTrip) return;
     final updated = rideRequestFromRecord(record);
-    activeRide = updated.status.isTerminal ? null : updated;
-    if (myRideRequest?.id == updated.id) myRideRequest = updated;
+    if (ownsRequest) myRideRequest = updated;
+    if (updated.status.isTerminal) {
+      if (activeRide?.id == updated.id) {
+        activeRide = null;
+        activeRideBreakdown = null;
+      }
+      rideProposal = null;
+      if (updated.status == RideStatus.completed) {
+        lastCompletedRide = rideHistoryFromRow(record);
+        final riderName = record.riderName?.trim();
+        final name = riderName == null || riderName.isEmpty
+            ? 'Rider'
+            : riderName;
+        lastCompletedRideDriver = Driver(
+          name: name,
+          initials: _initialsFor(name),
+          rating: 0,
+          trips: 0,
+          plate: '',
+          vehicleType: 'Ride',
+        );
+        lastRideBreakdown = RidePricing.breakdown(priceFor(updated));
+      }
+    } else if (updated.status.isCommitted) {
+      activeRide = updated;
+      activeRideBreakdown = RidePricing.breakdown(priceFor(updated));
+      rideProposal = null;
+    } else {
+      if (activeRide?.id == updated.id) {
+        activeRide = null;
+        activeRideBreakdown = null;
+      }
+      if (updated.status != RideStatus.searching ||
+          rideProposal?.requestId != updated.id) {
+        rideProposal = null;
+      }
+    }
+    syncRideRoute(updated);
+    passengerRideFailure = null;
     notifyListeners();
   }
 
@@ -1484,33 +1958,54 @@ class AppState extends ChangeNotifier {
     final next = request.nextStatus;
     if (next == null) return null;
 
-    final record = await repositories.rides.advanceRideStatus(
+    final generation = _passengerRideGeneration;
+    final rides = repositories.rides;
+    final record = await rides.advanceRideStatus(
       rideId: request.id,
       status: next.wireValue,
     );
-    final full = await repositories.rides.fetchRide(record.id) ?? record;
-    final updated = rideRequestFromRecord(full);
-
-    if (activeRide?.id == updated.id) {
-      activeRide = updated.status.isTerminal ? null : updated;
+    if (generation != _passengerRideGeneration) return null;
+    _passengerRides?.recordWrite(record);
+    applyHostedRideUpdate(record);
+    RideRecord? full;
+    try {
+      full = await rides.fetchRide(record.id);
+    } on RepositoryFailure {
+      unawaited(_passengerRides?.refresh());
     }
-    if (myRideRequest?.id == updated.id) {
-      myRideRequest = updated;
-    }
-    notifyListeners();
+    if (generation != _passengerRideGeneration) return null;
+    if (full != null) applyHostedRideUpdate(full);
     await cache.refresh(DomainSlot.riderPresence);
     await cache.refresh(DomainSlot.riderIncomingRides);
-    return updated.status;
+    return (full ?? record).status;
   }
+
+  /// Reads the device fix used when a real rider goes online.
+  ///
+  /// Tests replace it so the location plugin is not exercised; production
+  /// leaves it null and falls back to [LocationService].
+  Future<MapPoint?> Function()? riderFixReader;
 
   /// Turns the signed-in rider online or offline in Postgres.
   ///
-  /// No coordinates are sent: a demo rider already has a simulated fix in the
-  /// database, and overwriting it with the device's location would misrepresent
-  /// simulated presence as real GPS. A rider with no stored fix gets the
-  /// database's "share your location" refusal, which the screen shows.
+  /// A real rider shares a device fix when going online because the database
+  /// refuses an online row without coordinates and discovery needs a position
+  /// to rank them. A demo rider keeps the seeded simulated fix: overwriting it
+  /// with the device's location would misrepresent simulated presence as real
+  /// GPS. If the device cannot produce a fix, no coordinates are sent and the
+  /// database's "share your location" refusal is shown.
   Future<void> setHostedRiderOnline(bool online) async {
-    await repositories.rides.setPresence(online: online);
+    MapPoint? fix;
+    if (online && !isDemoAccount) {
+      final readFix =
+          riderFixReader ?? LocationService.instance.getCurrentLocation;
+      fix = await readFix();
+    }
+    await repositories.rides.setPresence(
+      online: online,
+      latitude: fix?.latitude,
+      longitude: fix?.longitude,
+    );
     riderOnline = online;
     notifyListeners();
     await cache.refresh(DomainSlot.riderPresence);
@@ -1598,7 +2093,8 @@ class AppState extends ChangeNotifier {
     // first: "we don't know" must not outrank a known closer rider. Ties break
     // on rating then id, so the order is total and a rerun proposes the same
     // rider.
-    final ranked = [...candidates]..sort((a, b) {
+    final ranked = [...candidates]
+      ..sort((a, b) {
         final da = _distanceKmBetween(a.position, request);
         final db_ = _distanceKmBetween(b.position, request);
         if (da != null && db_ != null) {
@@ -1660,7 +2156,8 @@ class AppState extends ChangeNotifier {
         id: 'n${stamp}_p',
         type: 'ride',
         title: 'Request sent to ${rider.name}',
-        body: '${request.pickup} → ${request.dropoff}. '
+        body:
+            '${request.pickup} → ${request.dropoff}. '
             'The trip starts once ${rider.name} accepts.',
         time: 'Just now',
         read: false,
@@ -1673,7 +2170,8 @@ class AppState extends ChangeNotifier {
         id: 'n${stamp}_r',
         type: 'ride',
         title: 'New ride request',
-        body: '${request.passengerName} wants a ride: '
+        body:
+            '${request.passengerName} wants a ride: '
             '${request.pickup} → ${request.dropoff}.',
         time: 'Just now',
         read: false,
@@ -1868,12 +2366,12 @@ class AppState extends ChangeNotifier {
   /// A plain `microsecondsSinceEpoch` is not enough: two requests created in
   /// the same microsecond produce the same id, and two records sharing an id
   /// would make one of the trips impossible to find or complete.
+  int _requestSequence = 0;
+
   String _nextRequestId() {
-    var id = 'rq${DateTime.now().microsecondsSinceEpoch}';
-    var suffix = 1;
+    var id = 'rq${DateTime.now().microsecondsSinceEpoch}_${_requestSequence++}';
     while (db.rideRequests.any((r) => r.id == id)) {
-      id = 'rq${DateTime.now().microsecondsSinceEpoch}_$suffix';
-      suffix++;
+      id = 'rq${DateTime.now().microsecondsSinceEpoch}_${_requestSequence++}';
     }
     return id;
   }
@@ -1948,27 +2446,39 @@ class AppState extends ChangeNotifier {
         );
 
   /// What the passenger would pay for the selected vehicle, itemised.
-  RidePrice get bookingPrice =>
-      RidePricing.price(providerFare: selectedRide.fare, distance: bookingDistance);
+  RidePrice get bookingPrice => RidePricing.price(
+    providerFare: rideQuote.fare,
+    distance: bookingDistance,
+  );
 
   /// The price a trip settles at, from the fields the request itself carries.
   ///
   /// A request made in this session has coordinates and is priced on them; a
   /// request that came from the seed is priced on the distance it was seeded
   /// with. Both are mock distances, and [TripDistance.source] says which.
-  RidePrice priceFor(RideRequestItem request) => RidePricing.forRequest(
+  RidePrice priceFor(RideRequestItem request) {
+    final storedFee = request.platformFeeCentavos;
+    if (storedFee != null) {
+      return RidePrice(
         providerFare: request.fare,
-        seededKilometres: request.distanceKm,
-        pickup: _pointOf(
-            request.pickupLatitude, request.pickupLongitude),
-        dropoff: _pointOf(
-            request.dropoffLatitude, request.dropoffLongitude),
+        platformFee: storedFee,
+        distance: request.distanceKm > 0
+            ? TripDistance.seeded(request.distanceKm)
+            : TripDistance.unknown,
       );
+    }
+    return RidePricing.forRequest(
+      providerFare: request.fare,
+      seededKilometres: request.distanceKm,
+      pickup: _pointOf(request.pickupLatitude, request.pickupLongitude),
+      dropoff: _pointOf(request.dropoffLatitude, request.dropoffLongitude),
+    );
+  }
 
   MapPoint? _pointOf(double? latitude, double? longitude) =>
       latitude == null || longitude == null
-          ? null
-          : MapPoint(latitude, longitude);
+      ? null
+      : MapPoint(latitude, longitude);
 
   /// The distance estimate shown on the booking screen before a request exists.
   double get estimatedDistanceKm => bookingDistance.kilometres;
@@ -2060,7 +2570,10 @@ class AppState extends ChangeNotifier {
   /// reason as [_notifyRideRequestSent].
   void _notifyRiderResponse(RideRequestItem request, {required bool accepted}) {
     if (usesHostedIdentity) return;
-    final rider = _firstWhereOrNull(db.mapRiders, (r) => r.id == request.riderId);
+    final rider = _firstWhereOrNull(
+      db.mapRiders,
+      (r) => r.id == request.riderId,
+    );
     final name = rider?.name ?? 'Your rider';
     final now = DateTime.now();
     final route = '${request.pickup} → ${request.dropoff}';
@@ -2069,7 +2582,9 @@ class AppState extends ChangeNotifier {
       NotificationItem(
         id: 'n${now.microsecondsSinceEpoch}_a',
         type: 'ride',
-        title: accepted ? '$name accepted your ride' : '$name declined your ride',
+        title: accepted
+            ? '$name accepted your ride'
+            : '$name declined your ride',
         body: accepted
             ? '$route is confirmed. Follow the trip from your activity.'
             : '$route was declined. Book again to find another rider.',
@@ -2431,16 +2946,19 @@ class AppState extends ChangeNotifier {
   /// Reads the same seeded record and bookings the detail screen does, so the
   /// two screens cannot show different answers for the same vehicle.
   RentalListingState rentalListingState(String vehicleId) {
-    final vehicle =
-        _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId);
+    final vehicle = _firstWhereOrNull(
+      db.ownerVehicles,
+      (v) => v.id == vehicleId,
+    );
     if (vehicle == null) return RentalListingState.unknown;
 
     if (vehicle.status == 'Maintenance') return RentalListingState.maintenance;
 
     // An accepted booking means it is out with a renter now, even if the seed
     // still says `Listed`: the live trip is the truer source.
-    final outNow = _rentalBookings
-        .any((b) => b.vehicleId == vehicleId && b.blocksAvailability);
+    final outNow = _rentalBookings.any(
+      (b) => b.vehicleId == vehicleId && b.blocksAvailability,
+    );
     if (vehicle.status == 'Rented' || outNow) return RentalListingState.rented;
 
     return RentalListingState.available;
@@ -2456,17 +2974,15 @@ class AppState extends ChangeNotifier {
     required String vehicleId,
     required DateTime pickupDate,
     required DateTime returnDate,
-  }) =>
-      checkRentalAvailability(
-        vehicle: _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId),
-        pickupDate: pickupDate,
-        returnDate: returnDate,
-        bookings:
-            _rentalBookings.where((b) => b.vehicleId == vehicleId).toList(),
-        ownerRequests: db.ownerBookingRequests
-            .where((r) => r.vehicleId == vehicleId)
-            .toList(),
-      );
+  }) => checkRentalAvailability(
+    vehicle: _firstWhereOrNull(db.ownerVehicles, (v) => v.id == vehicleId),
+    pickupDate: pickupDate,
+    returnDate: returnDate,
+    bookings: _rentalBookings.where((b) => b.vehicleId == vehicleId).toList(),
+    ownerRequests: db.ownerBookingRequests
+        .where((r) => r.vehicleId == vehicleId)
+        .toList(),
+  );
 
   RentalBooking requestRental({
     required String? vehicleId,
@@ -2520,8 +3036,15 @@ class AppState extends ChangeNotifier {
     /// on Accept. The 10s is the simulation, not the business rule: the booking
     /// sits in an explicit [RentalStatus] the whole time, so no screen has to
     /// guess, and the timer walks the same guarded path a real accept would.
+    final revision = _authSessionRevision;
+    final registry = repositories;
     _rentalApprovalTimer = Timer(const Duration(seconds: 10), () {
-      if (activeRentalBooking?.id != booking.id) return; // cancelled/replaced
+      if (revision != _authSessionRevision ||
+          !identical(registry, repositories) ||
+          usesHostedRideDispatch ||
+          activeRentalBooking?.id != booking.id) {
+        return;
+      }
       // Guarded, not assigned: if the booking was cancelled or already moved
       // on, the advance is refused and the timer does nothing.
       if (!booking.advanceTo(RentalStatus.awaitingOwner)) return;
@@ -2625,8 +3148,10 @@ class AppState extends ChangeNotifier {
     // been settled.
     if (!booking.advanceTo(RentalStatus.completed)) return;
 
-    final breakdown =
-        FeeCalculator.breakdownFor(ServiceType.rental, booking.totalFare);
+    final breakdown = FeeCalculator.breakdownFor(
+      ServiceType.rental,
+      booking.totalFare,
+    );
     _syncRentalHistoryStatus(booking, 'Completed');
     db.ownerWalletBalance += breakdown.providerGets;
     _creditOwnerEarnings(breakdown.providerGets);
@@ -2644,9 +3169,22 @@ class AppState extends ChangeNotifier {
   /// Re-reads both sides of the rental book, so an owner's decision shows on
   /// the renter's screen and a new request shows on the owner's.
   Future<void> refreshHostedRentals() async {
-    if (!usesHostedIdentity || !isSignedIn) return;
+    if (!usesHostedRideDispatch || !isSignedIn) return;
+    final revision = _authSessionRevision;
     await cache.refresh(DomainSlot.passengerRentalBookings);
+    if (revision != _authSessionRevision) return;
     await cache.refresh(DomainSlot.ownerRentalBookings);
+  }
+
+  void _requireHostedSession(RepositoryRegistry registry, int revision) {
+    if (!isSignedIn ||
+        !usesHostedRideDispatch ||
+        !identical(registry, repositories) ||
+        revision != _authSessionRevision) {
+      throw RepositoryFailure.conflict(
+        'Your session changed. Reopen the request after signing in.',
+      );
+    }
   }
 
   /// Submits a hosted rental request for [vehicle].
@@ -2663,7 +3201,10 @@ class AppState extends ChangeNotifier {
     double? pickupLatitude,
     double? pickupLongitude,
   }) async {
-    final created = await repositories.rentals.createRequest(
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    final created = await registry.rentals.createRequest(
       vehicleId: vehicle.id,
       startAt: pickupDate,
       endAt: returnDate,
@@ -2673,8 +3214,9 @@ class AppState extends ChangeNotifier {
       pickupLatitude: pickupLatitude,
       pickupLongitude: pickupLongitude,
     );
-    final full =
-        await repositories.rentals.fetchRental(created.id) ?? created;
+    _requireHostedSession(registry, revision);
+    final full = await registry.rentals.fetchRental(created.id) ?? created;
+    _requireHostedSession(registry, revision);
     final booking = rentalBookingFromRecord(full);
     notifyListeners();
     await refreshHostedRentals();
@@ -2686,10 +3228,11 @@ class AppState extends ChangeNotifier {
     OwnerBookingRequest request, {
     required bool accepted,
   }) async {
-    await repositories.rentals.respond(
-      rentalId: request.id,
-      accept: accepted,
-    );
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    await registry.rentals.respond(rentalId: request.id, accept: accepted);
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedRentals();
   }
@@ -2699,27 +3242,33 @@ class AppState extends ChangeNotifier {
   Future<RentalBooking?> advanceHostedRental(RentalBooking booking) async {
     final next = booking.status.next;
     if (next == null) return null;
-    final updated = await repositories.rentals.advance(
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    final updated = await registry.rentals.advance(
       rentalId: booking.id,
       status: next,
     );
-    final full =
-        await repositories.rentals.fetchRental(updated.id) ?? updated;
+    _requireHostedSession(registry, revision);
+    final full = await registry.rentals.fetchRental(updated.id) ?? updated;
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedRentals();
     return rentalBookingFromRecord(full);
   }
 
-  Future<void> cancelHostedRental(RentalBooking booking, {String? reason}) async {
-    try {
-      await repositories.rentals.cancel(
-        rentalId: booking.id,
-        reason: reason ?? 'Cancelled from the app',
-      );
-    } on RepositoryFailure {
-      // The booking may already be terminal on the other side; the refresh
-      // below is still the right screen state.
-    }
+  Future<void> cancelHostedRental(
+    RentalBooking booking, {
+    String? reason,
+  }) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    await registry.rentals.cancel(
+      rentalId: booking.id,
+      reason: reason ?? 'Cancelled from the app',
+    );
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedRentals();
   }
@@ -2737,9 +3286,12 @@ class AppState extends ChangeNotifier {
 
   /// Re-reads the customer's errands, the helper's jobs and the open feed.
   Future<void> refreshHostedErrands() async {
-    if (!usesHostedIdentity || !isSignedIn) return;
+    if (!usesHostedRideDispatch || !isSignedIn) return;
+    final revision = _authSessionRevision;
     await cache.refresh(DomainSlot.customerErrands);
+    if (revision != _authSessionRevision) return;
     await cache.refresh(DomainSlot.providerErrands);
+    if (revision != _authSessionRevision) return;
     await cache.refresh(DomainSlot.openErrands);
   }
 
@@ -2765,7 +3317,10 @@ class AppState extends ChangeNotifier {
     String? recipientName,
     String? recipientPhone,
   }) async {
-    final created = await repositories.pasuyo.createRequest(
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    final created = await registry.pasuyo.createRequest(
       category: category,
       title: title,
       pickupAddress: pickupAddress,
@@ -2785,8 +3340,9 @@ class AppState extends ChangeNotifier {
       recipientName: recipientName,
       recipientPhone: recipientPhone,
     );
-    final full =
-        await repositories.pasuyo.fetchRequest(created.id) ?? created;
+    _requireHostedSession(registry, revision);
+    final full = await registry.pasuyo.fetchRequest(created.id) ?? created;
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedErrands();
     return pasuyoTaskFromRecord(full);
@@ -2794,8 +3350,13 @@ class AppState extends ChangeNotifier {
 
   /// Claims an open errand as the signed-in helper.
   Future<PasuyoTask> acceptHostedErrand(PasuyoTask task) async {
-    final accepted = await repositories.pasuyo.accept(task.id);
-    final full = await repositories.pasuyo.fetchRequest(accepted.id) ?? accepted;
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    final accepted = await registry.pasuyo.accept(task.id);
+    _requireHostedSession(registry, revision);
+    final full = await registry.pasuyo.fetchRequest(accepted.id) ?? accepted;
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedErrands();
     return pasuyoTaskFromRecord(full);
@@ -2806,12 +3367,16 @@ class AppState extends ChangeNotifier {
   Future<PasuyoTask?> advanceHostedErrand(PasuyoTask task) async {
     final next = task.nextStatus;
     if (next == null) return null;
-    final updated = await repositories.pasuyo.advance(
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    final updated = await registry.pasuyo.advance(
       requestId: task.id,
       status: next,
     );
-    final full =
-        await repositories.pasuyo.fetchRequest(updated.id) ?? updated;
+    _requireHostedSession(registry, revision);
+    final full = await registry.pasuyo.fetchRequest(updated.id) ?? updated;
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedErrands();
     return pasuyoTaskFromRecord(full);
@@ -2822,23 +3387,24 @@ class AppState extends ChangeNotifier {
     PasuyoTask task,
     List<Map<String, dynamic>> items,
   ) async {
-    await repositories.pasuyo.setItemActuals(
-      requestId: task.id,
-      items: items,
-    );
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    await registry.pasuyo.setItemActuals(requestId: task.id, items: items);
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedErrands();
   }
 
   Future<void> cancelHostedErrand(PasuyoTask task, {String? reason}) async {
-    try {
-      await repositories.pasuyo.cancel(
-        requestId: task.id,
-        reason: reason ?? 'Cancelled from the app',
-      );
-    } on RepositoryFailure {
-      // Already terminal on the other side; refresh below is authoritative.
-    }
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    await registry.pasuyo.cancel(
+      requestId: task.id,
+      reason: reason ?? 'Cancelled from the app',
+    );
+    _requireHostedSession(registry, revision);
     notifyListeners();
     await refreshHostedErrands();
   }
@@ -2871,15 +3437,17 @@ class AppState extends ChangeNotifier {
     if (existing.isNotEmpty) {
       db.favoriteRiders.remove(existing.first);
     } else {
-      db.favoriteRiders.add(FavoriteRider(
-        id: 'fr${DateTime.now().microsecondsSinceEpoch}',
-        name: name,
-        initials: initials,
-        rating: rating,
-        trips: trips,
-        vehicleType: vehicleType,
-        plate: plate,
-      ));
+      db.favoriteRiders.add(
+        FavoriteRider(
+          id: 'fr${DateTime.now().microsecondsSinceEpoch}',
+          name: name,
+          initials: initials,
+          rating: rating,
+          trips: trips,
+          vehicleType: vehicleType,
+          plate: plate,
+        ),
+      );
     }
     notifyListeners();
   }
@@ -2897,13 +3465,15 @@ class AppState extends ChangeNotifier {
     if (existing.isNotEmpty) {
       db.favoriteVehicles.remove(existing.first);
     } else {
-      db.favoriteVehicles.add(FavoriteVehicle(
-        id: 'fv${DateTime.now().microsecondsSinceEpoch}',
-        name: name,
-        type: type,
-        pricePerDay: pricePerDay,
-        ownerName: ownerName,
-      ));
+      db.favoriteVehicles.add(
+        FavoriteVehicle(
+          id: 'fv${DateTime.now().microsecondsSinceEpoch}',
+          name: name,
+          type: type,
+          pricePerDay: pricePerDay,
+          ownerName: ownerName,
+        ),
+      );
     }
     notifyListeners();
   }
@@ -2949,13 +3519,15 @@ class AppState extends ChangeNotifier {
 
   List<PasuyoTask> get completedPasuyoTasks => db.pasuyoTasks
       .where(
-          (t) => t.status == PasuyoStatus.delivered && t.helperId == earner.id)
+        (t) => t.status == PasuyoStatus.delivered && t.helperId == earner.id,
+      )
       .toList();
 
   /// Every task the signed-in customer posted, for the task tracker.
   List<PasuyoTask> get myPasuyoOrders {
-    final list =
-        db.pasuyoTasks.where((t) => t.customerId == passenger.id).toList();
+    final list = db.pasuyoTasks
+        .where((t) => t.customerId == passenger.id)
+        .toList();
     list.sort((a, b) => b.id.compareTo(a.id));
     return list;
   }
@@ -3002,6 +3574,9 @@ class AppState extends ChangeNotifier {
     required String dropoff,
     required int budget,
     String note = '',
+    bool bookedForSomeone = false,
+    String recipientName = '',
+    String recipientPhone = '',
   }) {
     final task = PasuyoTask(
       id: 'PT${DateTime.now().millisecondsSinceEpoch}',
@@ -3017,6 +3592,9 @@ class AppState extends ChangeNotifier {
       dropoff: dropoff,
       budget: budget,
       note: note,
+      bookedForSomeone: bookedForSomeone,
+      recipientName: bookedForSomeone ? recipientName : '',
+      recipientPhone: bookedForSomeone ? recipientPhone : '',
     );
     db.pasuyoTasks.insert(0, task);
     notifyListeners();
@@ -3048,8 +3626,10 @@ class AppState extends ChangeNotifier {
     }
     task.helperId = earner.id;
     activePasuyoTask = task;
-    activePasuyoBreakdown =
-        FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
+    activePasuyoBreakdown = FeeCalculator.breakdownFor(
+      ServiceType.pasuyo,
+      task.budget,
+    );
     notifyListeners();
     return null;
   }
@@ -3066,8 +3646,10 @@ class AppState extends ChangeNotifier {
     if (next == null) return;
     if (!task.advanceTo(next)) return;
     if (next == PasuyoStatus.delivered) {
-      final breakdown =
-          FeeCalculator.breakdownFor(ServiceType.pasuyo, task.budget);
+      final breakdown = FeeCalculator.breakdownFor(
+        ServiceType.pasuyo,
+        task.budget,
+      );
 
       // The helper is paid the budget less SurGo's commission.
       db.earnerWalletBalance += breakdown.providerGets;
@@ -3161,15 +3743,13 @@ class AppState extends ChangeNotifier {
       db.riderTrips.where((t) => t.status == 'Completed').toList();
 
   /// What the rider earns from rides: every completed fare, in full.
-  int get netRideEarnings =>
-      completedTrips.fold(0, (sum, t) => sum + t.fare);
+  int get netRideEarnings => completedTrips.fold(0, (sum, t) => sum + t.fare);
 
   /// What the rider actually earns from Pasuyo errands, after commission.
   int get netPasuyoEarnings => completedPasuyoTasks.fold(
-        0,
-        (sum, t) =>
-            sum + FeeCalculator.providerShare(ServiceType.pasuyo, t.budget),
-      );
+    0,
+    (sum, t) => sum + FeeCalculator.providerShare(ServiceType.pasuyo, t.budget),
+  );
 
   /// Incentives and tips, from wallet entries explicitly tagged `kind: "bonus"`.
   /// Zero until a bonus is seeded — kept as its own line so the earnings
@@ -3215,16 +3795,20 @@ class AppState extends ChangeNotifier {
   int get ownerEarningsWeek => db.ownerEarningsWeek;
   int get ownerEarningsMonth => db.ownerEarningsMonth;
 
-  void respondToOwnerBooking(OwnerBookingRequest request,
-      {required bool accepted}) {
+  void respondToOwnerBooking(
+    OwnerBookingRequest request, {
+    required bool accepted,
+  }) {
     request.status = accepted ? RentalStatus.accepted : RentalStatus.declined;
     if (accepted) {
       // Prefer the request's own vehicleId. Matching on name instead would mark
       // whichever same-named vehicle sorted first, which is how the wrong
       // listing gets taken off the market.
-      final match = db.ownerVehicles.where((v) =>
-          v.id == request.vehicleId ||
-          (request.vehicleId == null && v.name == request.vehicleName));
+      final match = db.ownerVehicles.where(
+        (v) =>
+            v.id == request.vehicleId ||
+            (request.vehicleId == null && v.name == request.vehicleName),
+      );
       if (match.isNotEmpty) match.first.status = 'Rented';
     }
     notifyListeners();

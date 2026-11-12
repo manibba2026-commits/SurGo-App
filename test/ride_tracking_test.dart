@@ -457,6 +457,63 @@ void main() {
     },
   );
 
+  _trackingTest('real presence expires even while refresh is blocked', (
+    time,
+    rig,
+  ) {
+    rig.backend.points = [];
+    rig.backend.presence = {
+      'profile_id': 'rider-1',
+      'is_online': true,
+      'is_available': false,
+      'latitude': 9.10,
+      'longitude': 126.13,
+      'is_simulated': false,
+      'updated_at': _t0.toIso8601String(),
+    };
+    rig.start();
+    expect(rig.tracking.presence, isNotNull);
+    var changes = 0;
+    rig.tracking.addListener(() => changes++);
+    final blocked = Completer<Map<String, dynamic>?>();
+    rig.backend.readRide = (_) => blocked.future;
+    time.elapse(const Duration(seconds: 45));
+    time.flushMicrotasks();
+    expect(rig.tracking.presence, isNotNull);
+    final before = changes;
+    time.elapse(const Duration(microseconds: 1));
+    time.flushMicrotasks();
+    expect(rig.tracking.presence, isNull);
+    expect(changes, greaterThan(before));
+    blocked.complete(_ride('ride-1'));
+    time.flushMicrotasks();
+    expect(rig.tracking.presence, isNull);
+  });
+
+  for (final stamp in [
+    null,
+    _t0.subtract(const Duration(seconds: 46)),
+    _t0.add(const Duration(seconds: 16)),
+  ]) {
+    _trackingTest('real presence rejects missing or stale time $stamp', (
+      time,
+      rig,
+    ) {
+      rig.backend.presence = {
+        'profile_id': 'rider-1',
+        'is_online': true,
+        'is_available': false,
+        'latitude': 9.10,
+        'longitude': 126.13,
+        'updated_at': stamp?.toIso8601String(),
+      };
+      rig.start();
+      expect(rig.tracking.presence, isNull);
+      expect(rig.tracking.position, isNotNull);
+      expect(rig.tracking.failure, isNull);
+    });
+  }
+
   _trackingTest('newest DESC/limit 1 is read on all channel signals', (
     time,
     rig,

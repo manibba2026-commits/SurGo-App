@@ -66,41 +66,54 @@ export async function sendSemaphoreSms(
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-  );
+  const budget = Number.isFinite(options.timeoutMs) && options.timeoutMs! > 0
+    ? Math.min(options.timeoutMs!, DEFAULT_TIMEOUT_MS)
+    : DEFAULT_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<SemaphoreSendResult>((resolve) => {
+    timer = setTimeout(() => {
+      resolve({ ok: false, reason: 'network_error' });
+      controller.abort();
+    }, budget);
+  });
 
-  let response: Response;
+  const send = async (): Promise<SemaphoreSendResult> => {
+    let response: Response;
+    try {
+      response = await fetchImpl(SEMAPHORE_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: form.toString(),
+        signal: controller.signal,
+      });
+    } catch {
+      return { ok: false, reason: 'network_error' };
+    }
+
+    if (!response.ok) {
+      return { ok: false, reason: 'http_error', status: response.status };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await response.text());
+    } catch {
+      return { ok: false, reason: 'invalid_response', status: response.status };
+    }
+
+    if (!bodyAccepted(parsed)) {
+      return { ok: false, reason: 'rejected', status: response.status };
+    }
+
+    return { ok: true };
+  };
+
   try {
-    response = await fetchImpl(SEMAPHORE_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: form.toString(),
-      signal: controller.signal,
-    });
-  } catch {
-    return { ok: false, reason: 'network_error' };
+    // One deadline covers fetch and body parsing, even if abort is ignored.
+    return await Promise.race([send(), deadline]);
   } finally {
     clearTimeout(timer);
   }
-
-  if (!response.ok) {
-    return { ok: false, reason: 'http_error', status: response.status };
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await response.text());
-  } catch {
-    return { ok: false, reason: 'invalid_response', status: response.status };
-  }
-
-  if (!bodyAccepted(parsed)) {
-    return { ok: false, reason: 'rejected', status: response.status };
-  }
-
-  return { ok: true };
 }

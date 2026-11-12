@@ -5,6 +5,7 @@ import 'package:surgo/data/db_service.dart';
 import 'package:surgo/data/models.dart';
 import 'package:surgo/screens/active_rental_screen.dart';
 import 'package:surgo/screens/assisted_booking_screen.dart';
+import 'package:surgo/screens/booking_screen.dart';
 import 'package:surgo/screens/pasuyo_task_screen.dart';
 import 'package:surgo/screens/rider_earnings_screen.dart';
 import 'package:surgo/screens/rider_profile_screen.dart';
@@ -353,17 +354,22 @@ void main() {
     // The first two fields are the passenger name and contact number.
     await tester.enterText(find.byType(TextField).at(0), 'Lola Iska');
     await tester.enterText(find.byType(TextField).at(1), '0917 000 0000');
-    await tester.tap(find.text('Find a Rider for Them'));
+    await tester.tap(find.text('Review route and fare'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(BookingScreen), findsOneWidget);
+    expect(state.myRideRequest, isNull);
+    await tester.tap(find.text('Find a Ride'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // Booking for someone else must create the request, not merely navigate:
-    // an unwired screen dead-ends on the matching screen's "No active request".
     final request = state.myRideRequest;
     expect(request, isNotNull);
     expect(request!.passengerName, 'Lola Iska',
         reason: 'the rider should see the person actually travelling');
     expect(request.passengerInitials, 'LI');
+    expect(request.note, contains('+639170000000'));
+    expect(request.note, contains('Requested via App'));
     expect(find.text('matching'), findsOneWidget,
         reason: 'the flow continues to the matching screen');
 

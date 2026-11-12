@@ -117,7 +117,7 @@ void main() {
     await _drainSnackBars(tester);
   });
 
-  testWidgets('matching names the rider and sends the request home',
+  testWidgets('selecting a rider stays on matching until an explicit action',
       (tester) async {
     final request = _request();
     state.myRideRequest = request;
@@ -148,9 +148,12 @@ void main() {
     expect(request.riderId, proposal.rider.id);
     expect(state.activeRide, isNull,
         reason: 'selecting a rider is a request, not an accepted trip');
-    expect(find.text('home route'), findsOneWidget,
-        reason: 'the passenger returns home after sending');
+    expect(find.byType(MatchingScreen), findsOneWidget,
+        reason: 'assignment keeps the passenger on their request details');
+    expect(find.text('home route'), findsNothing);
     expect(find.text('live trip route'), findsNothing);
+    expect(find.textContaining(proposal.riderName), findsWidgets);
+    expect(find.text(RideStatus.awaitingAcceptance.label), findsOneWidget);
 
     await _drainSnackBars(tester);
   });

@@ -131,3 +131,54 @@ test('sends the documented Semaphore fields', async () => {
     sendername: 'SurGo',
   });
 });
+
+test('Semaphore deadline bounds a fetch that ignores abort', async () => {
+  let signal: AbortSignal | undefined;
+  const result = await sendSemaphoreSms('639175124809', 'code', {
+    apiKey: 'sem_test_key', timeoutMs: 20,
+    fetchImpl: ((_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>(() => {});
+    }) as typeof fetch,
+  });
+  assert.deepEqual(result, { ok: false, reason: 'network_error' });
+  assert.equal(signal?.aborted, true);
+});
+
+test('Semaphore shares one deadline across fetch and response-body parsing', async () => {
+  let signal: AbortSignal | undefined;
+  let reads = 0;
+  const start = performance.now();
+  const result = await sendSemaphoreSms('639175124809', 'code', {
+    apiKey: 'sem_test_key', timeoutMs: 40,
+    fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      return { ok: true, status: 200, text: () => {
+        reads++;
+        return new Promise<string>(() => {});
+      } } as unknown as Response;
+    }) as typeof fetch,
+  });
+  assert.deepEqual(result, { ok: false, reason: 'network_error' });
+  assert.equal(signal?.aborted, true);
+  assert.equal(reads, 1);
+  assert.ok(performance.now() - start < 1000);
+});
+
+test('Semaphore deadline cannot exceed the two-second provider budget', async (t) => {
+  const delays: number[] = [];
+  const original = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => {
+    delays.push(delay);
+    return original(callback, 5);
+  });
+  for (const timeoutMs of [undefined, 5000, Infinity, NaN, -1, 0]) {
+    const result = await sendSemaphoreSms('639175124809', 'code', {
+      apiKey: 'sem_test_key', timeoutMs,
+      fetchImpl: (() => new Promise<Response>(() => {})) as typeof fetch,
+    });
+    assert.deepEqual(result, { ok: false, reason: 'network_error' });
+  }
+  assert.deepEqual(delays, Array(6).fill(2000));
+});

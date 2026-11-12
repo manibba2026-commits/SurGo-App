@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
 import '../repositories/repository_failure.dart';
-import '../services/ride_pricing.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -13,7 +12,11 @@ import '../widgets/surgo_map.dart';
 import '../widgets/surgo_notice.dart';
 
 class BookingScreen extends StatefulWidget {
-  const BookingScreen({super.key});
+  const BookingScreen({super.key, this.forPassenger, this.contactNumber, this.requestChannel});
+
+  final String? forPassenger;
+  final String? contactNumber;
+  final String? requestChannel;
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
@@ -96,6 +99,11 @@ class _BookingScreenState extends State<BookingScreen> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 12),
+                  if (widget.forPassenger != null) ...[
+                    Text('Passenger: ${widget.forPassenger}',
+                        style: const TextStyle(color: AppColors.muted)),
+                    const SizedBox(height: 12),
+                  ],
                   SbField(
                     label: 'Pickup',
                     value: state.pickupLabel,
@@ -150,72 +158,6 @@ class _BookingScreenState extends State<BookingScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  const Text(
-                    'Choose your vehicle',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final option in state.rideOptions)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: SbTintedCard(
-                        tone: SbTone.ride,
-                        wash: false,
-                        borderColor: state.selectedRide.name == option.name
-                            ? AppColors.primary
-                            : AppColors.border,
-                        onTap: _submitting
-                            ? null
-                            : () => state.selectRide(option),
-                        child: Row(
-                          children: [
-                            SbToneIcon(
-                              tone: SbTone.brand,
-                              icon: option.icon,
-                              size: 42,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    option.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${option.capacityLabel} · ${option.etaLabel}',
-                                    style: const TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  Text(
-                                    '+ ${RidePricing.price(providerFare: option.fare, distance: state.bookingDistance).platformFeeLabel} SurGo fee',
-                                    style: const TextStyle(
-                                      color: AppColors.primaryLight,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Text(
-                              RidePricing.price(
-                                providerFare: option.fare,
-                                distance: state.bookingDistance,
-                              ).providerFareLabel,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   _priceBreakdown(state),
                 ],
               ),
@@ -223,13 +165,16 @@ class _BookingScreenState extends State<BookingScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: SbPrimaryButton(
-                label: 'Find a Ride',
+                label: state.liveRideRequest == null
+                    ? 'Find a Ride'
+                    : 'View current request',
                 foreground: Colors.white,
                 icon: Icons.electric_rickshaw_rounded,
                 feedback: _submitting
                     ? SbButtonFeedback.loading
                     : SbButtonFeedback.idle,
-                onPressed: _submitting || state.bookingRouting.loading
+                onPressed: _submitting || state.passengerRideLoading ||
+                    (state.liveRideRequest == null && state.bookingRouting.loading)
                     ? null
                     : () => _submit(state),
               ),
@@ -241,12 +186,25 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   Future<void> _submit(AppState state) async {
+    if (_submitting) return;
+    if (state.liveRideRequest != null) {
+      Navigator.pushNamed(context, '/matching');
+      return;
+    }
     setState(() => _submitting = true);
     try {
       if (state.usesHostedRideDispatch) {
-        await state.createHostedRideRequest();
+        await state.createHostedRideRequest(
+          forPassenger: widget.forPassenger,
+          contactNumber: widget.contactNumber,
+          requestChannel: widget.requestChannel,
+        );
       } else {
-        state.createRideRequest();
+        state.createRideRequest(
+          forPassenger: widget.forPassenger,
+          contactNumber: widget.contactNumber,
+          requestChannel: widget.requestChannel,
+        );
       }
       if (!mounted) return;
       Navigator.pushNamed(context, '/matching');

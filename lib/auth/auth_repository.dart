@@ -47,6 +47,25 @@ abstract class AuthRepository {
   /// [authStateChanges] (or on the next launch after a web redirect).
   Future<bool> signInWithGoogle();
 
+  /// Opens the Facebook consent screen. Like Google, the session arrives
+  /// through [authStateChanges] or the next launch after the redirect.
+  Future<bool> signInWithFacebook();
+
+  /// Signs in an existing email/password account.
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  });
+
+  /// Creates an email/password account. Returns the new session when the
+  /// provider signs the user in immediately, or null when the project requires
+  /// the user to confirm the email address first.
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  });
+
   Future<void> signOut();
 
   /// Loads the SurGo profile and approved roles for [user].
@@ -71,4 +90,18 @@ abstract class AuthRepository {
     required String phone,
     required String token,
   });
+}
+
+/// Optional hosted email recovery capability, separate from phone/demo auth.
+/// The provider SDK owns the recovery session; callers never store credentials.
+abstract class EmailRecoveryRepository {
+  Future<void> requestPasswordReset(String email);
+
+  /// Updates the password only while the provider has a valid current session.
+  Future<void> updatePassword(String password);
+
+  /// Emits true on password recovery and false on sign-out. Other auth events
+  /// do not clear recovery. Subscribe before processing auth callbacks, retain
+  /// the flag until completion/sign-out, and gate normal authenticated routes.
+  Stream<bool> get passwordRecoveryEvents;
 }

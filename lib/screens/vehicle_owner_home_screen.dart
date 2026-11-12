@@ -14,6 +14,7 @@ import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_notice.dart';
 import 'vehicle_owner_vehicles_screen.dart';
+import 'active_rental_screen.dart';
 
 /// Vehicle Owner mode — Home tab. Shows the owner's fleet at a glance and
 /// any incoming rental booking requests that need a response.
@@ -26,8 +27,13 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
     final state = AppState.instance;
     final content = ListenableBuilder(
       listenable: state,
-      builder: (context, _) => state.usesHostedIdentity
-          ? _hostedBody(context, state)
+      builder: (context, _) =>
+          state.usesHostedIdentity && state.repositories.isSupabaseBacked
+          ? RentalRefreshScope(
+              owner: true,
+              builder: (context, refresh, refreshing, failure) =>
+                  _hostedBody(context, state, refresh, refreshing, failure),
+            )
           : _mockBody(context, state),
     );
     if (embedded) return SafeArea(bottom: false, child: content);
@@ -36,8 +42,9 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
 
   Widget _mockBody(BuildContext context, AppState state) {
     final owner = state.db.vehicleOwner;
-    final pending =
-        state.ownerBookingRequests.where((b) => b.status.isPending).toList();
+    final pending = state.ownerBookingRequests
+        .where((b) => b.status.isPending)
+        .toList();
     final activeRentals = state.ownerBookingRequests
         .where((b) => b.status == RentalStatus.accepted)
         .toList();
@@ -52,12 +59,20 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(owner.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 14)),
-                  Text('Vehicle Owner · Member since ${owner.memberSince}',
-                      style:
-                          const TextStyle(color: AppColors.muted, fontSize: 11)),
+                  Text(
+                    owner.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    'Vehicle Owner · Member since ${owner.memberSince}',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -71,19 +86,24 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
         Row(
           children: [
             Expanded(
-                child: _statBox(
-                    Money.format(state.ownerEarningsToday), 'Today')),
+              child: _statBox(Money.format(state.ownerEarningsToday), 'Today'),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: _statBox(
-                    Money.format(state.ownerEarningsWeek), 'This Week')),
+              child: _statBox(
+                Money.format(state.ownerEarningsWeek),
+                'This Week',
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RepositoryInline<List<VehicleRecord>>(
-              slot: DomainSlot.ownerFleet,
-              placeholder: _statBox('—', 'Vehicles'),
-              data: (context, fleet) => _statBox('${fleet.length}', 'Vehicles'),
-            )),
+              child: RepositoryInline<List<VehicleRecord>>(
+                slot: DomainSlot.ownerFleet,
+                placeholder: _statBox('—', 'Vehicles'),
+                data: (context, fleet) =>
+                    _statBox('${fleet.length}', 'Vehicles'),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 20),
@@ -93,23 +113,28 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Active Rentals',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 13.5)),
+              Text(
+                'Active Rentals',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+              ),
             ],
           ),
           const SizedBox(height: 10),
-          ...activeRentals.map((b) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _activeRentalCard(context, state, b),
-              )),
+          ...activeRentals.map(
+            (b) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _activeRentalCard(context, state, b),
+            ),
+          ),
           const SizedBox(height: 12),
         ],
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('Booking Requests',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+            const Text(
+              'Booking Requests',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+            ),
             SbTag('${pending.length} New', secondary: true),
           ],
         ),
@@ -117,24 +142,44 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
         if (pending.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('No pending booking requests right now.',
-                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            child: Text(
+              'No pending booking requests right now.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
           )
         else
-          ...pending.map((b) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _bookingCard(context, state, b),
-              )),
+          ...pending.map(
+            (b) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _bookingCard(context, state, b),
+            ),
+          ),
       ],
     );
   }
 
   /// Hosted owner home: identity, earnings and bookings all come from the
   /// database. Nothing here falls back to a seeded owner or booking.
-  Widget _hostedBody(BuildContext context, AppState state) {
+  Widget _hostedBody(
+    BuildContext context,
+    AppState state,
+    Future<void> Function() refresh,
+    bool refreshing,
+    String? failure,
+  ) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 90),
       children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: refreshing ? null : refresh,
+            icon: const Icon(Icons.refresh),
+            label: Text(refreshing ? 'Refreshing…' : 'Refresh bookings'),
+          ),
+        ),
+        if (failure != null)
+          Text(failure, style: const TextStyle(color: AppColors.danger)),
         RepositoryInline<ProfileRecord>(
           slot: DomainSlot.profile,
           placeholder: _ownerHeader('Vehicle owner', '—', '?'),
@@ -153,14 +198,21 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
           data: (context, entries) {
             final now = DateTime.now();
             final todayStart = DateTime(now.year, now.month, now.day);
-            final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+            final weekStart = todayStart.subtract(
+              Duration(days: now.weekday - 1),
+            );
             int earnedSince(DateTime from) => entries
-                .where((e) =>
-                    e.isCredit &&
-                    e.createdAt != null &&
-                    !e.createdAt!.isBefore(from))
+                .where(
+                  (e) =>
+                      e.isCredit &&
+                      e.createdAt != null &&
+                      !e.createdAt!.isBefore(from),
+                )
                 .fold(0, (sum, e) => sum + e.amountCentavos);
-            return _earningsRow(earnedSince(todayStart), earnedSince(weekStart));
+            return _earningsRow(
+              earnedSince(todayStart),
+              earnedSince(weekStart),
+            );
           },
         ),
         const SizedBox(height: 20),
@@ -181,15 +233,20 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Active Rentals',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 13.5)),
+                const Text(
+                  'Active Rentals',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                ),
                 const SizedBox(height: 10),
                 for (final record in active)
                   Padding(
+                    key: ValueKey(record.id),
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _activeRentalCard(
-                        context, state, ownerBookingFromRecord(record)),
+                      context,
+                      state,
+                      ownerBookingFromRecord(record),
+                    ),
                   ),
                 const SizedBox(height: 12),
               ],
@@ -205,9 +262,10 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
             children: [
               _bookingHeader(0),
               const SizedBox(height: 10),
-              Text(failure.message,
-                  style:
-                      const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+              Text(
+                failure.message,
+                style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+              ),
             ],
           ),
           data: (context, records) {
@@ -231,11 +289,17 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 14)),
-              Text('Vehicle Owner · Member since $year',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+              Text(
+                name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                'Vehicle Owner · Member since $year',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11),
+              ),
             ],
           ),
         ),
@@ -257,11 +321,12 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
         Expanded(child: _statBox(Money.format(week), 'This Week')),
         const SizedBox(width: 8),
         Expanded(
-            child: RepositoryInline<List<VehicleRecord>>(
-          slot: DomainSlot.ownerFleet,
-          placeholder: _statBox('—', 'Vehicles'),
-          data: (context, fleet) => _statBox('${fleet.length}', 'Vehicles'),
-        )),
+          child: RepositoryInline<List<VehicleRecord>>(
+            slot: DomainSlot.ownerFleet,
+            placeholder: _statBox('—', 'Vehicles'),
+            data: (context, fleet) => _statBox('${fleet.length}', 'Vehicles'),
+          ),
+        ),
       ],
     );
   }
@@ -270,8 +335,10 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text('Booking Requests',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+        const Text(
+          'Booking Requests',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+        ),
         SbTag('$count New', secondary: true),
       ],
     );
@@ -286,12 +353,15 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
         if (pending.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('No pending booking requests right now.',
-                style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            child: Text(
+              'No pending booking requests right now.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+            ),
           )
         else
           for (final b in pending)
             Padding(
+              key: ValueKey(b.id),
               padding: const EdgeInsets.only(bottom: 10),
               child: _hostedBookingCard(b),
             ),
@@ -313,29 +383,42 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${b.renterName} wants to rent',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 13)),
-                    Text(b.vehicleName,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11.5)),
+                    Text(
+                      '${b.renterName} wants to rent',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      b.vehicleName,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text('${b.startDate} → ${b.endDate}',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          Text(
+            '${b.startDate} → ${b.endDate}',
+            style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+          ),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(Money.format(b.totalFare),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primaryLight)),
-              _HostedRespondButtons(request: b),
+              Text(
+                Money.format(b.totalFare),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryLight,
+                ),
+              ),
+              _HostedRespondButtons(key: ValueKey(b.id), request: b),
             ],
           ),
         ],
@@ -353,7 +436,8 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
           onAction: () => Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (_) => const VehicleOwnerVehiclesScreen(embedded: false)),
+              builder: (_) => const VehicleOwnerVehiclesScreen(embedded: false),
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -382,19 +466,27 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(v.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12.5)),
                               Text(
-                                  'Plate ${v.plateNumber} · ${Money.format(v.pricePerDayCentavos)}/day',
-                                  style: const TextStyle(
-                                      color: AppColors.muted, fontSize: 11)),
+                                v.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              Text(
+                                'Plate ${v.plateNumber} · ${Money.format(v.pricePerDayCentavos)}/day',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 11,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        SbTag(v.statusLabel,
-                            secondary: v.statusLabel == 'Listed'),
+                        SbTag(
+                          v.statusLabel,
+                          secondary: v.statusLabel == 'Listed',
+                        ),
                       ],
                     ),
                   ),
@@ -407,7 +499,10 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
   }
 
   Widget _bookingCard(
-      BuildContext context, AppState state, OwnerBookingRequest b) {
+    BuildContext context,
+    AppState state,
+    OwnerBookingRequest b,
+  ) {
     return SbTintedCard(
       tone: SbTone.rent,
       child: Column(
@@ -421,34 +516,50 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${b.renterName} wants to rent',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 13)),
-                    Text(b.vehicleName,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 11.5)),
+                    Text(
+                      '${b.renterName} wants to rent',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      b.vehicleName,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text('${b.startDate} → ${b.endDate}',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+          Text(
+            '${b.startDate} → ${b.endDate}',
+            style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+          ),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(Money.format(b.totalFare),
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primaryLight)),
+              Text(
+                Money.format(b.totalFare),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryLight,
+                ),
+              ),
               Row(
                 children: [
                   OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 9)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                    ),
                     onPressed: () =>
                         state.respondToOwnerBooking(b, accepted: false),
                     child: const Text('Decline'),
@@ -458,7 +569,9 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 9),
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
                     ),
                     onPressed: () {
                       state.respondToOwnerBooking(b, accepted: true);
@@ -480,7 +593,10 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
   }
 
   Widget _activeRentalCard(
-      BuildContext context, AppState state, OwnerBookingRequest b) {
+    BuildContext context,
+    AppState state,
+    OwnerBookingRequest b,
+  ) {
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, '/active_rental', arguments: b),
       child: SbTintedCard(
@@ -496,24 +612,36 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${b.renterName} (Active)',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
-                              color: AppColors.primary)),
-                      Text(b.vehicleName,
-                          style: const TextStyle(
-                              color: AppColors.muted, fontSize: 11.5)),
+                      Text(
+                        '${b.renterName} · ${b.status.shortLabel}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      Text(
+                        b.vehicleName,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right,
-                    color: AppColors.muted, size: 20),
+                const Icon(
+                  Icons.chevron_right,
+                  color: AppColors.muted,
+                  size: 20,
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Text('${b.startDate} → ${b.endDate}',
-                style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
+            Text(
+              '${b.startDate} → ${b.endDate}',
+              style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+            ),
           ],
         ),
       ),
@@ -526,14 +654,19 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          Text(value,
-              style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: SbTone.wallet.accent)),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+              color: SbTone.wallet.accent,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(label,
-              style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.muted, fontSize: 10),
+          ),
         ],
       ),
     );
@@ -544,7 +677,7 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
 /// the request is still open, so the buttons report its refusal instead of
 /// assuming the tap succeeded.
 class _HostedRespondButtons extends StatefulWidget {
-  const _HostedRespondButtons({required this.request});
+  const _HostedRespondButtons({super.key, required this.request});
 
   final OwnerBookingRequest request;
 
@@ -556,11 +689,22 @@ class _HostedRespondButtonsState extends State<_HostedRespondButtons> {
   bool _busy = false;
 
   Future<void> _respond(bool accepted) async {
+    if (_busy || !widget.request.status.isPending) return;
+    final state = AppState.instance;
+    final registry = state.repositories;
+    final userId = state.identity?.userId;
+    bool sameSession() =>
+        mounted &&
+        state.isSignedIn &&
+        identical(state.repositories, registry) &&
+        state.identity?.userId == userId;
     setState(() => _busy = true);
     try {
-      await AppState.instance
-          .respondToHostedRentalRequest(widget.request, accepted: accepted);
-      if (!mounted) return;
+      await state.respondToHostedRentalRequest(
+        widget.request,
+        accepted: accepted,
+      );
+      if (!mounted || !sameSession()) return;
       SurgoNotice.show(
         context,
         accepted
@@ -569,8 +713,15 @@ class _HostedRespondButtonsState extends State<_HostedRespondButtons> {
         tone: accepted ? SbNoticeTone.success : SbNoticeTone.info,
       );
     } on RepositoryFailure catch (failure) {
-      if (!mounted) return;
+      if (!mounted || !sameSession()) return;
       SurgoNotice.show(context, failure.message, tone: SbNoticeTone.warning);
+    } catch (_) {
+      if (!mounted || !sameSession()) return;
+      SurgoNotice.show(
+        context,
+        'Could not respond to this rental. Refresh and try again.',
+        tone: SbNoticeTone.danger,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -582,8 +733,8 @@ class _HostedRespondButtonsState extends State<_HostedRespondButtons> {
       children: [
         OutlinedButton(
           style: OutlinedButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9)),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          ),
           onPressed: _busy ? null : () => _respond(false),
           child: const Text('Decline'),
         ),

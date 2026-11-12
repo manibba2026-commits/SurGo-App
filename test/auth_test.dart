@@ -51,8 +51,7 @@ void main() {
   test('refuses a wrong code and stays signed out', () async {
     final phone = normalizePhoneNumber('+63 917 512 4809')!;
     expect(await state.sendPhoneOtp(phone: phone), isNull);
-    final failure =
-        await state.verifyPhoneOtp(phone: phone, token: '000000');
+    final failure = await state.verifyPhoneOtp(phone: phone, token: '000000');
     expect(failure?.code, AuthFailureCode.invalidCode);
     expect(state.isSignedIn, isFalse);
   });
@@ -142,6 +141,36 @@ void main() {
     expect(state.db.passenger.id, 'P001');
   });
 
+  test('Facebook signs in through the same hosted identity path', () async {
+    final failure = await state.signInWithFacebook();
+    expect(failure, isNull);
+    expect(state.isSignedIn, isTrue);
+    expect(state.identity?.providers, contains('facebook'));
+  });
+
+  test('email signs into the seeded account that owns the address', () async {
+    final failure = await state.signInWithEmail(
+      email: 'jr.derigay@email.com',
+      password: 'surgo-demo',
+    );
+    expect(failure, isNull);
+    expect(state.isSignedIn, isTrue);
+    expect(state.currentAccount?.id, 'ACC001');
+    expect(state.identity?.email, 'jr.derigay@email.com');
+  });
+
+  test('email sign-up creates a fresh passenger account', () async {
+    final failure = await state.signUpWithEmail(
+      email: 'email.tester@surgo.test',
+      password: 'surgo-demo',
+      fullName: 'Email Tester',
+    );
+    expect(failure, isNull);
+    expect(state.isSignedIn, isTrue);
+    expect(state.db.passenger.name, 'Email Tester');
+    expect(state.availableModes, [UserMode.passenger]);
+  });
+
   test('linking Google adds the identity to the session', () async {
     await signIn('+63 917 512 4809');
     expect(state.identity?.hasGoogleIdentity, isFalse);
@@ -204,7 +233,8 @@ void main() {
     expect(expired.code, AuthFailureCode.invalidCode);
 
     final limited = AuthFailure.from(
-      const AuthException('For security purposes, you can only request this after 60 seconds'),
+      const AuthException(
+          'For security purposes, you can only request this after 60 seconds'),
     );
     expect(limited.code, AuthFailureCode.rateLimited);
 
@@ -212,5 +242,53 @@ void main() {
       const AuthException('Phone provider is not enabled'),
     );
     expect(disabled.code, AuthFailureCode.providerUnavailable);
+  });
+
+  test('known email provider failures retain their safe codes and messages', () {
+    const cases = [
+      (
+        'Invalid email',
+        AuthFailureCode.invalidEmail,
+        'Enter a valid email address.',
+      ),
+      (
+        'Email not confirmed',
+        AuthFailureCode.emailNotConfirmed,
+        'Confirm your email address before signing in.',
+      ),
+      (
+        'User already registered',
+        AuthFailureCode.emailInUse,
+        'An account with that email already exists. Sign in instead.',
+      ),
+      (
+        'Invalid login credentials',
+        AuthFailureCode.invalidCredentials,
+        'That email and password do not match a SurGo account.',
+      ),
+      (
+        'Password should be at least 6 characters',
+        AuthFailureCode.weakPassword,
+        'Use a password with at least 8 characters.',
+      ),
+    ];
+    for (final (providerMessage, code, message) in cases) {
+      final failure = AuthFailure.from(AuthException(providerMessage));
+      expect(failure.code, code);
+      expect(failure.message, message);
+    }
+  });
+
+  test('unknown provider failures discard sensitive diagnostics', () {
+    const sentinel = 'SENSITIVE_PROVIDER_SENTINEL';
+    final failure = AuthFailure.from(
+      const AuthException('Internal diagnostic: $sentinel'),
+    );
+
+    expect(failure.code, AuthFailureCode.unknown);
+    expect(failure.message,
+        'Something went wrong signing you in. Please try again.');
+    expect(failure.message, isNot(contains(sentinel)));
+    expect(failure.toString(), isNot(contains(sentinel)));
   });
 }

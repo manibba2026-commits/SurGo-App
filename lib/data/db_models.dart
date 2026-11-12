@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../state/pasuyo_status.dart';
 import '../state/rental_status.dart';
@@ -327,7 +327,7 @@ class RentalHistoryItem {
         ownerName: j['ownerName'],
         startDate: j['startDate'],
         endDate: j['endDate'],
-totalFare: j['totalFare'],
+        totalFare: j['totalFare'],
         status: j['status'],
         startAt: parseIsoTimestamp(j['startAt']),
         endAt: parseIsoTimestamp(j['endAt']),
@@ -1017,7 +1017,7 @@ class Barangay {
 
   const Barangay({required this.name, required this.puroks});
 
-factory Barangay.fromJson(Map<String, dynamic> j) => Barangay(
+  factory Barangay.fromJson(Map<String, dynamic> j) => Barangay(
         name: j['barangay'],
         puroks: (j['puroks'] as List).map((e) => e.toString()).toList(),
       );
@@ -1122,6 +1122,8 @@ class RideRequestItem {
   final double distanceKm;
   final int etaMinutes;
   final int fare;
+  final int? platformFeeCentavos;
+  final String? riderName;
   final String paymentMethod;
   final String note;
   final String requestedAt;
@@ -1156,6 +1158,8 @@ class RideRequestItem {
     required this.distanceKm,
     required this.etaMinutes,
     required this.fare,
+    this.platformFeeCentavos,
+    this.riderName,
     required this.paymentMethod,
     required this.note,
     required this.requestedAt,
@@ -1184,12 +1188,44 @@ class RideRequestItem {
         distanceKm: (j['distanceKm'] as num).toDouble(),
         etaMinutes: j['etaMinutes'],
         fare: j['fare'],
+        platformFeeCentavos: j['platformFeeCentavos'],
+        riderName: j['riderName'],
         paymentMethod: j['paymentMethod'],
         note: j['note'] ?? '',
         requestedAt: j['requestedAt'] ?? 'Just now',
         requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
         status: RideStatus.fromJson(j['status'] ?? 'Pending'),
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'passengerId': passengerId,
+        'riderId': riderId,
+        'vehicleId': vehicleId,
+        'passengerName': passengerName,
+        'passengerInitials': passengerInitials,
+        'passengerRating': passengerRating,
+        'pickupBarangay': pickupBarangay,
+        'pickupPurok': pickupPurok,
+        'pickup': pickup,
+        'pickupLatitude': pickupLatitude,
+        'pickupLongitude': pickupLongitude,
+        'dropoffBarangay': dropoffBarangay,
+        'dropoffPurok': dropoffPurok,
+        'dropoff': dropoff,
+        'dropoffLatitude': dropoffLatitude,
+        'dropoffLongitude': dropoffLongitude,
+        'distanceKm': distanceKm,
+        'etaMinutes': etaMinutes,
+        'fare': fare,
+        'platformFeeCentavos': platformFeeCentavos,
+        'riderName': riderName,
+        'paymentMethod': paymentMethod,
+        'note': note,
+        'requestedAt': requestedAt,
+        'requestedAtIso': requestedAtIso?.toIso8601String(),
+        'status': status.wireValue,
+      };
 
   /// True when [target] is this request's one legal next status.
   bool canAdvanceTo(RideStatus target) => status.next == target;
@@ -1369,7 +1405,8 @@ class OwnerBookingRequest {
   final double? pickupLongitude;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
-/// Where this request sits in [RentalStatus]. Seeded requests only ever reach
+
+  /// Where this request sits in [RentalStatus]. Seeded requests only ever reach
   /// [RentalStatus.requested] or [RentalStatus.declined]; the later states are
   /// the renter's booking advancing, not this request.
   RentalStatus status;
@@ -1426,7 +1463,7 @@ class OwnerBookingRequest {
         pickupLongitude: (j['pickupLongitude'] as num?)?.toDouble(),
         vehicleLatitude: (j['vehicleLatitude'] as num?)?.toDouble(),
         vehicleLongitude: (j['vehicleLongitude'] as num?)?.toDouble(),
-status: RentalStatus.fromJson(j['status'] ?? 'Pending'),
+        status: RentalStatus.fromJson(j['status'] ?? 'Pending'),
         startAt: parseIsoTimestamp(j['startAt']),
         endAt: parseIsoTimestamp(j['endAt']),
       );

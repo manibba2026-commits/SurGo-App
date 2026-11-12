@@ -108,9 +108,9 @@ class DomainCache extends ChangeNotifier {
     required RepositoryRegistry Function() registry,
     required String Function() profileKey,
     required String Function(ActorRole role) seedProfileKey,
-  })  : _registryOf = registry,
-        _profileKeyOf = profileKey,
-        _seedKeyOf = seedProfileKey;
+  }) : _registryOf = registry,
+       _profileKeyOf = profileKey,
+       _seedKeyOf = seedProfileKey;
 
   final RepositoryRegistry Function() _registryOf;
   final String Function() _profileKeyOf;
@@ -123,6 +123,7 @@ class DomainCache extends ChangeNotifier {
   final Map<DomainSlot, RepositoryState<Object?>> _states = {};
   final Map<DomainSlot, int> _generations = {};
   final Set<DomainSlot> _inFlight = {};
+  final Map<DomainSlot, Future<void>> _flights = {};
 
   /// Slots a caller asked to be read again while an older read still held
   /// them. One entry per slot is enough: the parked request wants the newest
@@ -158,7 +159,10 @@ class DomainCache extends ChangeNotifier {
   /// A screen calls this once when it opens; later updates arrive through
   /// [onAppDataChanged] in mock mode or [retry].
   Future<void> ensure(DomainSlot slot) =>
-      _states.containsKey(slot) ? Future.value() : _load(slot, keepOld: false);
+      _flights[slot] ??
+      (_states.containsKey(slot)
+          ? Future.value()
+          : _load(slot, keepOld: false));
 
   /// Reads [slot] again, keeping the previous result on screen until it lands.
   Future<void> refresh(DomainSlot slot) => _load(slot, keepOld: true);
@@ -210,49 +214,43 @@ class DomainCache extends ChangeNotifier {
     }
   }
 
-  Future<void> _load(DomainSlot slot, {required bool keepOld}) async {
-    if (_inFlight.contains(slot)) {
-      // The read holding this slot was asked for by an earlier caller, against
-      // whatever identity and snapshot were current then. Retiring it by
-      // generation is what keeps a previous session's answer out of the cache,
-      // and parking this request is what stops the slot from settling for good
-      // on an answer nobody asked for anymore.
-      _generations[slot] = (_generations[slot] ?? 0) + 1;
-      _rerun.add(slot);
-      if (!keepOld) {
-        _states[slot] = const RepositoryState.loading();
-        _notify();
-      }
-      return;
-    }
-    final generation = (_generations[slot] ?? 0) + 1;
-    _generations[slot] = generation;
+  Future<void> _load(DomainSlot slot, {required bool keepOld}) {
+    if (_disposed) return Future.value();
+    _generations[slot] = (_generations[slot] ?? 0) + 1;
     if (!keepOld) {
       _states[slot] = const RepositoryState.loading();
       _notify();
     }
-    _inFlight.add(slot);
-    final next = await _attempt(slot);
-    _inFlight.remove(slot);
-    final rerunRequested = _rerun.remove(slot);
-
-    // A newer read for this slot has started, so this answer is stale.
-    if (_generations[slot] != generation) {
-      if (rerunRequested) _rerunLoad(slot, keepOld: false);
-      return;
+    final flight = _flights[slot];
+    if (flight != null) {
+      _rerun.add(slot);
+      return flight;
     }
-    _states[slot] = next;
-    _notify();
-    if (rerunRequested) _rerunLoad(slot, keepOld: true);
+    final done = Completer<void>();
+    _flights[slot] = done.future;
+    _inFlight.add(slot);
+    unawaited(_drain(slot, done));
+    return done.future;
   }
 
-  /// Runs the read that was asked for while [_load] was still waiting.
-  ///
-  /// The parked read is the one that sees the current profile key, because it
-  /// only reaches [_read] once the retired read has let go of the slot.
-  void _rerunLoad(DomainSlot slot, {required bool keepOld}) {
-    if (_disposed) return;
-    unawaited(_load(slot, keepOld: keepOld));
+  Future<void> _drain(DomainSlot slot, Completer<void> done) async {
+    try {
+      do {
+        _rerun.remove(slot);
+        final generation = _generations[slot];
+        final next = await _attempt(slot);
+        if (_disposed) return;
+        if (_generations[slot] == generation) {
+          _states[slot] = next;
+          _notify();
+        }
+      } while (_rerun.contains(slot));
+    } finally {
+      _inFlight.remove(slot);
+      _flights.remove(slot);
+      _rerun.remove(slot);
+      done.complete();
+    }
   }
 
   /// Runs [slot]'s read and turns any answer into a state.
@@ -266,11 +264,13 @@ class DomainCache extends ChangeNotifier {
     } on RepositoryFailure catch (failure) {
       return RepositoryState<Object?>.failure(failure);
     } catch (error) {
-      return RepositoryState<Object?>.failure(RepositoryFailure(
-        RepositoryFailureKind.unknown,
-        'This read did not complete as expected.',
-        cause: error,
-      ));
+      return RepositoryState<Object?>.failure(
+        RepositoryFailure(
+          RepositoryFailureKind.unknown,
+          'This read did not complete as expected.',
+          cause: error,
+        ),
+      );
     }
   }
 
@@ -279,11 +279,15 @@ class DomainCache extends ChangeNotifier {
     final profileId = _keyFor(ActorRole.signedInUser);
     return switch (slot) {
       DomainSlot.profile => registry.profiles.fetchProfile(profileId),
-      DomainSlot.profileRoles => registry.profiles.fetchApprovedRoles(profileId),
-      DomainSlot.passengerProfile =>
-        registry.profiles.fetchProfile(_keyFor(ActorRole.passenger)),
-      DomainSlot.earnerProfile =>
-        registry.profiles.fetchProfile(_keyFor(ActorRole.earner)),
+      DomainSlot.profileRoles => registry.profiles.fetchApprovedRoles(
+        profileId,
+      ),
+      DomainSlot.passengerProfile => registry.profiles.fetchProfile(
+        _keyFor(ActorRole.passenger),
+      ),
+      DomainSlot.earnerProfile => registry.profiles.fetchProfile(
+        _keyFor(ActorRole.earner),
+      ),
       DomainSlot.earnerProviderProfile =>
         registry.profiles.fetchProviderProfile(_keyFor(ActorRole.earner)),
       DomainSlot.barangays => _readBarangays(registry),
@@ -295,41 +299,56 @@ class DomainCache extends ChangeNotifier {
         registry.notifications.fetchNotifications(_keyFor(ActorRole.passenger)),
       DomainSlot.earnerNotificationFeed =>
         registry.notifications.fetchNotifications(_keyFor(ActorRole.earner)),
-      DomainSlot.passengerRecentRides =>
-        registry.rides.fetchRideHistory(_keyFor(ActorRole.passenger), limit: 3),
-      DomainSlot.passengerRideHistory =>
-        registry.rides.fetchRideHistory(_keyFor(ActorRole.passenger)),
-      DomainSlot.passengerWalletBalance =>
-        registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.passenger)),
-      DomainSlot.earnerWalletBalance =>
-        registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.earner)),
-      DomainSlot.ownerWalletBalance =>
-        registry.wallet.fetchBalanceCentavos(_keyFor(ActorRole.vehicleOwner)),
-      DomainSlot.passengerWalletEntries =>
-        registry.wallet.fetchTransactions(_keyFor(ActorRole.passenger)),
-      DomainSlot.earnerWalletEntries =>
-        registry.wallet.fetchTransactions(_keyFor(ActorRole.earner)),
-      DomainSlot.ownerWalletEntries =>
-        registry.wallet.fetchTransactions(_keyFor(ActorRole.vehicleOwner)),
-      DomainSlot.ownerFleet =>
-        registry.vehicles.fetchVehiclesOwnedBy(_keyFor(ActorRole.vehicleOwner)),
+      DomainSlot.passengerRecentRides => registry.rides.fetchRideHistory(
+        _keyFor(ActorRole.passenger),
+        limit: 3,
+      ),
+      DomainSlot.passengerRideHistory => registry.rides.fetchRideHistory(
+        _keyFor(ActorRole.passenger),
+      ),
+      DomainSlot.passengerWalletBalance => registry.wallet.fetchBalanceCentavos(
+        _keyFor(ActorRole.passenger),
+      ),
+      DomainSlot.earnerWalletBalance => registry.wallet.fetchBalanceCentavos(
+        _keyFor(ActorRole.earner),
+      ),
+      DomainSlot.ownerWalletBalance => registry.wallet.fetchBalanceCentavos(
+        _keyFor(ActorRole.vehicleOwner),
+      ),
+      DomainSlot.passengerWalletEntries => registry.wallet.fetchTransactions(
+        _keyFor(ActorRole.passenger),
+      ),
+      DomainSlot.earnerWalletEntries => registry.wallet.fetchTransactions(
+        _keyFor(ActorRole.earner),
+      ),
+      DomainSlot.ownerWalletEntries => registry.wallet.fetchTransactions(
+        _keyFor(ActorRole.vehicleOwner),
+      ),
+      DomainSlot.ownerFleet => registry.vehicles.fetchVehiclesOwnedBy(
+        _keyFor(ActorRole.vehicleOwner),
+      ),
       DomainSlot.ownerVehicleDocuments => _readOwnerDocuments(registry),
       DomainSlot.verificationApplications =>
         registry.verifications.fetchApplications(profileId),
-      DomainSlot.riderPresence =>
-        registry.rides.fetchPresence(_keyFor(ActorRole.earner)),
-      DomainSlot.riderIncomingRides =>
-        registry.rides.fetchRidesForRider(_keyFor(ActorRole.earner)),
+      DomainSlot.riderPresence => registry.rides.fetchPresence(
+        _keyFor(ActorRole.earner),
+      ),
+      DomainSlot.riderIncomingRides => registry.rides.fetchRidesForRider(
+        _keyFor(ActorRole.earner),
+      ),
       DomainSlot.serviceAreas => registry.catalog.fetchServiceAreas(),
       DomainSlot.rentalListings => _readRentalListings(registry),
       DomainSlot.passengerRentalBookings =>
         registry.rentals.fetchRentalsByRenter(_keyFor(ActorRole.passenger)),
-      DomainSlot.ownerRentalBookings =>
-        registry.rentals.fetchRentalsByOwner(_keyFor(ActorRole.vehicleOwner)),
-      DomainSlot.customerErrands =>
-        registry.pasuyo.fetchRequestsByCustomer(_keyFor(ActorRole.passenger)),
-      DomainSlot.providerErrands =>
-        registry.pasuyo.fetchRequestsByProvider(_keyFor(ActorRole.earner)),
+      DomainSlot.ownerRentalBookings => registry.rentals.fetchRentalsByOwner(
+        _keyFor(ActorRole.vehicleOwner),
+      ),
+      DomainSlot.customerErrands => registry.pasuyo.fetchRequestsByCustomer(
+        _keyFor(ActorRole.passenger),
+      ),
+      DomainSlot.providerErrands => registry.pasuyo.fetchRequestsByProvider(
+        _keyFor(ActorRole.earner),
+      ),
       DomainSlot.openErrands => _readOpenErrands(registry),
     };
   }
@@ -341,8 +360,8 @@ class DomainCache extends ChangeNotifier {
   /// so there the role selects which one.
   String _keyFor(ActorRole role) =>
       _registryOf().isSupabaseBacked || role == ActorRole.signedInUser
-          ? _profileKeyOf()
-          : _seedKeyOf(role);
+      ? _profileKeyOf()
+      : _seedKeyOf(role);
 
   /// The same rule, for a caller outside the cache.
   ///
@@ -354,7 +373,8 @@ class DomainCache extends ChangeNotifier {
   /// Barangays belong to the area a build actually serves, so the area is read
   /// first rather than assuming the seed's stand-in id.
   Future<List<BarangayRecord>> _readBarangays(
-      RepositoryRegistry registry) async {
+    RepositoryRegistry registry,
+  ) async {
     final areas = await registry.catalog.fetchServiceAreas();
     if (areas.isEmpty) {
       throw RepositoryFailure.unsupported(
@@ -379,13 +399,15 @@ class DomainCache extends ChangeNotifier {
   }
 
   Future<List<VehicleRecord>> _readRentalListings(
-      RepositoryRegistry registry) async {
+    RepositoryRegistry registry,
+  ) async {
     final areaId = await _activeServiceAreaId(registry);
     return registry.vehicles.fetchListedVehicles(serviceAreaId: areaId);
   }
 
   Future<List<ServiceRequestRecord>> _readOpenErrands(
-      RepositoryRegistry registry) async {
+    RepositoryRegistry registry,
+  ) async {
     final areaId = await _activeServiceAreaId(registry);
     return registry.pasuyo.fetchOpenFeed(areaId);
   }
@@ -393,9 +415,11 @@ class DomainCache extends ChangeNotifier {
   /// Documents are filed per vehicle, so the fleet is read first and the
   /// paperwork asked for by those ids; an owner with no vehicles has no files.
   Future<List<VehicleDocumentRecord>> _readOwnerDocuments(
-      RepositoryRegistry registry) async {
-    final fleet = await registry.vehicles
-        .fetchVehiclesOwnedBy(_keyFor(ActorRole.vehicleOwner));
+    RepositoryRegistry registry,
+  ) async {
+    final fleet = await registry.vehicles.fetchVehiclesOwnedBy(
+      _keyFor(ActorRole.vehicleOwner),
+    );
     return registry.vehicles.fetchDocuments([for (final v in fleet) v.id]);
   }
 

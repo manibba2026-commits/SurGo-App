@@ -1,0 +1,139 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>SurGo Flow Simulator</title>
+<style>
+:root{--bg:#0f1316;--card:#1a2025;--line:#2a333a;--tx:#eef2f4;--mu:#8b98a1;--ac:#8b5cf6;--bl:#4da3ff;--wa:#ffb84d;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}html,body{height:100%}
+*{box-sizing:border-box;margin:0}
+body{background:#07090b;color:var(--tx);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;justify-content:center}
+#app{position:relative;width:min(430px,100vw);height:100%;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+#mapw{position:relative;flex:1;min-height:0}#map{width:100%;height:100%;display:block}
+#tabs{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:6px;overflow-x:auto;z-index:2;scrollbar-width:none}
+#tabs button{flex:none;border:1px solid var(--line);background:#11171bd9;backdrop-filter:blur(8px);color:var(--tx);padding:8px 12px;border-radius:99px;font:600 12px inherit;cursor:pointer;transition:.2s}
+#tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+#sheet{flex:none;max-height:54%;overflow:auto;background:var(--card);border-radius:22px 22px 0 0;padding:16px 16px 20px;box-shadow:0 -10px 30px #0008;position:relative;z-index:2}
+#sheet.in{animation:up .45s cubic-bezier(.2,.9,.3,1)}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+h3{font-size:16px;margin-bottom:8px}.mu{color:var(--mu);font-size:12px}.r{margin-left:auto;font-weight:700}.ac{color:var(--ac)}.ok{color:var(--ac);margin-top:8px;font-size:12px}
+.row{display:flex;gap:10px;align-items:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.c{display:block;width:100%;text-align:left;background:#212a30;border:1px solid var(--line);color:var(--tx);border-radius:14px;padding:10px 12px;margin-top:8px;font:inherit;cursor:pointer;transition:.15s}
+.grid .c{margin-top:0}.c:hover,.c:active{border-color:var(--ac);transform:scale(.985)}
+.b{width:100%;margin-top:12px;border:0;border-radius:14px;padding:13px;background:var(--ac);color:#fff;font:700 14px inherit;cursor:pointer}
+input{flex:1;min-width:0;background:#11171b;border:1px solid var(--line);color:var(--tx);border-radius:12px;padding:10px;font:inherit;margin-bottom:8px}
+.big{font-size:26px;font-weight:800;line-height:1.1}.av{width:46px;height:46px;border-radius:50%;background:#212a30;display:grid;place-items:center;font-size:24px;flex:none}
+.bar{height:6px;background:#11171b;border-radius:9px;margin-top:12px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--ac);border-radius:9px}
+.rc{margin-top:8px;border:1px dashed var(--line);border-radius:14px;padding:6px 12px}.rc div{display:flex;justify-content:space-between;padding:5px 0}
+.st{font-size:30px;color:#3a454d;text-align:center;margin-top:8px;letter-spacing:6px;cursor:pointer}.st .on{color:var(--wa)}
+.stp{display:flex;justify-content:space-between;margin-bottom:12px}.stp div{flex:1;text-align:center;font-size:10px;color:var(--mu);position:relative}
+.stp div:before{content:"";display:block;width:12px;height:12px;border-radius:50%;background:#2a333a;margin:0 auto 4px;transition:.4s}
+.stp .d{color:var(--tx)}.stp .d:before{background:var(--ac);box-shadow:0 0 0 4px #8b5cf655}
+.pop{animation:pp .5s cubic-bezier(.3,1.6,.5,1);transform-box:fill-box;transform-origin:center}@keyframes pp{from{transform:scale(0)}}
+.pl{transform-box:fill-box;transform-origin:center;animation:pu 1.8s ease-out infinite}@keyframes pu{from{transform:scale(.7);opacity:.6}to{transform:scale(2);opacity:0}}
+.rad{transform-box:fill-box;transform-origin:center;animation:rd 1.8s ease-out infinite;opacity:0}@keyframes rd{from{transform:scale(.1);opacity:.8}to{transform:scale(1);opacity:0}}
+#lk{stroke:#fff;stroke-width:1.5;stroke-dasharray:4 4;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-8}}
+#lkt{fill:#fff;font:700 10px system-ui;text-anchor:middle;paint-order:stroke;stroke:#0f1316;stroke-width:3px}
+.pn{fill:#8b98a1;font:600 8px system-ui;text-anchor:middle}
+#home{position:absolute;inset:0;z-index:9;background:radial-gradient(circle at 85% -5%,#8b5cf640,transparent 55%),var(--bg);display:flex;flex-direction:column;padding:18px 16px 0}
+#home h1{font-size:24px;line-height:1.2;margin:8px 0 0}
+.sb{background:var(--card);border:1px solid var(--line);border-radius:28px;padding:14px 16px;margin:16px 0;color:var(--mu)}
+.sv{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sv button{background:var(--card);border:1px solid var(--line);color:var(--tx);border-radius:22px;padding:16px 14px;text-align:left;font:inherit;cursor:pointer;transition:.15s}
+.sv button:active{transform:scale(.95)}
+.sv i{display:grid;place-items:center;width:46px;height:46px;border-radius:16px;background:#8b5cf633;font-size:24px;font-style:normal;margin-bottom:10px}
+.sv b{display:block;font-size:15px}
+#nav{margin:auto -16px 0;display:flex;background:#161c20;padding:10px 8px 12px}
+#nav div{flex:1;text-align:center;font-size:11px;color:var(--mu)}
+#nav span{display:block;margin:0 auto 3px;width:56px;line-height:30px;border-radius:16px;font-size:18px}
+#nav .on{color:var(--tx)}#nav .on span{background:#8b5cf64d}
+</style></head><body><div id="app">
+<div id="mapw"><div id="tabs"><button class="on" onclick="home()">‹ Home</button><button id="ttl"></button></div>
+<svg id="map" viewBox="0 0 400 480" preserveAspectRatio="xMidYMid slice"><rect x="-50" y="-50" width="500" height="600" fill="#11171b"/><g id="blocks"></g>
+<path d="M300 480 Q340 420 440 400 L440 520 L300 520Z" fill="#0d2a3c"/><text x="372" y="470" fill="#2f6b8f" font-size="9" font-style="italic" text-anchor="middle">Tandag Bay</text>
+<g id="roads"></g><g id="pins"></g><g id="route"></g><g id="rad"></g><line id="lk" style="display:none"/><text id="lkt" style="display:none"></text><g id="act"></g></svg></div>
+<div id="sheet"></div><div id="home"></div></div>
+<script>
+const $=s=>document.querySelector(s),AC='#8b5cf6',BL='#4da3ff',WA='#ffb84d';
+const S=(t,a,p)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',t);for(const k in a)e.setAttribute(k,a[k]);(p||$('#act')).appendChild(e);return e};
+const X=[40,120,200,280,360],Y=[70,150,230,310,390],G=(i,j)=>({x:X[i],y:Y[j]}),M=6.25;
+const PL={home:{...G(2,2),n:'You',e:'📍'},market:{...G(0,1),n:'Public Market',e:'🏪'},plaza:{...G(3,0),n:'City Plaza',e:'⛲'},hosp:{...G(4,3),n:'Hospital',e:'🏥'},port:{...G(1,4),n:'Port Area',e:'⚓'},school:{...G(0,3),n:'High School',e:'🏫'},mall:{...G(3,4),n:'Mall',e:'🛍️'}};
+const FARE={moto:{n:'Motorcycle',e:'🏍️',b:3000,k:900,s:1},tri:{n:'Tricycle',e:'🛺',b:4000,k:1200,s:3},car:{n:'Car',e:'🚗',b:8000,k:1800,s:4}};
+const RI={moto:['Jun D.','Honda Click · ABC 1234',4.9],tri:['Tata Ben','Tricycle · TC-0451',4.8],car:['Sir Ramil','Toyota Vios · NBD 7721',4.9]};
+const fmt=c=>'₱'+(c/100).toLocaleString('en-PH',{minimumFractionDigits:2}),fare=(f,k)=>Math.round((f.b+f.k*k)/100)*100;
+const rt=(a,b,v)=>a.x==b.x||a.y==b.y?[a,b]:(v?[a,{x:a.x,y:b.y},b]:[a,{x:b.x,y:a.y},b]);
+const len=p=>p.reduce((s,q,i)=>i?s+Math.hypot(q.x-p[i-1].x,q.y-p[i-1].y):0,0),km=u=>u*M/1000,eta=k=>Math.max(1,Math.round(k/.4)),dur=p=>Math.max(2600,len(p)*18);
+const ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2,wait=ms=>new Promise(r=>setTimeout(r,ms)),set=(i,v)=>{const e=document.getElementById(i);if(e)e.textContent=v};
+function at(p,f){let L=len(p)*f,s=0;for(let i=1;i<p.length;i++){const d=Math.hypot(p[i].x-p[i-1].x,p[i].y-p[i-1].y);if(L<=s+d||i==p.length-1){const t=d?Math.min(1,(L-s)/d):0;return{x:p[i-1].x+(p[i].x-p[i-1].x)*t,y:p[i-1].y+(p[i].y-p[i-1].y)*t}}s+=d}}
+const put=(el,q)=>el.setAttribute('transform',`translate(${q.x} ${q.y})`);
+const move=(el,p,ms,cb)=>new Promise(r=>{const t0=performance.now(),L=len(p);(function f(n){if(!el.isConnected)return r();const k=Math.min(1,(n-t0)/ms),q=at(p,ease(k));put(el,q);cb&&cb(L*(1-ease(k)),q,k);k<1?requestAnimationFrame(f):r()})(t0)});
+function actor(e,col,q,sz=13){const o=S('g',{transform:`translate(${q.x} ${q.y})`}),g=S('g',{class:'pop'},o);S('circle',{r:sz+3,fill:col,opacity:.3,class:'pl'},g);S('circle',{r:sz,fill:'#10161a',stroke:col,'stroke-width':2.5},g);S('text',{'text-anchor':'middle',y:sz*.38,'font-size':sz*1.05},g).textContent=e;return o}
+function link(a,b,t){const l=$('#lk'),x=$('#lkt');l.style.display=x.style.display='';l.setAttribute('x1',a.x);l.setAttribute('y1',a.y);l.setAttribute('x2',b.x);l.setAttribute('y2',b.y);x.setAttribute('x',(a.x+b.x)/2);x.setAttribute('y',(a.y+b.y)/2-6);x.textContent=t}
+function drawRoute(p,col=AC){const d='M'+p.map(q=>q.x+' '+q.y).join('L'),R=$('#route');R.innerHTML='';[[9,.18],[4,1]].forEach(([w,o])=>{const e=S('path',{d,fill:'none',stroke:col,'stroke-width':w,opacity:o,'stroke-linecap':'round','stroke-linejoin':'round',pathLength:1},R);e.style.cssText='stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.1s ease';requestAnimationFrame(()=>requestAnimationFrame(()=>e.style.strokeDashoffset=0))})}
+function radar(q){const r=$('#rad');r.innerHTML='';[0,.6,1.2].forEach(d=>{const c=S('circle',{cx:q.x,cy:q.y,r:60,fill:'none',stroke:AC,'stroke-width':2,class:'rad'},r);c.style.animationDelay=d+'s'})}
+function build(){const bl=$('#blocks'),rd=$('#roads'),xs=[-40,...X,440],ys=[-40,...Y,520];
+for(let i=0;i<xs.length-1;i++)for(let j=0;j<ys.length-1;j++){const pk=(i+j*3)%7==2;S('rect',{x:xs[i]+6,y:ys[j]+6,width:xs[i+1]-xs[i]-12,height:ys[j+1]-ys[j]-12,rx:6,fill:pk?'#12301f':'#171d21'},bl);if(!pk)for(let k=0;k<3;k++)S('rect',{x:xs[i]+14+k*22,y:ys[j]+14+((i*7+j*5+k)%3)*8,width:16,height:14+((i+j+k)%3)*8,rx:2,fill:'#1d252a'},bl)}
+X.forEach((x,i)=>{S('line',{x1:x,y1:-40,x2:x,y2:520,stroke:i==2?'#303c45':'#27313a','stroke-width':i==2?11:9},rd);S('line',{x1:x,y1:-40,x2:x,y2:520,stroke:'#3a4650','stroke-width':.7,'stroke-dasharray':'6 6'},rd)});
+Y.forEach((y,i)=>{S('line',{x1:-40,y1:y,x2:440,y2:y,stroke:i==2?'#303c45':'#27313a','stroke-width':i==2?11:9},rd);S('line',{x1:-40,y1:y,x2:440,y2:y,stroke:'#3a4650','stroke-width':.7,'stroke-dasharray':'6 6'},rd)});
+for(const k in PL){if(k=='home')continue;const q=PL[k];S('circle',{cx:q.x,cy:q.y,r:4,fill:'#3a4650'},$('#pins'));S('text',{x:q.x,y:q.y+15,class:'pn'},$('#pins')).textContent=q.n}}
+let tok=0,ti;
+function ui(h){const s=$('#sheet');s.onclick=null;s.innerHTML=h;s.classList.remove('in');void s.offsetWidth;s.classList.add('in')}
+function ask(h){ui(h);return new Promise(r=>{$('#sheet').onclick=e=>{const b=e.target.closest('[data-v]');if(b)r(b.dataset.v)}})}
+function reset(){clearInterval(ti);['act','route','rad'].forEach(i=>$('#'+i).innerHTML='');$('#lk').style.display=$('#lkt').style.display='none';actor('📍',BL,PL.home,11)}
+function run(fn){const my=++tok;reset();const g=async p=>{const r=await p;if(my!==tok)throw 'x';return r};fn(g).catch(e=>e!=='x'&&console.error(e))}
+const chips=ks=>ks.map(k=>`<button class="c" data-v="${k}">${PL[k].e} ${PL[k].n}</button>`).join('');
+const tick=t=>(rem,q,k)=>{set('d',km(rem).toFixed(2)+' km');set('e',eta(km(rem))+' min');const b=$('#pb');if(b)b.style.width=k*100+'%';if(t)link(q,t,km(rem).toFixed(2)+' km by road')};
+const feeRide=k=>Math.min(3000,Math.max(500,Math.round(200*k))),feeRent=d=>Math.min(15000,Math.max(2000,2000+1000*d));
+const rc=(f,k,n)=>`<div class="rc"><div><span>Customer pays</span><b>${fmt(f+k)}</b></div><div><span>Provider gets (100% of fare)</span><b>${fmt(f)}</b></div><div><span>SurGo keeps (${n})</span><b class="ac">${fmt(k)}</b></div></div>`;
+const rate=n=>document.querySelectorAll('.st span').forEach((s,i)=>s.classList.toggle('on',i<n));
+const done=async(g,t,h,cur)=>{$('#lk').style.display=$('#lkt').style.display='none';await g(ask(`<h3>${t}</h3>${h}<div class="st">${[1,2,3,4,5].map(n=>`<span onclick="rate(${n})">★</span>`).join('')}</div><button class="b" data-v="r">Back to Home</button>`));home()};
+const SL={p:['Posted','Accepted','Buying','Delivering','Done'],r:['Requested','Assigned','Accepted','Started','Done'],n:['Requested','Approved','Active','Returned','Done']},stepper=(i,l='p')=>`<div class="stp">${SL[l].map((s,j)=>`<div class="${j<=i?'d':''}">${s}</div>`).join('')}</div>`;
+
+async function ride(g,other){let pu=PL.home,who='',ph='';
+if(other){const v=await g(ask(`<h3>Book for someone else</h3><div class="row"><input id="nm" value="Maria Santos"><input id="ph" value="0917 555 0142"></div><p class="mu" style="margin-bottom:8px">Pick their pickup point</p><div class="grid">${chips(['market','school','hosp','port'])}</div>`));who=$('#nm').value||'Passenger';ph=$('#ph').value;pu=PL[v];actor('🧍',WA,pu,11)}
+const dk=Object.keys(PL).filter(k=>k!='home'&&PL[k]!==pu).slice(0,6);
+const dv=await g(ask(`<h3>Where to${other?' for '+who:''}?</h3><div class="grid">${chips(dk)}</div>`)),dest=PL[dv],path=rt(pu,dest,1);
+drawRoute(path,BL);actor('🏁',WA,dest,11);const dkm=km(len(path));
+const vk=await g(ask(`<h3>${dkm.toFixed(1)} km · about ${eta(dkm)} min</h3>${Object.entries(FARE).map(([k,f])=>`<button class="c" data-v="${k}"><div class="row"><b>${f.e} ${f.n}</b><span class="r">${fmt(fare(f,dkm))}</span></div><span class="mu">${f.s} seat${f.s>1?'s':''} · + ${fmt(feeRide(dkm))} SurGo fee</span></button>`).join('')}`)),F=FARE[vk],price=fare(F,dkm);
+ui(stepper(0,'r')+`<h3>Finding your rider…</h3><div class="mu" id="cnt">Scanning nearby</div><div class="bar"><i id="pb" style="width:60%;transition:width 3s"></i></div>`);radar(pu);
+const rs=[];for(const [i,j] of [[1,1],[3,1],[1,3],[3,3],[0,2]]){const q=G(i,j);if(rs.length<4&&!(q.x==pu.x&&q.y==pu.y)){await g(wait(450));rs.push({q,el:actor(F.e,AC,q,10)});set('cnt',rs.length+' rider'+(rs.length>1?'s':'')+' nearby')}}
+await g(wait(900));rs.forEach(r=>r.d=len(rt(r.q,pu,0)));rs.sort((a,b)=>a.d-b.d);const R=rs[0];rs.slice(1).forEach(r=>r.el.style.cssText='opacity:0;transition:opacity .6s');$('#rad').innerHTML='';
+const ri=RI[vk],rp=rt(R.q,pu,0);drawRoute(rp,AC);
+ui(stepper(2,'r')+`<div class="row"><div class="av">🧑</div><div><b>${ri[0]}</b> ★${ri[2]}<br><span class="mu">${ri[1]}</span></div><div class="r"><div class="big" id="d">–</div><span class="mu" id="e"></span></div></div><div class="bar"><i id="pb"></i></div><p class="mu" style="margin-top:8px">Rider is heading to ${other?who+'’s pickup':'you'}</p>${other?`<p class="ok">✓ Trip link sent to ${who} (${ph})</p>`:''}`);
+await g(move(R.el,rp,dur(rp),tick(pu)));
+ui(`<h3>🎉 Your rider has arrived</h3><p class="mu">${other?who+' is boarding':'Hop on'}…</p>`);await g(wait(1400));
+drawRoute(path,BL);ui(stepper(3,'r')+`<div class="row"><div class="av">${F.e}</div><div><b>On the way to ${dest.n}</b><br><span class="mu">${ri[0]}</span></div><div class="r"><div class="big" id="d">–</div><span class="mu" id="e"></span></div></div><div class="bar"><i id="pb"></i></div>`);
+await g(move(R.el,path,dur(path)*1.2,tick(dest)));
+await done(g,'✅ Trip completed',rc(price,feeRide(dkm),'₱2/km, ₱5–₱30 band'),other?'other':'ride')}
+
+async function rent(g){
+const V=[['Honda Click 125','🏍️',80000,[1,1],'Ramon C.'],['Yamaha NMAX','🏍️',120000,[3,1],'Liza P.'],['Toyota Vios','🚗',250000,[1,3],'Dado M.'],['Mitsubishi L300','🚐',350000,[3,3],'Ben A.']],els=[];
+for(const v of V){await g(wait(250));els.push(actor(v[1],AC,G(...v[3]),11))}
+const i=+await g(ask(`<h3>Vehicles near you</h3>${V.map((v,n)=>`<button class="c" data-v="${n}"><div class="row"><b>${v[1]} ${v[0]}</b><span class="r">${fmt(v[2])}/day</span></div><span class="mu">${km(len(rt(G(...v[3]),PL.home,0))).toFixed(2)} km away · ${v[4]}</span></button>`).join('')}`)),v=V[i],vp=G(...v[3]),rp=rt(vp,PL.home,0);
+els.forEach((e,n)=>{if(n!=i)e.style.cssText='opacity:.15;transition:opacity .5s'});drawRoute(rp,AC);link(vp,PL.home,km(len(rp)).toFixed(2)+' km by road');
+const n=+await g(ask(`<h3>${v[1]} ${v[0]}</h3><p class="mu">${km(len(rp)).toFixed(2)} km from you · Owner ${v[4]}</p>${[1,2,3].map(d=>`<button class="c" data-v="${d}"><div class="row"><b>${d} day${d>1?'s':''}</b><span class="r">${fmt(v[2]*d)}</span></div><span class="mu">+ ${fmt(feeRent(d))} SurGo fee</span></button>`).join('')}`)),total=v[2]*n;
+ui(stepper(0,'n')+`<h3>⏳ Waiting for ${v[4]} to approve…</h3><p class="mu">Auto-approves in <b id="cd">10</b>s</p><div class="bar"><i id="pb" style="transition:width 10s linear"></i></div>`);requestAnimationFrame(()=>requestAnimationFrame(()=>{const b=$('#pb');if(b)b.style.width='100%'}));
+for(let s=9;s>=0;s--){await g(wait(1000));set('cd',s)}
+ui(stepper(1,'n')+`<h3 class="ac">✓ Approved!</h3><p class="mu">${v[4]} is bringing the vehicle to you</p>`);await g(wait(1200));
+ui(`<div class="row"><div class="av">${v[1]}</div><div><b>${v[0]}</b><br><span class="mu">Delivery to your location</span></div><div class="r"><div class="big" id="d">–</div><span class="mu" id="e"></span></div></div><div class="bar"><i id="pb"></i></div>`);
+await g(move(els[i],rp,dur(rp),tick(PL.home)));$('#lk').style.display=$('#lkt').style.display='none';
+let t=0;ti=setInterval(()=>set('t',String(Math.floor(++t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')),1000);
+await g(ask(stepper(2,'n')+`<h3>🔑 Rental active</h3><p class="mu">Handover complete · ${n} day${n>1?'s':''} booked</p><div class="big" id="t" style="margin:8px 0">00:00</div><button class="b" data-v="end">End rental</button>`));clearInterval(ti);
+ui(stepper(3,'n')+`<h3>↩️ Vehicle returned</h3><p class="mu">Owner is confirming…</p>`);await g(wait(1600));
+await done(g,'✅ Rental completed',rc(total,feeRent(n),'₱20 + ₱10 per day'),'rent')}
+
+async function pasuyo(g){
+const E=[['Buy medicine','💊','market','Pharmacy',25000],['Groceries','🛒','plaza','Grocery store',150000],['Pay a bill','🧾','mall','Payment center',320000]];
+const i=+await g(ask(`<h3>What do you need?</h3>${E.map((e,n)=>`<button class="c" data-v="${n}"><b>${e[1]} ${e[0]}</b><br><span class="mu">${e[3]} · ${PL[e[2]].n} · items ≈ ${fmt(e[4])}</span></button>`).join('')}`)),e=E[i],st=PL[e[2]],back=rt(st,PL.home,1),fee=Math.round((4000+1500*km(len(back)))/100)*100;
+actor(e[1],WA,st,11);ui(stepper(0)+`<h3>Posting your errand…</h3><p class="mu">Nearby helpers are being notified</p>`);radar(PL.home);
+const hs=[];for(const [a,b] of [[1,1],[3,1],[1,3],[3,3]].slice(0,3)){await g(wait(500));hs.push({q:G(a,b),el:actor('🛵',AC,G(a,b),10)});hs[hs.length-1].d=len(rt(G(a,b),st,0))}
+await g(wait(900));hs.sort((a,b)=>a.d-b.d);const H=hs[0];hs.slice(1).forEach(h=>h.el.style.cssText='opacity:0;transition:opacity .6s');$('#rad').innerHTML='';
+const p1=rt(H.q,st,0);drawRoute(p1,AC);
+ui(stepper(1)+`<div class="row"><div class="av">🛵</div><div><b>Helper Mario accepted</b><br><span class="mu">Heading to ${st.n}</span></div><div class="r"><div class="big" id="d">–</div><span class="mu" id="e"></span></div></div><div class="bar"><i id="pb"></i></div>`);
+await g(move(H.el,p1,dur(p1),tick(st)));
+ui(stepper(2)+`<h3>🛍️ Buying your ${e[0].toLowerCase()}…</h3><p class="mu">Helper is at ${st.n}</p>`);await g(wait(2200));
+drawRoute(back,BL);ui(stepper(3)+`<div class="row"><div class="av">📦</div><div><b>Delivering to you</b><br><span class="mu">Helper Mario</span></div><div class="r"><div class="big" id="d">–</div><span class="mu" id="e"></span></div></div><div class="bar"><i id="pb"></i></div>`);
+await g(move(H.el,back,dur(back),tick(PL.home)));
+await done(g,'✅ Errand delivered',`<p class="mu">Items paid at cost: ${fmt(e[4])}</p>${rc(fee,1000,'flat ₱10 per errand')}`,'pasuyo')}
+
+const FL={ride:['Find rider',g=>ride(g,0)],rent:['Rent vehicle',rent],pasuyo:['Pasuyo',pasuyo],other:['Book for someone',g=>ride(g,1)]};
+function go(k){$('#home').style.display='none';set('ttl',FL[k][0]);run(FL[k][1])}
+function home(){tok++;clearInterval(ti);const h=$('#home');h.style.display='flex';h.innerHTML=`<div class="mu">📍 Tandag City, Surigao del Sur</div><h1>Hi there 👋<br>Where to today?</h1><div class="sb">🔍 Search destination</div><div class="sv">${[['ride','🛵','Find rider','Book a ride now'],['rent','🔑','Rent vehicle','Bikes, cars, vans'],['pasuyo','🛍️','Pasuyo','Errands done for you'],['other','👥','Book for someone','Ride for family or friends']].map(([k,i,t,s])=>`<button onclick="go('${k}')"><i>${i}</i><b>${t}</b><span class="mu">${s}</span></button>`).join('')}</div><div id="nav"><div class="on"><span>🏠</span>Home</div><div><span>🕘</span>Activity</div><div><span>👛</span>Wallet</div><div><span>👤</span>Profile</div></div>`}
+build();home();
+</script></body></html>

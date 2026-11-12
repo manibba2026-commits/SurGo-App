@@ -62,9 +62,20 @@ Set these as **Edge Function secrets**, never in Flutter and never in git:
 
 | Secret | Required | Notes |
 | --- | --- | --- |
-| `SEMAPHORE_API_KEY` | yes | Semaphore account API key |
 | `SEND_SMS_HOOK_SECRET` | yes | Value shown by Supabase when the hook is created, format `v1,whsec_...` |
+| `SEMAPHORE_API_KEY` | when `SMS_PROVIDER` is unset or `semaphore` | Semaphore account API key |
 | `SEMAPHORE_SENDER_NAME` | no | Approved Semaphore sender name; omit to use the default |
+| `SMS_PROVIDER` | no | `semaphore` (default) or `unisms`; exactly one provider is called |
+| `UNISMS_ACCESS_KEY_ID` | when `SMS_PROVIDER=unisms` | UniSMS access key id |
+| `UNISMS_ACCESS_KEY_SECRET` | when `SMS_PROVIDER=unisms` and `UNISMS_AUTH_MODE=hmac` | HMAC secret |
+| `UNISMS_SIGNATURE` | when `SMS_PROVIDER=unisms` | Approved sender signature, not the request signature |
+| `UNISMS_TEMPLATE_ID` | when `SMS_PROVIDER=unisms` | OTP template id |
+| `UNISMS_CODE_VARIABLE` | no | Template variable for the code; defaults to `code` |
+| `UNISMS_AUTH_MODE` | no | `hmac` (default) or `simple` (explicit opt-in) |
+
+Provider selection never falls back: a misconfigured provider returns `500`
+instead of quietly sending through the other one. See
+`docs/PROVIDER_SECRETS.md` for the local secret file and the apply tool.
 
 ```bash
 supabase secrets set --project-ref lrhgktxmavnhjatqzbzr \

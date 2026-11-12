@@ -22,19 +22,19 @@ class RentalListScreen extends StatefulWidget {
 
 class _RentalListScreenState extends State<RentalListScreen> {
   String activeFilter = 'All';
+  String _query = '';
   static const filters = ['All', 'Motorcycle', 'Multicab', 'Van', 'Tricycle'];
 
   @override
   Widget build(BuildContext context) {
-    // A hosted build lists the vehicles the database says are active; a mock
-    // build keeps the seeded catalogue it has always shown.
-    if (AppState.instance.usesHostedIdentity) {
+    // Authentication alone does not make seeded repositories hosted.
+    final state = AppState.instance;
+    if (state.usesHostedIdentity && state.repositories.isSupabaseBacked) {
       return RepositoryView<List<VehicleRecord>>(
         slot: DomainSlot.rentalListings,
-        data: (context, records) => _buildList(
-          [for (final record in records) rentalListingFromRecord(record)],
-          hosted: true,
-        ),
+        data: (context, records) => _buildList([
+          for (final record in records) rentalListingFromRecord(record),
+        ], hosted: true),
         empty: (_) => _scaffold(
           const SbEmptyState(
             message: 'No vehicles are listed for rent yet.',
@@ -47,10 +47,23 @@ class _RentalListScreenState extends State<RentalListScreen> {
   }
 
   Widget _buildList(List<RentalVehicle> all, {required bool hosted}) {
-    final vehicles = activeFilter == 'All'
-        ? all
-        : all.where((v) => v.type == activeFilter).toList();
+    final query = _query.trim().toLowerCase();
+    final vehicles = all.where((vehicle) {
+      return (activeFilter == 'All' || vehicle.type == activeFilter) &&
+          (query.isEmpty ||
+              '${vehicle.name} ${vehicle.type} ${vehicle.location}'
+                  .toLowerCase()
+                  .contains(query));
+    }).toList();
 
+    if (vehicles.isEmpty) {
+      return _scaffold(
+        const SbEmptyState(
+          message: 'No vehicles match your search.',
+          icon: Icons.search_off,
+        ),
+      );
+    }
     return _scaffold(
       ListView.separated(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
@@ -64,16 +77,15 @@ class _RentalListScreenState extends State<RentalListScreen> {
           // is an active vehicle; the server refuses any overlapping dates.
           final listing = hosted
               ? (v.availability == 'Available today'
-                  ? RentalListingState.available
-                  : RentalListingState.unknown)
+                    ? RentalListingState.available
+                    : RentalListingState.unknown)
               : AppState.instance.rentalListingState(v.id);
           return SbTintedCard(
             tone: SbTone.rent,
             padding: const EdgeInsets.all(12),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (_) => RentalDetailScreen(vehicle: v)),
+              MaterialPageRoute(builder: (_) => RentalDetailScreen(vehicle: v)),
             ),
             child: Row(
               children: [
@@ -92,13 +104,21 @@ class _RentalListScreenState extends State<RentalListScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(v.name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800, fontSize: 13)),
+                      Text(
+                        v.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(v.location,
-                          style: const TextStyle(
-                              color: AppColors.muted, fontSize: 11)),
+                      Text(
+                        v.location,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
                       const SizedBox(height: 7),
                       Row(
                         children: [
@@ -126,14 +146,21 @@ class _RentalListScreenState extends State<RentalListScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('${Money.format(v.pricePerDay)}/day',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primaryLight,
-                                  fontSize: 13)),
-                          Text('⭐ ${v.rating}',
-                              style: const TextStyle(
-                                  color: AppColors.muted, fontSize: 11)),
+                          Text(
+                            '${Money.format(v.pricePerDay)}/day',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primaryLight,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            '⭐ ${v.rating}',
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 11,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -157,35 +184,40 @@ class _RentalListScreenState extends State<RentalListScreen> {
               child: Row(
                 children: [
                   SbIconButton(
-                      icon: Icons.arrow_back,
-                      onTap: () => Navigator.pop(context)),
+                    icon: Icons.arrow_back,
+                    onTap: () => Navigator.pop(context),
+                  ),
                   const SizedBox(width: 10),
-                  const Text('Rent a Vehicle',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 16)),
+                  const Text(
+                    'Rent a Vehicle',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
                 ],
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 13,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.panel,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.search, size: 18, color: AppColors.muted),
-                    SizedBox(width: 10),
-                    Text('Search vehicles, brands…',
-                        style: TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
-                  ],
+                child: TextField(
+                  onChanged: (value) => setState(() => _query = value),
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText: 'Search vehicles, brands…',
+                    prefixIcon: Icon(Icons.search, size: 18),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               ),
             ),
@@ -217,17 +249,17 @@ class _RentalListScreenState extends State<RentalListScreen> {
   /// Green for bookable, amber while it is out, red when no dates will work:
   /// the pill should be readable at a glance without opening the vehicle.
   static Color? _tagAccent(RentalListingState state) => switch (state) {
-        RentalListingState.available => AppColors.success,
-        RentalListingState.rented => AppColors.yellow,
-        RentalListingState.maintenance => AppColors.danger,
-        RentalListingState.unknown => AppColors.muted,
-      };
+    RentalListingState.available => AppColors.success,
+    RentalListingState.rented => AppColors.yellow,
+    RentalListingState.maintenance => AppColors.danger,
+    RentalListingState.unknown => AppColors.muted,
+  };
 
   /// Translucent fill matching [_tagAccent].
   static Color _tagTint(RentalListingState state) => switch (state) {
-        RentalListingState.available => AppColors.successSoft,
-        RentalListingState.rented => AppColors.yellowSoft,
-        RentalListingState.maintenance => AppColors.dangerSoft,
-        RentalListingState.unknown => AppColors.panel3,
-      };
+    RentalListingState.available => AppColors.successSoft,
+    RentalListingState.rented => AppColors.yellowSoft,
+    RentalListingState.maintenance => AppColors.dangerSoft,
+    RentalListingState.unknown => AppColors.panel3,
+  };
 }

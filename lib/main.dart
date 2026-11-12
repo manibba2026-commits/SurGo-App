@@ -3,6 +3,8 @@ import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/forgot_password_screen.dart';
+import 'screens/reset_password_screen.dart';
+import 'screens/email_login_screen.dart';
 import 'screens/otp_screen.dart';
 import 'screens/passenger_shell.dart';
 import 'screens/booking_screen.dart';
@@ -29,6 +31,7 @@ import 'data/data_source.dart';
 import 'repositories/backend.dart';
 import 'repositories/repository_registry.dart';
 import 'services/supabase_bootstrap.dart';
+import 'services/passenger_ride_session.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 
@@ -45,14 +48,13 @@ Future<void> main() async {
       ),
     );
     AppState.instance.configureRepositories(RepositoryRegistry.mock());
+    AppState.instance.demoRideStore = SharedPreferencesDemoRideRequestStore();
     runApp(const SurGoApp());
     return;
   }
   final supabaseReady = await initializeSupabase();
   AppState.instance.configureAuth(
-    supabaseReady
-        ? SupabaseAuthRepository()
-        : const DisabledAuthRepository(),
+    supabaseReady ? SupabaseAuthRepository() : const DisabledAuthRepository(),
   );
   AppState.instance.configureRepositories(
     buildRepositoryRegistry(supabaseReady: supabaseReady),
@@ -83,23 +85,91 @@ RepositoryRegistry buildRepositoryRegistry({required bool supabaseReady}) {
 /// `SURGO_DATA_SOURCE=supabase` build, the `assets/db/` seed otherwise. Every
 /// screen still renders from [AppState]'s in-memory state until its domain is
 /// moved onto a repository.
-class SurGoApp extends StatelessWidget {
+class SurGoApp extends StatefulWidget {
   const SurGoApp({super.key});
 
   @override
+  State<SurGoApp> createState() => _SurGoAppState();
+}
+
+class _SurGoAppState extends State<SurGoApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
   Widget build(BuildContext context) {
+    final state = AppState.instance;
     return MaterialApp(
+      navigatorKey: _navigatorKey,
+      builder: (context, child) => ListenableBuilder(
+        listenable: state,
+        builder: (context, _) {
+          final recovering = state.passwordRecoveryRequired;
+          final provider = state.emailRecovery;
+          final epoch = state.recoveryEpoch;
+          final userId = state.identity?.userId;
+          return Stack(
+            children: [
+              Offstage(offstage: recovering, child: child),
+              if (recovering)
+                Positioned.fill(
+                  child: HeroControllerScope.none(
+                    child: Navigator(
+                      key: ValueKey(epoch),
+                      onGenerateRoute: (_) => MaterialPageRoute<void>(
+                        builder: (_) => ResetPasswordScreen(
+                          recoveryResolver: () =>
+                              state.passwordRecoveryRequired &&
+                                  state.recoveryEpoch == epoch &&
+                                  state.identity?.userId == userId &&
+                                  identical(state.emailRecovery, provider)
+                              ? provider
+                              : null,
+                          onCompleted: () async {
+                            if (provider == null) return;
+                            await state.completePasswordRecovery(
+                              repository: provider,
+                              epoch: epoch,
+                              userId: userId,
+                            );
+                            if (!mounted) return;
+                            _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                              state.requiresOnboarding
+                                  ? '/onboarding'
+                                  : state.requiresPin
+                                  ? '/pin'
+                                  : state.homeRoute,
+                              (_) => false,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
       title: 'SurGo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       initialRoute: '/',
+      // Browser history must not bypass data loading or the restored-session gate.
+      onGenerateInitialRoutes: (_) => [
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: '/'),
+          builder: (_) => const SplashScreen(),
+        ),
+      ],
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/pin': (context) => const PinLockScreen(),
         '/onboarding': (context) => const OnboardingScreen(),
         '/register': (context) => const RegisterScreen(),
-        '/forgot-password': (context) => const ForgotPasswordScreen(),
+        '/forgot-password': (context) =>
+            ForgotPasswordScreen(recoveryResolver: () => state.emailRecovery),
+        '/email-login': (context) => const EmailLoginScreen(),
         '/otp': (context) => const OtpScreen(),
         // The three dashboards are each a sliding-tab "shell" — Home,
         // Activity/Trips/Bookings, Wallet/Earnings, and Profile all live as

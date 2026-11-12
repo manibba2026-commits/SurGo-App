@@ -57,9 +57,7 @@ void main() {
 
     state = AppState.instance;
     state.configureAuth(
-      MockAuthRepository(
-        sessionStore: SharedPreferencesDemoSessionStore(),
-      ),
+      MockAuthRepository(sessionStore: SharedPreferencesDemoSessionStore()),
     );
     await state.init();
   });
@@ -135,13 +133,15 @@ void main() {
     expect(state.db.vehicleOwner.id, 'VOW-77214');
   });
 
-  test('the helper identity lands on the earner dashboard with errands',
-      () async {
-    await signIn('ACC007');
-    expect(state.currentAccount?.id, 'ACC007');
-    expect(state.mode, UserMode.earner);
-    expect(state.acceptsCapability(EarnerCapability.errands), isTrue);
-  });
+  test(
+    'the helper identity lands on the earner dashboard with errands',
+    () async {
+      await signIn('ACC007');
+      expect(state.currentAccount?.id, 'ACC007');
+      expect(state.mode, UserMode.earner);
+      expect(state.acceptsCapability(EarnerCapability.errands), isTrue);
+    },
+  );
 
   test('unknown account numbers are refused', () async {
     expect(state.demoAccountFor('ACC999'), isNull);
@@ -163,20 +163,22 @@ void main() {
     expect(identity.capabilities, contains(CapabilityType.passenger));
   });
 
-  test('the saved PIN is salted and hashed, never stored in clear text',
-      () async {
-    await signIn('ACC003');
-    expect(await state.setPin('246810'), isTrue);
+  test(
+    'the saved PIN is salted and hashed, never stored in clear text',
+    () async {
+      await signIn('ACC003');
+      expect(await state.setPin('246810'), isTrue);
 
-    final id = state.currentAccount!.id;
-    final preferences = await SharedPreferences.getInstance();
-    final salt = preferences.getString(DemoPinStore.saltKeyFor(id));
-    final hash = preferences.getString(DemoPinStore.hashKeyFor(id));
-    expect(salt, isNotNull);
-    expect(hash, isNotNull);
-    expect(hash, isNot(contains('246810')));
-    expect(preferences.getString(DemoPinStore.legacyHashKey), isNull);
-  });
+      final id = state.currentAccount!.id;
+      final preferences = await SharedPreferences.getInstance();
+      final salt = preferences.getString(DemoPinStore.saltKeyFor(id));
+      final hash = preferences.getString(DemoPinStore.hashKeyFor(id));
+      expect(salt, isNotNull);
+      expect(hash, isNotNull);
+      expect(hash, isNot(contains('246810')));
+      expect(preferences.getString(DemoPinStore.legacyHashKey), isNull);
+    },
+  );
 
   test('a PIN belongs to one account and cannot unlock another', () async {
     await signIn('ACC003');
@@ -216,35 +218,37 @@ void main() {
     expect(await state.unlockWithPin('123456'), PinUnlockResult.incorrect);
   });
 
-  test('changing the PIN replaces the accepted value for that account only',
-      () async {
-    await signIn('ACC003');
-    expect(await state.setPin(DemoAuthConfig.defaultPin), isTrue);
+  test(
+    'changing the PIN replaces the accepted value for that account only',
+    () async {
+      await signIn('ACC003');
+      expect(await state.setPin(DemoAuthConfig.defaultPin), isTrue);
 
-    expect(
-      await state.changePin(
-        currentPin: DemoAuthConfig.defaultPin,
-        newPin: '654321',
-      ),
-      PinChangeResult.success,
-    );
-    expect(await state.pinStore.verify('ACC003', '123456'), isFalse);
-    expect(await state.pinStore.verify('ACC003', '654321'), isTrue);
+      expect(
+        await state.changePin(
+          currentPin: DemoAuthConfig.defaultPin,
+          newPin: '654321',
+        ),
+        PinChangeResult.success,
+      );
+      expect(await state.pinStore.verify('ACC003', '123456'), isFalse);
+      expect(await state.pinStore.verify('ACC003', '654321'), isTrue);
 
-    expect(
-      await state.changePin(currentPin: '000000', newPin: '111111'),
-      PinChangeResult.incorrectCurrent,
-    );
-    expect(
-      await state.changePin(currentPin: '654321', newPin: '654321'),
-      PinChangeResult.sameAsCurrent,
-    );
-    expect(
-      await state.changePin(currentPin: '654321', newPin: '123'),
-      PinChangeResult.invalidNew,
-    );
-    expect(await state.pinStore.verify('ACC002', '654321'), isFalse);
-  });
+      expect(
+        await state.changePin(currentPin: '000000', newPin: '111111'),
+        PinChangeResult.incorrectCurrent,
+      );
+      expect(
+        await state.changePin(currentPin: '654321', newPin: '654321'),
+        PinChangeResult.sameAsCurrent,
+      );
+      expect(
+        await state.changePin(currentPin: '654321', newPin: '123'),
+        PinChangeResult.invalidNew,
+      );
+      expect(await state.pinStore.verify('ACC002', '654321'), isFalse);
+    },
+  );
 
   test('logout clears the persisted session', () async {
     await signIn('ACC003');
@@ -260,30 +264,31 @@ void main() {
   });
 
   testWidgets('the login form accepts a demo account number', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.dark,
-      home: const LoginScreen(),
-      routes: {
-        '/otp': (_) => const Scaffold(body: Text('OTP')),
-        '/home': (_) => const Scaffold(body: Text('HOME')),
-      },
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark,
+        home: const LoginScreen(),
+        routes: {
+          '/otp': (_) => const Scaffold(body: Text('OTP')),
+          '/home': (_) => const Scaffold(body: Text('HOME')),
+        },
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('DEMO ACCOUNTS'), findsOneWidget);
-    await tester.tap(find.text('ACC003'));
-    await tester.pump();
-    await tester.ensureVisible(find.text('Send code'));
+    await tester.enterText(find.byType(TextField).first, 'ACC003');
+    await tester.ensureVisible(find.text('Login'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send code'));
+    await tester.tap(find.text('Login'));
     await tester.pumpAndSettle();
 
     expect(find.text('OTP'), findsOneWidget);
     expect(state.isSignedIn, isFalse);
   });
 
-  testWidgets('a new account creates, confirms and enters its PIN',
-      (tester) async {
+  testWidgets('a new account creates, confirms and enters its PIN', (
+    tester,
+  ) async {
     await signIn('ACC003');
     await pumpPinScreen(tester);
 
@@ -300,8 +305,24 @@ void main() {
     expect(state.requiresPin, isFalse);
   });
 
-  testWidgets('a mismatched confirmation returns to PIN creation',
-      (tester) async {
+  testWidgets('a completed PIN is not submitted after leaving the screen', (
+    tester,
+  ) async {
+    await signIn('ACC003');
+    await pumpPinScreen(tester);
+    for (final digit in '246810'.split('')) {
+      await tester.tap(find.byKey(ValueKey('pin-key-$digit')));
+      await tester.pump();
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.takeException(), isNull);
+    expect(await state.pinConfiguredForCurrentAccount(), isFalse);
+  });
+
+  testWidgets('a mismatched confirmation returns to PIN creation', (
+    tester,
+  ) async {
     await signIn('ACC003');
     await pumpPinScreen(tester);
 
@@ -317,25 +338,27 @@ void main() {
     expect(await state.pinConfiguredForCurrentAccount(), isFalse);
   });
 
-  testWidgets('a wrong PIN is refused and the correct PIN opens the dashboard',
-      (tester) async {
-    await signIn('ACC003');
-    expect(await state.setPin(DemoAuthConfig.defaultPin), isTrue);
-    await pumpPinScreen(tester);
+  testWidgets(
+    'a wrong PIN is refused and the correct PIN opens the dashboard',
+    (tester) async {
+      await signIn('ACC003');
+      expect(await state.setPin(DemoAuthConfig.defaultPin), isTrue);
+      await pumpPinScreen(tester);
 
-    expect(find.text('Welcome back, Nena'), findsOneWidget);
-    await enterPin(tester, '000000');
-    expect(
-      find.text('That PIN is incorrect. 4 attempts left.'),
-      findsOneWidget,
-    );
-    expect(find.text('HOME'), findsNothing);
-    expect(state.isSignedIn, isTrue);
+      expect(find.text('Welcome back, Nena'), findsOneWidget);
+      await enterPin(tester, '000000');
+      expect(
+        find.text('That PIN is incorrect. 4 attempts left.'),
+        findsOneWidget,
+      );
+      expect(find.text('HOME'), findsNothing);
+      expect(state.isSignedIn, isTrue);
 
-    await enterPin(tester, DemoAuthConfig.defaultPin);
-    expect(find.text('HOME'), findsOneWidget);
-    expect(state.requiresPin, isFalse);
-  });
+      await enterPin(tester, DemoAuthConfig.defaultPin);
+      expect(find.text('HOME'), findsOneWidget);
+      expect(state.requiresPin, isFalse);
+    },
+  );
 
   testWidgets('five wrong PINs lock the keypad temporarily', (tester) async {
     await signIn('ACC003');
@@ -356,8 +379,9 @@ void main() {
     expect(find.textContaining('Too many incorrect attempts'), findsNothing);
   });
 
-  testWidgets('forgot PIN signs out and leaves other accounts untouched',
-      (tester) async {
+  testWidgets('forgot PIN signs out and leaves other accounts untouched', (
+    tester,
+  ) async {
     await signIn('ACC003');
     expect(await state.setPin(DemoAuthConfig.defaultPin), isTrue);
     await state.pinStore.setPin('ACC002', '222222');
@@ -368,8 +392,10 @@ void main() {
 
     expect(find.text('LOGIN'), findsOneWidget);
     expect(state.isSignedIn, isFalse);
-    expect(await state.pinStore.verify('ACC003', DemoAuthConfig.defaultPin),
-        isFalse);
+    expect(
+      await state.pinStore.verify('ACC003', DemoAuthConfig.defaultPin),
+      isFalse,
+    );
     expect(await state.pinStore.verify('ACC002', '222222'), isTrue);
   });
 }
@@ -382,14 +408,16 @@ Future<void> pumpPinScreen(WidgetTester tester) async {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
-  await tester.pumpWidget(MaterialApp(
-    theme: AppTheme.dark,
-    home: const PinLockScreen(),
-    routes: {
-      '/home': (_) => const Scaffold(body: Text('HOME')),
-      '/login': (_) => const Scaffold(body: Text('LOGIN')),
-    },
-  ));
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: AppTheme.dark,
+      home: const PinLockScreen(),
+      routes: {
+        '/home': (_) => const Scaffold(body: Text('HOME')),
+        '/login': (_) => const Scaffold(body: Text('LOGIN')),
+      },
+    ),
+  );
   await tester.pumpAndSettle();
 }
 

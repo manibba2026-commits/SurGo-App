@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../repositories/repository_failure.dart';
+import '../auth/auth_models.dart';
 import '../state/app_state.dart';
+import 'booking_screen.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_notice.dart';
@@ -94,9 +95,12 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
           _textField('Pickup location', pickupCtrl, Icons.radio_button_checked),
           const SizedBox(height: 8),
           _textField('Destination', destinationCtrl, Icons.place_outlined),
+          const SizedBox(height: 12),
+          const Text('You will follow this request in SurGo. No SMS or trip link is sent automatically.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
           const SizedBox(height: 24),
           SbPrimaryButton(
-            label: _submitting ? 'Finding a rider…' : 'Find a Rider for Them',
+            label: 'Review route and fare',
             onPressed: _submitting ? null : () => _submit(state),
           ),
         ],
@@ -105,10 +109,17 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
   }
 
   Future<void> _submit(AppState state) async {
-    if (nameCtrl.text.trim().isEmpty || phoneCtrl.text.trim().isEmpty) {
+    if (_submitting) return;
+    if (state.liveRideRequest != null) {
+      Navigator.pushNamed(context, '/matching');
+      return;
+    }
+    final phone = normalizePhoneNumber(phoneCtrl.text);
+    if (nameCtrl.text.trim().isEmpty || phone == null ||
+        pickupCtrl.text.trim().isEmpty || destinationCtrl.text.trim().isEmpty) {
       SurgoNotice.show(
         context,
-        'Enter the passenger\'s name and contact number first',
+        'Enter the passenger name, a valid contact number, pickup and destination.',
         tone: SbNoticeTone.warning,
       );
       return;
@@ -116,30 +127,14 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
     setState(() => _submitting = true);
     state.setPickup(pickupCtrl.text.trim());
     state.setDestination(destinationCtrl.text.trim());
-    // Create the request before matching, exactly like the normal booking
-    // screen: without it the matching screen has nothing to match against and
-    // dead-ends on "No active request". The assisted passenger's name rides on
-    // the request so the rider sees who is actually travelling.
-    if (state.usesHostedIdentity) {
-      try {
-        await state.createHostedRideRequest(forPassenger: nameCtrl.text.trim());
-        if (!mounted) return;
-        Navigator.pushNamed(context, '/matching');
-      } on RepositoryFailure catch (failure) {
-        if (!mounted) return;
-        SurgoNotice.show(
-          context,
-          failure.message,
-          tone: SbNoticeTone.warning,
-          title: 'Booking failed',
-        );
-      } finally {
-        if (mounted) setState(() => _submitting = false);
-      }
-      return;
-    }
-    state.createRideRequest(forPassenger: nameCtrl.text.trim());
-    Navigator.pushNamed(context, '/matching');
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => BookingScreen(
+        forPassenger: nameCtrl.text.trim(),
+        contactNumber: phone,
+        requestChannel: channel,
+      ),
+    ));
+    if (mounted) setState(() => _submitting = false);
   }
 
   Widget _textField(String label, TextEditingController ctrl, IconData icon,

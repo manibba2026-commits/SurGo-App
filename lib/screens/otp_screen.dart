@@ -130,7 +130,7 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   Future<void> _verify() async {
-    if (_submitting || !_isComplete) return;
+    if (!mounted || _submitting || !_isComplete) return;
     final phone = _phone;
     if (phone == null) return;
     FocusScope.of(context).unfocus();
@@ -184,11 +184,13 @@ class _OtpScreenState extends State<OtpScreen> {
       _error = null;
     });
 
-    final failure = await state.sendPhoneOtp(
-      phone: _phone!,
-      fullName: _name,
-      createUser: _mode == _OtpMode.register,
-    );
+    final failure = _mode == _OtpMode.linkPhone
+        ? await state.requestPhoneLink(_phone!)
+        : await state.sendPhoneOtp(
+            phone: _phone!,
+            fullName: _name,
+            createUser: _mode == _OtpMode.register,
+          );
     if (!mounted) return;
 
     setState(() {

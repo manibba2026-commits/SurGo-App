@@ -3,12 +3,19 @@ import { isDemoNumber } from './demo_numbers.ts';
 import { extractSmsHookPayload } from './payload.ts';
 import { isValidOtp, normalizePhilippineNumber } from './phone.ts';
 import { sendSemaphoreSms } from './semaphore.ts';
+import { isUniSmsConfigured, sendUniSms } from './unisms.ts';
+import type { UniSmsConfig } from './unisms.ts';
 import { verifyStandardWebhook } from './webhook.ts';
+
+export type SmsProvider = 'semaphore' | 'unisms';
 
 export interface SendSmsHandlerConfig {
   hookSecret: string;
-  semaphoreApiKey: string;
+  /** Runtime env value: only SmsProvider values are accepted; omission defaults. */
+  smsProvider?: SmsProvider | (string & {});
+  semaphoreApiKey?: string;
   semaphoreSenderName?: string;
+  unisms?: UniSmsConfig;
   fetchImpl?: typeof fetch;
   nowSeconds?: number;
   timeoutMs?: number;
@@ -26,7 +33,7 @@ const MAX_BODY_BYTES = 32 * 1024;
 /**
  * Handles one Send SMS hook request. Supabase Auth owns OTP generation,
  * expiry and verification; this function only verifies the webhook signature
- * and hands the already-generated code to Semaphore.
+ * and hands the already-generated code to the selected provider.
  */
 export async function handleSendSms(
   request: Request,
@@ -35,7 +42,11 @@ export async function handleSendSms(
   if (request.method !== 'POST') {
     return json({ error: 'method_not_allowed' }, 405);
   }
-  if (!config.hookSecret || !config.semaphoreApiKey) {
+  const provider = config.smsProvider ?? 'semaphore';
+  const configured = provider === 'semaphore'
+    ? Boolean(config.semaphoreApiKey)
+    : provider === 'unisms' && isUniSmsConfigured(config.unisms);
+  if (!config.hookSecret || !configured) {
     return json({ error: 'not_configured' }, 500);
   }
 
@@ -80,25 +91,29 @@ export async function handleSendSms(
     return json({ error: 'invalid_otp' }, 400);
   }
 
-  const delivered = await sendSemaphoreSms(
-    number,
-    buildOtpMessage(extracted.otp),
-    {
-      apiKey: config.semaphoreApiKey,
+  // Exactly one provider call: configuration/rejection never triggers fallback.
+  const accepted = provider === 'unisms'
+    ? await sendUniSms(number, extracted.otp, {
+      ...config.unisms!,
+      fetchImpl: config.fetchImpl,
+      timeoutMs: config.timeoutMs,
+    })
+    : await sendSemaphoreSms(number, buildOtpMessage(extracted.otp), {
+      apiKey: config.semaphoreApiKey!,
       senderName: config.semaphoreSenderName,
       fetchImpl: config.fetchImpl,
       timeoutMs: config.timeoutMs,
-    },
-  );
+    });
 
-  if (!delivered.ok) {
+  if (!accepted.ok) {
     // Reason and HTTP status are safe to log; the payload, phone and OTP are not.
-    console.error('send-sms: Semaphore delivery failed', {
-      reason: delivered.reason,
-      status: delivered.status,
+    console.error(`send-sms: ${provider} acceptance failed`, {
+      reason: accepted.reason,
+      status: accepted.status,
     });
     return json({ error: 'sms_delivery_failed' }, 502);
   }
 
+  // The provider accepted the SMS; this is not a delivery receipt.
   return json({ ok: true }, 200);
 }

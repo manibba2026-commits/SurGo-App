@@ -37,14 +37,18 @@ LocationFix moved(LocationFix origin) => LocationFix(
     );
 
 class _Rig {
-  _Rig({LocationSink? sink}) : _sinkOverride = sink;
+  _Rig({LocationSink? sink, Future<Stream<LocationFix>?> Function()? positions})
+      : _sinkOverride = sink,
+        _positionsOverride = positions;
 
   final LocationSink? _sinkOverride;
+  final Future<Stream<LocationFix>?> Function()? _positionsOverride;
   final DateTime t0 = DateTime.utc(2026, 11, 6, 8);
 
   late DateTime now = t0;
   late InMemoryLocationSink memory = InMemoryLocationSink();
-  late StreamController<LocationFix> fixes = StreamController<LocationFix>();
+  late StreamController<LocationFix> fixes =
+      StreamController<LocationFix>.broadcast();
 
   /// How many times the device was asked for permission / a position stream.
   int asks = 0;
@@ -56,6 +60,7 @@ class _Rig {
     sink: () => sink,
     positions: () async {
       asks++;
+      if (_positionsOverride != null) return _positionsOverride();
       return denyPositioning ? null : fixes.stream;
     },
     clock: () => now,
@@ -116,6 +121,74 @@ class _RefusingSink implements LocationSink {
     }
     published.add(fix);
   }
+}
+
+class _DeferredPositions {
+  final List<Completer<Stream<LocationFix>?>> requests = [];
+
+  Future<Stream<LocationFix>?> call() {
+    final request = Completer<Stream<LocationFix>?>();
+    requests.add(request);
+    return request.future;
+  }
+}
+
+class _PublishCall {
+  _PublishCall(this.rideId, this.riderId, this.fix);
+
+  final String rideId;
+  final String riderId;
+  final LocationFix fix;
+  final result = Completer<void>();
+}
+
+class _DeferredSink implements LocationSink {
+  final List<_PublishCall> calls = [];
+  int active = 0;
+  int maxActive = 0;
+
+  @override
+  Future<void> publish({
+    required String rideId,
+    required String riderId,
+    required LocationFix fix,
+  }) async {
+    final call = _PublishCall(rideId, riderId, fix);
+    calls.add(call);
+    active++;
+    if (active > maxActive) maxActive = active;
+    try {
+      await call.result.future;
+    } finally {
+      active--;
+    }
+  }
+}
+
+class _LateStream extends Stream<LocationFix> {
+  final _controller = StreamController<LocationFix>();
+  void Function(LocationFix)? _onData;
+  Function? _onError;
+  void Function()? _onDone;
+
+  @override
+  StreamSubscription<LocationFix> listen(
+    void Function(LocationFix)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    _onData = onData;
+    _onError = onError;
+    _onDone = onDone;
+    return _controller.stream.listen(onData,
+        onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+  }
+
+  void emit(LocationFix fix) => _onData?.call(fix);
+  void fail() => _onError?.call(StateError('late stream failure'));
+  void finish() => _onDone?.call();
+  void dispose() => unawaited(_controller.close());
 }
 
 /// A sink that records what the app put on the wire.
@@ -395,6 +468,352 @@ void main() {
           isTrue,
           reason:
               'the server can say how old a trail is even if the clock differs');
+    });
+  });
+
+  group('async sharing lifecycle', () {
+    for (final denied in [false, true]) {
+      test('stopping pending permission clears the request (denied: $denied)',
+          () async {
+        final positions = _DeferredPositions();
+        final rig = _Rig(positions: positions.call);
+        addTearDown(rig.dispose);
+        await rig.sync();
+        expect(rig.publisher.isSharingRequested, isTrue);
+
+        await rig.sync(online: false);
+        rig.publisher.stop();
+        expect(rig.publisher.isSharingRequested, isFalse);
+        expect(rig.publisher.isPublishing, isFalse);
+        expect(rig.publisher.status, LocationShareStatus.off);
+        positions.requests[0].complete(denied ? null : rig.fixes.stream);
+        await rig.settle();
+        expect(rig.fixes.hasListener, isFalse);
+        expect(rig.publisher.isSharingRequested, isFalse);
+        expect(rig.publisher.status, LocationShareStatus.off);
+
+        await rig.sync();
+        expect(rig.asks, 2);
+        positions.requests[1].complete(rig.fixes.stream);
+        await rig.settle();
+        await rig.send(fix());
+        expect(rig.memory.published, hasLength(1));
+      });
+
+      for (final oldFirst in [false, true]) {
+        test('superseded permission cannot change the new start '
+            '(denied: $denied, old first: $oldFirst)', () async {
+          final positions = _DeferredPositions();
+          final rig = _Rig(positions: positions.call);
+          addTearDown(rig.dispose);
+          await rig.sync();
+          await rig.sync(rideId: 'ride-2');
+          expect(rig.asks, 2);
+
+          if (!oldFirst) {
+            positions.requests[1].complete(rig.fixes.stream);
+            await rig.settle();
+          }
+          positions.requests[0].complete(denied ? null : rig.fixes.stream);
+          await rig.settle();
+          await rig.sync(rideId: 'ride-2');
+          expect(rig.asks, 2, reason: 'the newer permission owns _starting');
+          if (oldFirst) {
+            expect(rig.fixes.hasListener, isFalse);
+            positions.requests[1].complete(rig.fixes.stream);
+            await rig.settle();
+          }
+          await rig.send(fix());
+          expect(rig.publisher.status, LocationShareStatus.sharing);
+          expect(rig.memory.lastByRide.keys, ['ride-2']);
+        });
+      }
+    }
+
+    test('disposed pending permission cannot subscribe or notify', () async {
+      final positions = _DeferredPositions();
+      final rig = _Rig(positions: positions.call);
+      addTearDown(() => unawaited(rig.fixes.close()));
+      await rig.sync();
+      var notifications = 0;
+      rig.publisher.addListener(() => notifications++);
+      rig.publisher.dispose();
+      positions.requests.single.complete(rig.fixes.stream);
+      await rig.settle();
+      expect(rig.publisher.isSharingRequested, isFalse);
+      expect(rig.publisher.isPublishing, isFalse);
+      expect(rig.publisher.status, LocationShareStatus.off);
+      expect(rig.fixes.hasListener, isFalse);
+      expect(notifications, 0);
+    });
+
+    for (final switchRider in [false, true]) {
+      test('switching ${switchRider ? 'rider' : 'trip'} resets the trail',
+          () async {
+        final sink = _DeferredSink();
+        final rig = _Rig(sink: sink);
+        addTearDown(rig.dispose);
+        await rig.sync();
+        await rig.send(fix());
+        sink.calls[0].result.complete();
+        await rig.settle();
+        expect(rig.publisher.lastWritten, isNotNull);
+
+        await rig.sync(
+          rideId: switchRider ? 'ride-1' : 'ride-2',
+          riderId: switchRider ? 'rider-2' : 'rider-1',
+          signedIn: switchRider ? 'rider-2' : 'rider-1',
+        );
+        expect(rig.asks, 2);
+        expect(rig.publisher.lastWritten, isNull);
+        await rig.send(fix());
+        expect(sink.calls, hasLength(2),
+            reason: 'the old trail must not throttle the new share');
+        expect(sink.calls[1].rideId, switchRider ? 'ride-1' : 'ride-2');
+        expect(sink.calls[1].riderId, switchRider ? 'rider-2' : 'rider-1');
+        sink.calls[1].result.complete();
+        await rig.settle();
+      });
+    }
+
+    for (final fails in [false, true]) {
+      for (final disposed in [false, true]) {
+        test('late write ${fails ? 'failure' : 'success'} after '
+            '${disposed ? 'dispose' : 'stop'} stays off', () async {
+          final sink = _DeferredSink();
+          final rig = _Rig(sink: sink);
+          if (disposed) {
+            addTearDown(() => unawaited(rig.fixes.close()));
+          } else {
+            addTearDown(rig.dispose);
+          }
+          await rig.sync();
+          await rig.send(fix());
+          await rig.send(moved(fix()));
+          expect(sink.calls, hasLength(1));
+          var notifications = 0;
+          rig.publisher.addListener(() => notifications++);
+          if (disposed) {
+            rig.publisher.dispose();
+          } else {
+            rig.publisher.stop();
+          }
+          final stoppedNotifications = notifications;
+          if (fails) {
+            sink.calls.single.result.completeError(RepositoryFailure.offline());
+          } else {
+            sink.calls.single.result.complete();
+          }
+          await rig.settle();
+          rig.publisher.checkFreshness();
+          expect(rig.publisher.status, LocationShareStatus.off);
+          expect(rig.publisher.isPublishing, isFalse);
+          expect(rig.publisher.isSharingRequested, isFalse);
+          expect(rig.publisher.lastWritten, isNull);
+          expect(sink.calls, hasLength(1), reason: 'queued fixes were cleared');
+          expect(notifications, stoppedNotifications);
+          expect(rig.fixes.hasListener, isFalse);
+        });
+      }
+
+      test('old trip write ${fails ? 'failure' : 'success'} cannot affect '
+          'the new trip or overlap its writes', () async {
+        final sink = _DeferredSink();
+        final rig = _Rig(sink: sink);
+        addTearDown(rig.dispose);
+        await rig.sync();
+        for (var i = 0; i < 2; i++) {
+          await rig.send(fix());
+          sink.calls[i].result.completeError(RepositoryFailure.offline());
+          await rig.settle();
+        }
+        await rig.send(fix());
+        await rig.send(moved(fix()));
+        await rig.sync(rideId: 'ride-2');
+        final newest = fix(moveLat: 0.001);
+        await rig.send(newest);
+        rig.publisher.checkFreshness();
+        expect(sink.calls, hasLength(3));
+        expect(sink.active, 1);
+        if (fails) {
+          sink.calls[2].result.completeError(RepositoryFailure.offline());
+        } else {
+          sink.calls[2].result.complete();
+        }
+        await rig.settle();
+        expect(sink.calls, hasLength(4));
+        expect(sink.calls[3].rideId, 'ride-2');
+        expect(sink.calls[3].fix, same(newest));
+        expect(rig.publisher.lastWritten, isNull);
+        expect(rig.publisher.status, LocationShareStatus.stale);
+
+        for (var i = 3; i < 5; i++) {
+          sink.calls[i].result.completeError(RepositoryFailure.offline());
+          await rig.settle();
+          expect(rig.publisher.isPublishing, isTrue,
+              reason: 'old failures do not count against the new trip');
+          await rig.send(newest);
+        }
+        sink.calls[5].result.complete();
+        await rig.settle();
+        expect(rig.publisher.lastWritten, same(newest));
+        expect(rig.publisher.status, LocationShareStatus.sharing);
+        expect(sink.maxActive, 1);
+      });
+
+      test('stop/restart with the same IDs ignores old write '
+          '${fails ? 'failure' : 'success'}', () async {
+        final sink = _DeferredSink();
+        final rig = _Rig(sink: sink);
+        addTearDown(rig.dispose);
+        await rig.sync();
+        await rig.send(fix());
+        rig.publisher.stop();
+        await rig.sync();
+        final newest = moved(fix());
+        await rig.send(newest);
+        rig.publisher.checkFreshness();
+        expect(sink.calls, hasLength(1));
+        if (fails) {
+          sink.calls[0].result.completeError(RepositoryFailure.offline());
+        } else {
+          sink.calls[0].result.complete();
+        }
+        await rig.settle();
+        expect(sink.calls, hasLength(2));
+        expect(rig.publisher.lastWritten, isNull);
+        expect(rig.publisher.status, LocationShareStatus.stale);
+        sink.calls[1].result.complete();
+        await rig.settle();
+        expect(rig.publisher.lastWritten, same(newest));
+        expect(rig.publisher.status, LocationShareStatus.sharing);
+        expect(sink.maxActive, 1);
+      });
+    }
+
+    test('cancelled subscription callbacks cannot publish or pause a new trip',
+        () async {
+      final oldStream = _LateStream();
+      addTearDown(oldStream.dispose);
+      var asks = 0;
+      late _Rig rig;
+      rig = _Rig(positions: () async {
+        return asks++ == 0 ? oldStream : rig.fixes.stream;
+      });
+      addTearDown(rig.dispose);
+      await rig.sync();
+      await rig.sync(rideId: 'ride-2');
+      oldStream.emit(fix());
+      oldStream.fail();
+      oldStream.finish();
+      await rig.settle();
+      expect(rig.memory.published, isEmpty);
+      expect(rig.publisher.isPublishing, isTrue);
+      expect(rig.publisher.status, LocationShareStatus.sharing);
+      await rig.send(fix());
+      expect(rig.memory.lastByRide.keys, ['ride-2']);
+    });
+
+    test('a stream pause clears queued fixes and invalidates an in-flight write',
+        () async {
+      final sink = _DeferredSink();
+      final rig = _Rig(sink: sink);
+      addTearDown(rig.dispose);
+      await rig.sync();
+      await rig.send(fix());
+      sink.calls[0].result.complete();
+      await rig.settle();
+      await rig.send(moved(fix()));
+      await rig.send(fix(moveLat: 0.001));
+      rig.fixes.addError(StateError('position stream unavailable'));
+      await rig.settle();
+      expect(rig.publisher.status, LocationShareStatus.unavailable);
+      expect(rig.publisher.isPublishing, isFalse);
+      expect(rig.publisher.isSharingRequested, isTrue);
+      expect(rig.publisher.lastWritten, isNull);
+      expect(rig.fixes.hasListener, isFalse);
+      sink.calls[1].result.complete();
+      await rig.settle();
+      rig.now = rig.now.add(const Duration(minutes: 1));
+      rig.publisher.checkFreshness();
+      await rig.sync();
+      expect(rig.asks, 1);
+      expect(sink.calls, hasLength(2));
+      expect(rig.publisher.status, LocationShareStatus.unavailable);
+    });
+  });
+
+  group('coalesced writes', () {
+    test('overlapping positions keep only the freshest pending fix', () async {
+      final sink = _DeferredSink();
+      final rig = _Rig(sink: sink);
+      addTearDown(rig.dispose);
+      await rig.sync();
+      await rig.send(fix());
+      for (var i = 1; i <= 100; i++) {
+        rig.fixes.add(fix(moveLat: i * 0.0003,
+            at: rig.t0.add(Duration(milliseconds: i))));
+      }
+      final newest = fix(moveLat: 0.04,
+          at: rig.t0.add(const Duration(milliseconds: 101)));
+      await rig.send(newest);
+      await rig.send(fix(moveLat: 0.05,
+          at: rig.t0.add(const Duration(milliseconds: 50))));
+      expect(sink.calls, hasLength(1));
+      expect(sink.active, 1);
+      sink.calls[0].result.complete();
+      await rig.settle();
+      expect(sink.calls, hasLength(2));
+      expect(sink.calls[1].fix, same(newest));
+      sink.calls[1].result.complete();
+      await rig.settle();
+      await rig.send(fix(moveLat: 0.06));
+      expect(sink.calls, hasLength(2), reason: 'older fixes cannot rewind');
+      expect(rig.publisher.lastWritten, same(newest));
+      expect(sink.maxActive, 1);
+    });
+
+    test('pending fixes are revalidated for age before publishing', () async {
+      final sink = _DeferredSink();
+      final rig = _Rig(sink: sink);
+      addTearDown(rig.dispose);
+      await rig.sync();
+      await rig.send(fix());
+      await rig.send(moved(fix()));
+      rig.now = rig.now.add(LocationRules.maxFixAge + const Duration(seconds: 1));
+      sink.calls[0].result.complete();
+      await rig.settle();
+      expect(sink.calls, hasLength(1));
+      await rig.send(moved(fix(at: rig.now)));
+      expect(sink.calls, hasLength(2));
+      sink.calls[1].result.complete();
+      await rig.settle();
+      expect(sink.maxActive, 1);
+    });
+
+    test('latest pending fix is throttled against the newly accepted write',
+        () async {
+      final sink = _DeferredSink();
+      final rig = _Rig(sink: sink);
+      addTearDown(rig.dispose);
+      await rig.sync();
+      final first = fix();
+      await rig.send(first);
+      await rig.send(moved(first));
+      await rig.send(fix(moveLat: 0.00001,
+          at: rig.now.add(const Duration(seconds: 1))));
+      await rig.send(fix(accuracy: 5000,
+          at: rig.now.add(const Duration(seconds: 2))));
+      sink.calls[0].result.complete();
+      await rig.settle();
+      expect(sink.calls, hasLength(1),
+          reason: 'do not replay an earlier move after the rider returns');
+      expect(rig.publisher.lastWritten, same(first));
+      await rig.send(moved(first).copyAt(
+          rig.now.add(const Duration(seconds: 3))));
+      expect(sink.calls, hasLength(2));
+      sink.calls[1].result.complete();
+      await rig.settle();
     });
   });
 

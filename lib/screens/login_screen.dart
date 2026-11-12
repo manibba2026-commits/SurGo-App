@@ -8,12 +8,14 @@ import '../theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
 import '../widgets/common.dart';
 
-/// Sign-in through Supabase Auth: a phone one-time code, Google, or (on the
-/// hosted build) the phone number and PIN issued to a fictional demo account.
+/// Sign-in through Supabase Auth.
 ///
-/// The screen never sees a password. A successful phone request continues on
-/// the OTP screen; Google completes through the provider's deep link; a demo
-/// PIN is verified by the server and signs in immediately.
+/// Phone is the primary path: the field and Login button sit above the
+/// alternative methods. A successful request continues on the six-digit OTP
+/// screen. Email opens its own password screen, the social providers complete
+/// through their deep link, and the demo option opens the server-verified PIN
+/// form. The layout deliberately keeps the alternative methods below the
+/// primary phone login.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -28,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscure = true;
   bool _submitting = false;
   bool _googleLoading = false;
+  bool _facebookLoading = false;
   bool _navigated = false;
   String? _error;
   String? _phoneError;
@@ -157,6 +160,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _setPinMode(bool value) {
     if (_submitting) return;
+    if (value) {
+      // The phone form accepts an account number, while the demo form needs a
+      // phone. Resolve it on the way in so a presentation tap is not lost.
+      final account = state.demoAccountFor(phoneCtrl.text.trim());
+      if (account != null) phoneCtrl.text = account.phone;
+    }
     setState(() {
       _pinMode = value;
       _error = null;
@@ -196,7 +205,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 onTap: _submitting
                     ? null
                     : () => setState(() {
-                          phoneCtrl.text = account.id;
+                          phoneCtrl.text =
+                              _pinMode ? account.phone : account.id;
                           _error = null;
                           _phoneError = null;
                         }),
@@ -260,9 +270,28 @@ class _LoginScreenState extends State<LoginScreen> {
     if (state.isSignedIn) _finishSignedIn();
   }
 
+  Future<void> _facebook() async {
+    if (_facebookLoading) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _facebookLoading = true;
+      _error = null;
+    });
+
+    if (!state.ready) await state.init();
+    final failure = await state.signInWithFacebook();
+    if (!mounted) return;
+
+    setState(() {
+      _facebookLoading = false;
+      _error = failure?.message;
+    });
+    if (state.isSignedIn) _finishSignedIn();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final busy = _submitting || _googleLoading;
+    final busy = _submitting || _googleLoading || _facebookLoading;
     return SbAuthScaffold(
       children: [
         const SizedBox(height: 22),
@@ -272,7 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
           title: _pinMode ? 'Demo sign-in' : 'Welcome back',
           subtitle: _pinMode
               ? 'Use the phone number and PIN issued for this demo account.'
-              : 'We will text you a one-time code. No password needed.',
+              : 'Enter your phone number. We will text you a six-digit code.',
         ),
         const SizedBox(height: 26),
         if (_pinMode) ...[
@@ -320,6 +349,7 @@ class _LoginScreenState extends State<LoginScreen> {
             },
             onSubmitted: (_) => _submitPin(),
           ),
+          if (state.demoAuthEnabled) _demoAccountsCard(),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
@@ -335,9 +365,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ] else ...[
           SbAuthField(
-            label: state.demoAuthEnabled
-                ? 'Phone or account number'
-                : 'Phone number',
+            label: 'Phone Number',
             controller: phoneCtrl,
             icon: Icons.phone_outlined,
             errorText: _phoneError,
@@ -356,12 +384,12 @@ class _LoginScreenState extends State<LoginScreen> {
             },
             onSubmitted: (_) => _submit(),
           ),
-          if (state.demoAuthEnabled) _demoAccountsCard(),
-          if (state.demoPinLoginAvailable)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: busy ? null : () => _setPinMode(true),
+          Row(
+            children: [
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () => Navigator.pushNamed(context, '/email-login'),
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.primaryLight,
                   padding:
@@ -369,49 +397,66 @@ class _LoginScreenState extends State<LoginScreen> {
                   textStyle: const TextStyle(
                       fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
-                child: const Text('Use demo phone + PIN'),
+                child: const Text('Login with Email'),
               ),
-            ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: busy
-                  ? null
-                  : () => Navigator.pushNamed(context, '/forgot-password'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.primaryLight,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                textStyle:
-                    const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+              const Spacer(),
+              TextButton(
+                onPressed: busy
+                    ? null
+                    : () => Navigator.pushNamed(context, '/forgot-password'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaryLight,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  textStyle: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+                child: const Text('Trouble signing in?'),
               ),
-              child: const Text('Trouble signing in?'),
-            ),
+            ],
           ),
         ],
-        const SizedBox(height: 6),
         if (!state.authAvailable)
           const SbAuthError(
             message:
                 'Sign-in is unavailable right now. Check your connection and restart SurGo.',
           ),
         SbAuthError(message: _error),
+        const SizedBox(height: 6),
         SbPrimaryButton(
           label: _pinMode
               ? (_submitting ? 'Signing in…' : 'Sign in')
-              : (_submitting ? 'Sending code…' : 'Send code'),
+              : (_submitting ? 'Sending code…' : 'Login'),
           onPressed: busy ? null : (_pinMode ? _submitPin : _submit),
         ),
         const SizedBox(height: 22),
         const SbOrDivider(),
-        const SizedBox(height: 22),
+        const SizedBox(height: 18),
         SbSocialButton(
           icon: const SbGoogleMark(),
           label: _googleLoading ? 'Opening Google…' : 'Continue with Google',
           glow: true,
           onPressed: busy ? null : _google,
         ),
-        const SizedBox(height: 24),
-        if (!_pinMode)
+        const SizedBox(height: 12),
+        SbSocialButton(
+          icon: const SbFacebookMark(),
+          label:
+              _facebookLoading ? 'Opening Facebook…' : 'Continue with Facebook',
+          onPressed: busy ? null : _facebook,
+        ),
+        if (!_pinMode) ...[
+          const SizedBox(height: 12),
+          SbSocialButton(
+            icon: const Icon(
+              Icons.badge_outlined,
+              size: 18,
+              color: AppColors.secondary,
+            ),
+            label: 'Continue with Demo',
+            onPressed: busy ? null : () => _setPinMode(true),
+          ),
+          const SizedBox(height: 22),
           SbAuthLink(
             prefix: 'No account?',
             action: 'Sign up',
@@ -419,6 +464,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ? null
                 : () => Navigator.pushReplacementNamed(context, '/register'),
           ),
+        ],
         const SizedBox(height: 8),
       ],
     );

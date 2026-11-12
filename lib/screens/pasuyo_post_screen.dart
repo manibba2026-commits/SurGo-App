@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../auth/auth_models.dart';
 import '../data/db_models.dart';
 import '../repositories/repository_failure.dart';
 import '../services/fee_calculator.dart';
@@ -45,7 +46,9 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
 
   /// Hosted writes go straight to Postgres and need the barangay id, while the
   /// seeded demo keeps using AppState and its label-only picker.
-  bool get _hosted => AppState.instance.usesHostedIdentity;
+  bool get _hosted =>
+      AppState.instance.usesHostedIdentity &&
+      AppState.instance.repositories.isSupabaseBacked;
 
   /// Slider bounds in centavos: ₱50 to ₱800.
   static const int minBudget = 5000;
@@ -103,15 +106,30 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
   }
 
   Future<void> _pickLocation({required bool isPickup}) async {
+    final state = AppState.instance;
+    final registry = state.repositories;
+    final userId = state.identity?.userId;
+    bool current() =>
+        mounted &&
+        identical(registry, state.repositories) &&
+        userId == state.identity?.userId;
     if (!_hosted) {
-      final picked = await showLocationPicker(context,
-          title: isPickup ? 'Pickup location' : 'Drop-off location');
-      if (picked != null) _applyLocation(picked, isPickup: isPickup);
+      final picked = await showLocationPicker(
+        context,
+        title: isPickup ? 'Pickup location' : 'Drop-off location',
+      );
+      if (current() && picked != null) {
+        _applyLocation(picked, isPickup: isPickup);
+      }
       return;
     }
-    final picked = await showHostedLocationPicker(context,
-        title: isPickup ? 'Pickup location' : 'Drop-off location');
-    if (picked != null) _applyHostedLocation(picked, isPickup: isPickup);
+    final picked = await showHostedLocationPicker(
+      context,
+      title: isPickup ? 'Pickup location' : 'Drop-off location',
+    );
+    if (current() && picked != null) {
+      _applyHostedLocation(picked, isPickup: isPickup);
+    }
   }
 
   void _addItem(String raw) {
@@ -124,12 +142,13 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
   }
 
   Future<void> _post() async {
+    if (_submitting) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (_pickup.isEmpty || (_hosted && _pickupBarangayId == null)) {
       _toast('Set both pickup and drop-off first');
       return;
     }
-    if (_dropoff.isEmpty) {
+    if (_dropoff.isEmpty || (_hosted && _dropoffBarangayId == null)) {
       _toast('Set both pickup and drop-off first');
       return;
     }
@@ -142,6 +161,7 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
       return;
     }
 
+    setState(() => _submitting = true);
     if (!_hosted) {
       final task = AppState.instance.postPasuyoTask(
         category: _category,
@@ -155,6 +175,9 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         dropoff: _dropoff,
         budget: _budget,
         note: _noteCtrl.text.trim(),
+        bookedForSomeone: _bookedForSomeone,
+        recipientName: _recipientNameCtrl.text.trim(),
+        recipientPhone: normalizePhoneNumber(_recipientPhoneCtrl.text) ?? '',
       );
 
       Navigator.pushReplacement(
@@ -164,10 +187,24 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
       return;
     }
 
-    setState(() => _submitting = true);
+    final state = AppState.instance;
+    final registry = state.repositories;
+    final userId = state.identity?.userId;
+    final accountId = state.currentAccount?.id;
+    bool current() =>
+        mounted &&
+        _hosted &&
+        identical(registry, state.repositories) &&
+        userId == state.identity?.userId &&
+        accountId == state.currentAccount?.id &&
+        state.isSignedIn;
     try {
+      if (!current()) {
+        _toast('Sign in again before posting an errand.');
+        return;
+      }
       final note = _noteCtrl.text.trim();
-      final phone = _recipientPhoneCtrl.text.trim();
+      final phone = normalizePhoneNumber(_recipientPhoneCtrl.text) ?? '';
       final task = await AppState.instance.createHostedErrand(
         category: _category,
         title: _titleCtrl.text.trim(),
@@ -183,20 +220,20 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         dropoffBarangayId: _dropoffBarangayId,
         dropoffPurokId: _dropoffPurokId,
         bookedForSomeone: _bookedForSomeone,
-        recipientName:
-            _bookedForSomeone ? _recipientNameCtrl.text.trim() : null,
-        recipientPhone:
-            _bookedForSomeone && phone.isNotEmpty ? phone : null,
+        recipientName: _bookedForSomeone
+            ? _recipientNameCtrl.text.trim()
+            : null,
+        recipientPhone: _bookedForSomeone && phone.isNotEmpty ? phone : null,
       );
-      if (!mounted) return;
+      if (!mounted || !current()) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => PasuyoTaskScreen(taskId: task.id)),
       );
     } on RepositoryFailure catch (failure) {
-      if (!mounted) return;
-      _toast(failure.message);
-      setState(() => _submitting = false);
+      if (current()) _toast(failure.message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -223,8 +260,10 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
           children: [
-            const Text('What do you need?',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+            const Text(
+              'What do you need?',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+            ),
             const SizedBox(height: 9),
             Wrap(
               spacing: 8,
@@ -235,33 +274,38 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
                   borderRadius: BorderRadius.circular(10),
                   onTap: () => setState(() => _category = c),
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
                     decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.primarySoft
-                          : AppColors.panel,
+                      color: selected ? AppColors.primarySoft : AppColors.panel,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: selected ? AppColors.primary : AppColors.border),
+                        color: selected ? AppColors.primary : AppColors.border,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(c.icon,
-                            size: 15,
+                        Icon(
+                          c.icon,
+                          size: 15,
+                          color: selected
+                              ? AppColors.primaryLight
+                              : AppColors.muted,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          c.label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                             color: selected
                                 ? AppColors.primaryLight
-                                : AppColors.muted),
-                        const SizedBox(width: 6),
-                        Text(c.label,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: selected
-                                  ? AppColors.primaryLight
-                                  : AppColors.text,
-                            )),
+                                : AppColors.text,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -311,39 +355,52 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
               Wrap(
                 spacing: 7,
                 runSpacing: 7,
-                children: _items.map((item) => SbChip(
-                      item,
-                      active: true,
-                      onTap: () => setState(() => _items.remove(item)),
-                    )).toList(),
+                children: _items
+                    .map(
+                      (item) => SbChip(
+                        item,
+                        active: true,
+                        onTap: () => setState(() => _items.remove(item)),
+                      ),
+                    )
+                    .toList(),
               ),
             ],
             const SizedBox(height: 18),
             SbField(
               label: 'Pickup',
-              value: _pickup.isEmpty ? 'Where should the helper buy it?' : _pickup,
-              leading: const Icon(Icons.storefront_outlined,
-                  size: 17, color: AppColors.secondary),
+              value: _pickup.isEmpty
+                  ? 'Where should the helper buy it?'
+                  : _pickup,
+              leading: const Icon(
+                Icons.storefront_outlined,
+                size: 17,
+                color: AppColors.secondary,
+              ),
               onTap: () => _pickLocation(isPickup: true),
             ),
             const SizedBox(height: 8),
             SbField(
               label: 'Drop-off',
-              value:
-                  _dropoff.isEmpty ? 'Where should it go?' : _dropoff,
-              leading: const Icon(Icons.place_outlined,
-                  size: 17, color: AppColors.primary),
+              value: _dropoff.isEmpty ? 'Where should it go?' : _dropoff,
+              leading: const Icon(
+                Icons.place_outlined,
+                size: 17,
+                color: AppColors.primary,
+              ),
               onTap: () => _pickLocation(isPickup: false),
             ),
             const SizedBox(height: 14),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Booked for someone else',
-                  style:
-                      TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+              title: const Text(
+                'Booked for someone else',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+              ),
               subtitle: const Text(
-                  'The recipient receives the goods; you still pay.',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                'The recipient receives the goods; you still pay.',
+                style: TextStyle(color: AppColors.muted, fontSize: 11.5),
+              ),
               value: _bookedForSomeone,
               activeTrackColor: AppColors.primary,
               onChanged: (v) => setState(() => _bookedForSomeone = v),
@@ -358,8 +415,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
                   labelStyle: TextStyle(fontSize: 12.5),
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) => !_bookedForSomeone ||
-                        (v != null && v.trim().isNotEmpty)
+                validator: (v) =>
+                    !_bookedForSomeone || (v != null && v.trim().isNotEmpty)
                     ? null
                     : 'Add the recipient\'s name',
               ),
@@ -373,18 +430,29 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
                   labelStyle: TextStyle(fontSize: 12.5),
                   border: OutlineInputBorder(),
                 ),
+                validator: (value) =>
+                    value == null ||
+                        value.trim().isEmpty ||
+                        normalizePhoneNumber(value) != null
+                    ? null
+                    : 'Enter a valid recipient phone number.',
               ),
             ],
             const SizedBox(height: 18),
             Row(
               children: [
-                const Text('Errand budget',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+                const Text(
+                  'Errand budget',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+                ),
                 const Spacer(),
-                Text(Money.format(_budget),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 14)),
+                Text(
+                  Money.format(_budget),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
               ],
             ),
             Slider(
@@ -432,12 +500,17 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         children: [
           _row('Customer pays', b.customerPaysLabel, bold: true),
           const SizedBox(height: 6),
-          _row('Helper gets', b.providerGetsLabel,
-              color: AppColors.secondaryLight),
+          _row(
+            'Helper gets',
+            b.providerGetsLabel,
+            color: AppColors.secondaryLight,
+          ),
           const SizedBox(height: 6),
-          _row(_hosted ? 'Platform fee (fixed)' : 'SurGo service fee (15%)',
-              b.surgoKeepsLabel,
-              color: AppColors.yellow),
+          _row(
+            _hosted ? 'Platform fee (fixed)' : 'SurGo service fee (15%)',
+            b.surgoKeepsLabel,
+            color: AppColors.yellow,
+          ),
         ],
       ),
     );
@@ -447,19 +520,23 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
     return Row(
       children: [
         Expanded(
-          child: Text(label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-                color: bold ? AppColors.text : AppColors.muted,
-              )),
-        ),
-        Text(value,
+          child: Text(
+            label,
             style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: color ?? AppColors.text,
-            )),
+              fontSize: 12,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+              color: bold ? AppColors.text : AppColors.muted,
+            ),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: color ?? AppColors.text,
+          ),
+        ),
       ],
     );
   }

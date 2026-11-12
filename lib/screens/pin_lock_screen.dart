@@ -94,7 +94,7 @@ class _PinLockScreenState extends State<PinLockScreen> {
   }
 
   Future<void> _submit() async {
-    if (_submitting || _locked || _pin.length != _length) return;
+    if (!mounted || _submitting || _locked || _pin.length != _length) return;
 
     switch (_mode) {
       case _PinMode.create:
@@ -186,7 +186,8 @@ class _PinLockScreenState extends State<PinLockScreen> {
     setState(() {
       _submitting = false;
       _pin = '';
-      _error = 'That PIN is incorrect. '
+      _error =
+          'That PIN is incorrect. '
           '$left ${left == 1 ? 'attempt' : 'attempts'} left.';
     });
   }
@@ -247,17 +248,17 @@ class _PinLockScreenState extends State<PinLockScreen> {
   }
 
   String get _title => switch (_mode) {
-        _PinMode.create => 'Create your PIN',
-        _PinMode.confirm => 'Confirm your PIN',
-        _PinMode.unlock => 'Welcome back',
-      };
+    _PinMode.create => 'Create your PIN',
+    _PinMode.confirm => 'Confirm your PIN',
+    _PinMode.unlock => 'Welcome back',
+  };
 
   String get _subtitle => switch (_mode) {
-        _PinMode.create =>
-          'Choose a 6-digit PIN. It unlocks SurGo when the app reopens.',
-        _PinMode.confirm => 'Enter the same 6 digits once more.',
-        _PinMode.unlock => 'Enter your PIN to unlock your SurGo dashboard.',
-      };
+    _PinMode.create =>
+      'Choose a 6-digit PIN. It unlocks SurGo when the app reopens.',
+    _PinMode.confirm => 'Enter the same 6 digits once more.',
+    _PinMode.unlock => 'Enter your PIN to unlock your SurGo dashboard.',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -322,8 +323,8 @@ class _PinLockScreenState extends State<PinLockScreen> {
                 onPressed: _submitting
                     ? null
                     : _mode == _PinMode.create
-                        ? _signOut
-                        : _forgotPin,
+                    ? _signOut
+                    : _forgotPin,
                 child: Text(
                   _mode == _PinMode.create
                       ? 'Sign out'
@@ -358,10 +359,10 @@ class _PinLockScreenState extends State<PinLockScreen> {
                   color: _error != null
                       ? AppColors.danger
                       : active
-                          ? AppColors.primary
-                          : filled
-                              ? AppColors.primary.withValues(alpha: 0.6)
-                              : AppColors.borderLight,
+                      ? AppColors.primary
+                      : filled
+                      ? AppColors.primary.withValues(alpha: 0.6)
+                      : AppColors.borderLight,
                   width: active ? 1.8 : 1.2,
                 ),
                 boxShadow: active
@@ -411,7 +412,8 @@ class _PinLockScreenState extends State<PinLockScreen> {
                 border: Border.all(color: AppColors.border),
               ),
               child: Center(
-                child: child ??
+                child:
+                    child ??
                     Text(
                       label,
                       style: TextStyle(
@@ -428,9 +430,9 @@ class _PinLockScreenState extends State<PinLockScreen> {
     }
 
     Widget row(List<Widget> children) => Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: children,
-        );
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: children,
+    );
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 300),

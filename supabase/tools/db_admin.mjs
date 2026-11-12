@@ -89,21 +89,27 @@ Add-Type -TypeDefinition $sig
 
 let cachedToken;
 
-export async function sql(query) {
+/// Call the Management API with the CLI's stored token. The token never leaves
+/// process memory and is never logged.
+export async function api(pathname, init = {}) {
   cachedToken ??= getToken();
-  const res = await fetch(
-    `https://api.supabase.com/v1/projects/${REF}/database/query`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${cachedToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query }),
+  const res = await fetch(`https://api.supabase.com${pathname}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${cachedToken}`,
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
     },
-  );
+  });
   const text = await res.text();
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 400)}`);
   const ct = res.headers.get('content-type') ?? '';
   return ct.includes('json') ? JSON.parse(text) : text;
+}
+
+export async function sql(query) {
+  return api(`/v1/projects/${REF}/database/query`, {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+  });
 }

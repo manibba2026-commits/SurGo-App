@@ -168,6 +168,9 @@ class LocationPublisher extends ChangeNotifier {
   String? _riderId;
   String? _attemptedRideId;
   LocationFix? _lastWritten;
+  LocationFix? _pendingFix;
+  DateTime? _newestFixAt;
+  bool _writeInFlight = false;
   int _consecutiveFailures = 0;
   bool _publishing = false;
   bool _disposed = false;
@@ -208,8 +211,12 @@ class LocationPublisher extends ChangeNotifier {
       stop();
       return;
     }
-    _rideId = rideId;
-    _riderId = riderId;
+    if (_rideId != rideId || _riderId != riderId) {
+      stop();
+      if (_disposed) return;
+      _rideId = rideId;
+      _riderId = riderId;
+    }
     if (_publishing || _starting) return;
     // A share that gave up on this trip — refused permission, or a sink that
     // would not take a fix — stays given-up. Otherwise every app-state change
@@ -236,10 +243,8 @@ class LocationPublisher extends ChangeNotifier {
     } catch (_) {
       stream = null;
     }
+    if (!_isCurrent(token)) return;
     _starting = false;
-    if (_disposed || token != _startToken || !isSharingRequested) {
-      return;
-    }
     if (stream == null) {
       // Denied permission or location services off. The rider keeps the rest of
       // the app; only live position is unavailable, and it says so.
@@ -248,30 +253,34 @@ class LocationPublisher extends ChangeNotifier {
     }
     _publishing = true;
     _consecutiveFailures = 0;
-    _setStatus(LocationShareStatus.sharing);
-    _subscription = stream.listen(_onFix, onError: (Object _) {
-      _pause(reason: LocationShareStatus.unavailable);
+    _subscription = stream.listen((fix) => _onFix(fix, token),
+        onError: (Object _) {
+      if (_isCurrent(token)) {
+        _pause(reason: LocationShareStatus.unavailable);
+      }
+    }, onDone: () {
+      if (_isCurrent(token)) {
+        _pause(reason: LocationShareStatus.unavailable);
+      }
     });
     _freshnessTimer = Timer.periodic(
       const Duration(seconds: 15),
-      (_) => checkFreshness(),
+      (_) {
+        if (_isCurrent(token)) checkFreshness();
+      },
     );
+    _setStatus(LocationShareStatus.sharing);
   }
+
+  bool _isCurrent(int token) =>
+      !_disposed && token == _startToken && isSharingRequested;
 
   /// Stops sharing and forgets the trail, for the end of a trip or a sign-out.
   void stop() {
     // Bumped even when there is nothing to cancel, so a permission prompt the
     // rider is still looking at cannot start a share they have already ended.
     _startToken++;
-    _starting = false;
-    if (!_publishing && _status == LocationShareStatus.off) return;
-    _subscription?.cancel();
-    _subscription = null;
-    _freshnessTimer?.cancel();
-    _freshnessTimer = null;
-    _publishing = false;
-    _lastWritten = null;
-    _consecutiveFailures = 0;
+    _clearSharing();
     _rideId = null;
     _riderId = null;
     _attemptedRideId = null;
@@ -281,10 +290,24 @@ class LocationPublisher extends ChangeNotifier {
   /// Drops the trail without pretending sharing was never asked for, used when
   /// the device stops being trustworthy while the trip is still live.
   void _pause({required LocationShareStatus reason}) {
+    _startToken++;
+    _clearSharing();
+    _setStatus(reason);
+  }
+
+  void _clearSharing() {
+    _starting = false;
     _subscription?.cancel();
     _subscription = null;
+    _freshnessTimer?.cancel();
+    _freshnessTimer = null;
     _publishing = false;
-    _setStatus(reason);
+    _lastWritten = null;
+    _pendingFix = null;
+    _newestFixAt = null;
+    _consecutiveFailures = 0;
+    // An already-issued write cannot be cancelled; keep its serialization slot
+    // until it settles, even if a different trip starts meanwhile.
   }
 
   /// A screen, or a test, can ask the same question the timer asks.
@@ -299,35 +322,57 @@ class LocationPublisher extends ChangeNotifier {
     }
   }
 
-  Future<void> _onFix(LocationFix fix) async {
-    if (!_publishing || _disposed) return;
-    final now = _clock();
-    if (!LocationRules.isTrustworthy(fix, now: now)) return;
-    if (!LocationRules.isWorthWriting(
-        fix: fix, lastWritten: _lastWritten, now: now)) {
-      return;
-    }
-    final rideId = _rideId;
-    final riderId = _riderId;
-    if (rideId == null || riderId == null) return;
+  void _onFix(LocationFix fix, int token) {
+    if (!_publishing || !_isCurrent(token)) return;
+    if (!LocationRules.isTrustworthy(fix, now: _clock())) return;
+    final newest = _newestFixAt;
+    if (newest != null && fix.readAt.isBefore(newest)) return;
+    _newestFixAt = fix.readAt;
+    _pendingFix = fix;
+    unawaited(_publishPending());
+  }
+
+  Future<void> _publishPending() async {
+    if (_writeInFlight) return;
+    _writeInFlight = true;
     try {
-      await _sinkOf().publish(rideId: rideId, riderId: riderId, fix: fix);
-      _lastWritten = fix;
-      _consecutiveFailures = 0;
-      _setStatus(LocationShareStatus.sharing);
-    } catch (_) {
-      // No connection, or the function refused. Sharing stays on so a returned
-      // network resumes it, but a sink that never accepts is reported rather
-      // than retried into a loop.
-      if (++_consecutiveFailures < maxPublishFailures) return;
-      _pause(reason: LocationShareStatus.unavailable);
+      while (_publishing && !_disposed && _pendingFix != null) {
+        final fix = _pendingFix!;
+        _pendingFix = null;
+        final token = _startToken;
+        final rideId = _rideId;
+        final riderId = _riderId;
+        if (rideId == null || riderId == null) return;
+        final now = _clock();
+        if (!LocationRules.isTrustworthy(fix, now: now) ||
+            !LocationRules.isWorthWriting(
+                fix: fix, lastWritten: _lastWritten, now: now)) {
+          continue;
+        }
+        try {
+          await _sinkOf().publish(rideId: rideId, riderId: riderId, fix: fix);
+          if (!_isCurrent(token) || !_publishing) continue;
+          _lastWritten = fix;
+          _consecutiveFailures = 0;
+          _setStatus(LocationShareStatus.sharing);
+        } catch (_) {
+          if (!_isCurrent(token) || !_publishing) continue;
+          // No connection, or the function refused. Sharing stays on so a
+          // returned network resumes it, but a sink that never accepts pauses.
+          if (++_consecutiveFailures >= maxPublishFailures) {
+            _pause(reason: LocationShareStatus.unavailable);
+          }
+        }
+      }
+    } finally {
+      _writeInFlight = false;
     }
   }
 
   void _setStatus(LocationShareStatus next) {
     if (_status == next) return;
     _status = next;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   static const maxPublishFailures = 3;
@@ -335,8 +380,7 @@ class LocationPublisher extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _subscription?.cancel();
-    _freshnessTimer?.cancel();
+    stop();
     super.dispose();
   }
 }

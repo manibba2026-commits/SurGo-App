@@ -34,9 +34,7 @@ class _HostedFakeAuth implements AuthRepository {
         email: email,
         fullName: fullName,
         providers: _signedInWithDemoPin ? const {'phone'} : const {'google'},
-        metadata: needsOnboarding
-            ? const {}
-            : const {'surgo_onboarded': true},
+        metadata: needsOnboarding ? const {} : const {'surgo_onboarded': true},
         isDemoAccount: _signedInWithDemoPin,
       );
 
@@ -58,6 +56,24 @@ class _HostedFakeAuth implements AuthRepository {
     _user = _currentUser();
     return true;
   }
+
+  @override
+  Future<bool> signInWithFacebook() async => false;
+
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthUser?> signUpWithEmail({
+    required String email,
+    required String password,
+    String? fullName,
+  }) async =>
+      throw UnimplementedError();
 
   @override
   Future<AuthUser> signInWithDemoPin({
