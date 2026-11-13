@@ -148,11 +148,15 @@ class _TaskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A hosted errand carries the fixed fee the database charged; a seeded one
-    // is still priced by the legacy percentage rule.
+    // Hosted errands charge one fixed ₱10 fee, and the seeded rows carry the
+    // same amount once the demo data is corrected, so the percentage fallback
+    // is only for an offline mock build that never wrote a fee.
+    final hosted = AppState.instance.usesHostedRideDispatch;
     final fee = task.platformFee > 0
         ? task.platformFee
-        : FeeCalculator.surgoShare(ServiceType.pasuyo, task.budget);
+        : hosted
+            ? HostedFees.pasuyoPlatformFeeCentavos
+            : FeeCalculator.surgoShare(ServiceType.pasuyo, task.budget);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: SbTintedCard(

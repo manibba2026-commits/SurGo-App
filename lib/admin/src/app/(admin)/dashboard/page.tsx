@@ -11,7 +11,7 @@ export default async function Overview() {
     db.rpc('admin_overview'),
     db.rpc('admin_daily_activity', { p_days: 14 }),
     db.from('ride_requests').select('id,status,pickup_address,dropoff_address,fare_centavos,platform_fee_centavos,requested_at,passenger:profiles!ride_requests_passenger_id_fkey(full_name)').order('requested_at', { ascending: false }).limit(6),
-    db.from('profiles').select('id,full_name,email,phone,created_at,user_roles!user_roles_profile_id_fkey(role,status)').order('created_at', { ascending: false }).limit(6),
+    db.from('profiles').select('id,full_name,email,phone,created_at,user_roles!user_roles_profile_id_fkey(role,status)')  .order('created_at', { ascending: false }).limit(6),
   ]);
   const o = ok(ov as any, 'Overview metrics') as Row;
   const days = (ok(daily as any, 'Daily activity') as Row[]).map((r) => ({ ...r, day: r.day as string }));

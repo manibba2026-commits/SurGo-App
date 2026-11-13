@@ -11,12 +11,8 @@ Deno.serve((request) =>
     semaphoreApiKey: Deno.env.get('SEMAPHORE_API_KEY') ?? '',
     semaphoreSenderName: Deno.env.get('SEMAPHORE_SENDER_NAME') || undefined,
     unisms: {
-      accessKeyId: Deno.env.get('UNISMS_ACCESS_KEY_ID') ?? '',
-      accessKeySecret: Deno.env.get('UNISMS_ACCESS_KEY_SECRET'),
-      signature: Deno.env.get('UNISMS_SIGNATURE') ?? '',
-      templateId: Deno.env.get('UNISMS_TEMPLATE_ID') ?? '',
-      codeVariable: Deno.env.get('UNISMS_CODE_VARIABLE'),
-      authMode: Deno.env.get('UNISMS_AUTH_MODE'),
+      apiKey: Deno.env.get('UNISMS_API_KEY') ?? '',
+      senderId: Deno.env.get('UNISMS_SENDER_ID') || undefined,
     },
   })
 );

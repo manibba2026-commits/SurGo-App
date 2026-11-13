@@ -682,6 +682,7 @@ class AppState extends ChangeNotifier {
         lastCompletedRide = null;
         lastCompletedRideDriver = null;
         lastRideBreakdown = null;
+        rideReceiptPending = false;
       }
       identity = loaded;
       // A demo identity signed in with its server-verified PIN, so any lock
@@ -1198,6 +1199,7 @@ class AppState extends ChangeNotifier {
     lastCompletedRide = null;
     lastCompletedRideDriver = null;
     lastRideBreakdown = null;
+    rideReceiptPending = false;
     passengerRideFailure = null;
     currentAccount = null;
     identity = null;
@@ -1674,6 +1676,7 @@ class AppState extends ChangeNotifier {
     db.rideRequests.insert(0, request);
     myRideRequest = request;
     rideProposal = null;
+    rideReceiptPending = false;
     syncRideRoute(request);
     notifyListeners();
     return request;
@@ -1763,6 +1766,7 @@ class AppState extends ChangeNotifier {
     final request = rideRequestFromRecord(record);
     myRideRequest = request;
     rideProposal = null;
+    rideReceiptPending = false;
     passengerRideFailure = null;
     syncRideRoute(request);
     notifyListeners();
@@ -1959,6 +1963,9 @@ class AppState extends ChangeNotifier {
       rideProposal = null;
       if (updated.status == RideStatus.completed) {
         lastCompletedRide = rideHistoryFromRow(record);
+        // The trip ended here, so Home can offer the receipt instead of
+        // dropping back to an empty request card.
+        rideReceiptPending = true;
         final riderName = record.riderName?.trim();
         final name = riderName == null || riderName.isEmpty
             ? 'Rider'
@@ -2688,6 +2695,17 @@ class AppState extends ChangeNotifier {
   RideHistoryItem? lastCompletedRide;
   Driver? lastCompletedRideDriver;
 
+  /// True from the moment a hosted trip completes until the receipt is
+  /// acknowledged, so Home can show a way back to it after the live card is
+  /// gone.
+  bool rideReceiptPending = false;
+
+  void acknowledgeRideReceipt() {
+    if (!rideReceiptPending) return;
+    rideReceiptPending = false;
+    notifyListeners();
+  }
+
   /// Settles the accepted trip: one path for both the rider's banner and the
   /// passenger's Live Trip screen.
   ///
@@ -2791,13 +2809,16 @@ class AppState extends ChangeNotifier {
   }
 
   /// Applies the passenger's rating to the row [completeActiveRide] wrote.
+  ///
+  /// A hosted trip has no local seed row to update, so the completed receipt is
+  /// still updated in place; acknowledging it also clears the Home reminder.
   void rateCompletedRide(int stars) {
+    rideReceiptPending = false;
     final ride = lastCompletedRide;
     if (ride == null) return;
-    final index = db.rideHistory.indexWhere((r) => r.id == ride.id);
-    if (index < 0) return;
     final rated = ride.withRating(stars);
-    db.rideHistory[index] = rated;
+    final index = db.rideHistory.indexWhere((r) => r.id == ride.id);
+    if (index >= 0) db.rideHistory[index] = rated;
     lastCompletedRide = rated;
     notifyListeners();
   }

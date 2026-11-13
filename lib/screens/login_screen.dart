@@ -377,15 +377,15 @@ class _LoginScreenState extends State<LoginScreen> {
             label: 'Continue with Demo',
             onPressed: busy ? null : () => _setPinMode(true),
           ),
-          const SizedBox(height: 22),
-          SbAuthLink(
-            prefix: 'No account?',
-            action: 'Sign up',
-            onPressed: busy
-                ? null
-                : () => Navigator.pushReplacementNamed(context, '/register'),
-          ),
         ],
+        const SizedBox(height: 22),
+        SbAuthLink(
+          prefix: 'No account?',
+          action: 'Sign up',
+          onPressed: busy
+              ? null
+              : () => Navigator.pushReplacementNamed(context, '/register'),
+        ),
         const SizedBox(height: 8),
       ],
     );

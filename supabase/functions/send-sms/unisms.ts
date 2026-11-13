@@ -1,16 +1,19 @@
-/** Legacy UniSMS template adapter. Acceptance is not handset delivery. */
-export const UNISMS_ENDPOINT =
-  'https://uni.apistd.com/?action=sms.message.send';
+/**
+ * UniSMS (unismsapi.com) one-shot client.
+ *
+ * The provider takes the finished message, not a template: the hook owns the
+ * OTP text and only the sender name is configuration. Authentication is HTTP
+ * Basic with the API key as the username and an empty password, so the key
+ * never appears in a URL or a log line.
+ */
+
+export const UNISMS_ENDPOINT = 'https://unismsapi.com/api/sms';
+export const UNISMS_DEFAULT_SENDER_ID = 'UniSMS';
 
 export interface UniSmsConfig {
-  accessKeyId: string;
-  accessKeySecret?: string;
-  /** An approved UniSMS sender signature, not the HMAC query signature. */
-  signature: string;
-  templateId: string;
-  codeVariable?: string;
-  /** Supported values: hmac (default), simple (explicit opt-in only). */
-  authMode?: string;
+  apiKey: string;
+  /** Approved alphanumeric sender name; the console default is `UniSMS`. */
+  senderId?: string;
 }
 
 export interface UniSmsSendOptions extends UniSmsConfig {
@@ -40,14 +43,7 @@ function nonempty(value: unknown): value is string {
 export function isUniSmsConfigured(
   config: UniSmsConfig | undefined,
 ): config is UniSmsConfig {
-  if (!config || !nonempty(config.accessKeyId) ||
-      !nonempty(config.signature) || !nonempty(config.templateId) ||
-      !nonempty(config.codeVariable ?? 'code')) {
-    return false;
-  }
-  const mode = config.authMode ?? 'hmac';
-  return mode === 'simple' ||
-    (mode === 'hmac' && nonempty(config.accessKeySecret));
+  return Boolean(config && nonempty(config.apiKey));
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -56,80 +52,45 @@ function record(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function zero(value: unknown): boolean {
-  return value === 0 || value === '0';
-}
+/** Statuses uniSMS returns once it has accepted a message. */
+const ACCEPTED_STATUSES = new Set([
+  'pending', 'queued', 'sent', 'accepted', 'success',
+]);
 
-function validId(value: unknown): boolean {
-  return nonempty(value) ||
-    (typeof value === 'number' && Number.isSafeInteger(value) && value > 0);
-}
-
-const ACCEPTED_STATUSES = new Set(['sent', 'accepted', 'queued', 'pending']);
-
-function entryAccepted(value: unknown): boolean {
-  const entry = record(value);
-  return entry !== null && validId(entry.id) &&
-    typeof entry.status === 'string' &&
-    ACCEPTED_STATUSES.has(entry.status.toLowerCase()) &&
-    (entry.code === undefined || zero(entry.code)) && entry.success !== false;
-}
-
+/**
+ * The documented success body is `{ message: { status, reference_id,
+ * fail_reason, ... } }`. Anything without that envelope is treated as a
+ * rejection so a proxy error page can never look like a delivery.
+ */
 function bodyAccepted(value: unknown): boolean {
   const envelope = record(value);
-  if (!envelope || !zero(envelope.code)) return false;
-  // Legacy unisms@0.0.6 returns data.messages; also accept messageIds responses.
-  const data = envelope.data === undefined ? envelope : record(envelope.data);
-  if (!data) return false;
-  const hasIds = data.messageIds !== undefined;
-  const hasMessages = data.messages !== undefined;
-  // Never let IDs mask an explicitly failed, unknown or malformed entry.
-  if (hasIds && (!Array.isArray(data.messageIds) ||
-      data.messageIds.length === 0 || !data.messageIds.every(validId))) {
+  if (!envelope) return false;
+  const message = record(envelope.message);
+  if (!message) return false;
+  if (message.success === false) return false;
+  if (message.fail_reason !== undefined && message.fail_reason !== null &&
+      message.fail_reason !== '') {
     return false;
   }
-  if (hasMessages && (!Array.isArray(data.messages) ||
-      data.messages.length === 0 || !data.messages.every(entryAccepted))) {
-    return false;
-  }
-  return hasIds || hasMessages;
-}
-
-async function authenticatedUrl(options: UniSmsConfig): Promise<string> {
-  const url = new URL(UNISMS_ENDPOINT);
-  url.searchParams.set('accessKeyId', options.accessKeyId);
-  if ((options.authMode ?? 'hmac') === 'hmac') {
-    url.searchParams.set('algorithm', 'hmac-sha256');
-    url.searchParams.set('timestamp', String(Date.now()));
-    url.searchParams.set('nonce', crypto.randomUUID().replaceAll('-', ''));
-    // Matches uni-sdk@0.0.8: sort raw keys, encode values, then sign (no body).
-    const canonical = [...url.searchParams.entries()]
-      .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-      .join('&');
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(options.accessKeySecret!),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-    const digest = new Uint8Array(await crypto.subtle.sign(
-      'HMAC', key, new TextEncoder().encode(canonical),
-    ));
-    url.searchParams.set('signature', btoa(String.fromCharCode(...digest)));
-  }
-  return url.toString();
+  const status = typeof message.status === 'string'
+    ? message.status.toLowerCase()
+    : '';
+  return ACCEPTED_STATUSES.has(status);
 }
 
 export async function sendUniSms(
   number: string,
-  otp: string,
+  message: string,
   options: UniSmsSendOptions,
 ): Promise<UniSmsSendResult> {
   if (!isUniSmsConfigured(options)) {
     return { ok: false, reason: 'not_configured' };
   }
+  const senderId = nonempty(options.senderId)
+    ? options.senderId.trim()
+    : UNISMS_DEFAULT_SENDER_ID;
+  const authorization = `Basic ${btoa(`${options.apiKey.trim()}:`)}`;
+
   const controller = new AbortController();
   const budget = Number.isFinite(options.timeoutMs) && options.timeoutMs! > 0
     ? Math.min(options.timeoutMs!, 2000)
@@ -145,19 +106,20 @@ export async function sendUniSms(
   const send = async (): Promise<UniSmsSendResult> => {
     let response: Response;
     try {
-      const url = await authenticatedUrl(options);
-      if (controller.signal.aborted) return { ok: false, reason: 'timeout' };
-      response = await (options.fetchImpl ?? fetch)(url, {
+      response = await (options.fetchImpl ?? fetch)(UNISMS_ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: authorization,
+        },
         body: JSON.stringify({
-          to: `+${number}`,
-          signature: options.signature,
-          templateId: options.templateId,
-          templateData: { [options.codeVariable ?? 'code']: otp },
+          recipient: `+${number}`,
+          content: message,
+          sender_id: senderId,
         }),
         signal: controller.signal,
-        // Do not forward query credentials or repeat the POST on redirects.
+        // Never forward credentials or repeat the POST on redirects.
         redirect: 'error',
       });
     } catch {

@@ -6,11 +6,26 @@ keys never enter the Flutter bundle, the repository, or a chat log.
 | Integration | Function | Secret names |
 | --- | --- | --- |
 | Road routing / places | `geoapify` | `GEOAPIFY_API_KEY` |
-| OTP delivery via UniSMS | `send-sms` | `SMS_PROVIDER=unisms`, `UNISMS_ACCESS_KEY_ID`, `UNISMS_ACCESS_KEY_SECRET`, `UNISMS_SIGNATURE`, `UNISMS_TEMPLATE_ID`, optional `UNISMS_CODE_VARIABLE`, `UNISMS_AUTH_MODE` |
+| OTP delivery via UniSMS | `send-sms` | `SMS_PROVIDER=unisms`, `UNISMS_API_KEY`, optional `UNISMS_SENDER_ID` |
 
 `send-sms` also needs `SEND_SMS_HOOK_SECRET`, which already exists on the
 project. Semaphore remains the default provider; adding the UniSMS names does
 **not** switch delivery until `SMS_PROVIDER=unisms` is set.
+
+The UniSMS adapter posts to `https://unismsapi.com/api/sms` with HTTP Basic
+auth (API key as the username, empty password) and the body
+`{ "recipient": "+639…", "content": "…", "sender_id": "Unisoft" }`. Delivery is
+accepted when the provider answers 2xx with `message.status` of `pending`,
+`queued`, `sent`, `accepted` or `success`; a non-empty `fail_reason` or
+`message.success == false` is treated as a rejection. `UNISMS_SENDER_ID`
+defaults to `Unisoft` when unset.
+
+Coverage caveat: the default `Unisoft` sender only reaches **Globe and DITO**.
+Sending to Smart, TNT or Sun answers HTTP 422
+(`This Sender ID can't send to Smart, TNT or Sun numbers…`), which the function
+surfaces as `sms_delivery_failed`. To cover every network, apply for a custom
+Sender ID in the UniSMS console (`/sender_ids/new`, organization adoption).
+Until then, test OTP with a Globe/DITO handset; demo PIN login is unaffected.
 
 ## Where to paste local values
 
@@ -23,12 +38,8 @@ GEOAPIFY_API_KEY=
 
 # Only for switching OTP delivery to UniSMS:
 SMS_PROVIDER=unisms
-UNISMS_ACCESS_KEY_ID=
-UNISMS_ACCESS_KEY_SECRET=
-UNISMS_SIGNATURE=
-UNISMS_TEMPLATE_ID=
-UNISMS_CODE_VARIABLE=code
-UNISMS_AUTH_MODE=hmac
+UNISMS_API_KEY=
+UNISMS_SENDER_ID=Unisoft
 
 # A handset you control, used only for the real-SMS acceptance check.
 SURGO_TEST_PHONE=
@@ -37,9 +48,9 @@ SURGO_TEST_PHONE=
 The directory has a user-only ACL. The file is ignored by git regardless of
 location because it lives outside the repository.
 
-`UNISMS_AUTH_MODE` accepts `hmac` (default, needs the secret) or `simple`
-(explicit opt-in, key id only). `UNISMS_SIGNATURE` is the approved UniSMS
-sender signature, **not** the HMAC request signature.
+`UNISMS_API_KEY` is the whole credential the adapter needs — there is no
+separate access-key secret, template, or HMAC mode. `UNISMS_SENDER_ID` is the
+approved sender name shown on the handset, not a template.
 
 ## Apply the secrets
 
@@ -100,12 +111,38 @@ A real handset must receive the OTP before phone auth is reported as working.
 5. A demo identity number is refused with `demo_number_blocked` and never
    reaches the provider.
 
+## OAuth providers (Google + Facebook)
+
+The Flutter client already calls `signInWithOAuth` for both providers; no
+provider secret is compiled into the app.
+
+Both providers authenticate through Supabase's callback, so their consoles must
+allow exactly:
+
+`https://lrhgktxmavnhjatqzbzr.supabase.co/auth/v1/callback`
+
+- **Google** — in Google Cloud Console → APIs & Services → Credentials → the
+  Web OAuth client used by the project, add that URI under **Authorized redirect
+  URIs**. The hosted Supabase project already holds the matching client ID and
+  secret; `redirect_uri_mismatch` means only this console entry is missing.
+- **Facebook** — in Meta for Developers → the app → Facebook Login → Settings →
+  **Valid OAuth Redirect URIs**, add the same URI. Then, in Supabase Dashboard
+  → Authentication → Providers → Facebook, enable the provider and paste the
+  App ID and App Secret. Never paste the App Secret into chat, source, or this
+  file.
+
+The project's **Site URL** is the production app
+(`https://sur-go-flutter-app-main.vercel.app/`), and the redirect allow-list
+already covers the Vercel app, local development on port 5000, and the custom
+native scheme. Phone OTP and demo PIN do not use either OAuth provider.
+
 ## Rotation guidance
 
 - **Geoapify** — rotate: the key was pasted into chat. Replace it in the
   Geoapify dashboard, update `providers.env`, rerun the apply tool.
-- **UniSMS access key secret** — rotate if it was pasted into chat. Update the
-  provider console, then `providers.env`, then redeploy.
+- **UniSMS API key** — rotate if it was pasted into chat. Replace it in the
+  UniSMS console, update `providers.env`, rerun the apply tool, redeploy
+  `send-sms`.
 - **MapTiler** — it is a public client key, but it was shared in chat. It cannot
   be kept secret in a browser; restrict it by HTTP referrer and package id (see
   `docs/MAP_TILES.md`). Rotate it if restriction is impossible.

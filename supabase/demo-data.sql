@@ -6,9 +6,11 @@
 -- db-pushed. It is idempotent: every statement upserts on a deterministic
 -- md5('surgo:demo:...')::uuid primary key.
 --
--- Guarantees: no pricing_policies rows, platform fees are 0, cash only
--- (original non-cash methods preserved in notes), the real auth user is not
--- referenced, and demo auth.users rows cannot sign in (banned_until infinity).
+-- Guarantees: no pricing_policies rows, cash only (original non-cash methods
+-- preserved in notes), the real auth user is not referenced, and demo
+-- auth.users rows cannot sign in (banned_until infinity). Pasuyo rows carry
+-- the same flat ₱10 platform fee the lifecycle RPC charges; rides and rentals
+-- keep their agreed fare.
 --
 -- Intentionally unmapped from JSON: config.json (pricing is gated),
 -- paymentMethods, emergencyContacts, favorites, accountSettings, savedPlaces,
@@ -1969,7 +1971,7 @@ values ('e9562014-0036-711a-e8ca-fe591f36c22f', '19aa7137-bdef-93ed-1610-0139c32
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'groceries', 'available', 'Buy 2 Chickenjoy, 1 Coca-Cola', 'Please keep the receipt — I need it for the budget.',
   'Jollibee, Telaje', '7df8f3ff-b87d-34b7-3071-67603c53cdeb', null,
   'Centrio Dorm, Mabua', '3eebf15c-f0de-0187-3d2d-b552dfc3f1d5', null,
-  18000, 18000, 0, 'cash',
+  18000, 18000, 1000, 'cash',
   '2026-10-03T10:00:00.000+00:00', null, null, null, null,
   '2026-10-03T10:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -1979,7 +1981,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -1994,7 +1998,7 @@ values ('960f75e1-059e-ed70-12c5-cb2c1c8785cc', '2db06d3b-a51d-e5a7-f9d7-2b459fc
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'pharmacy', 'accepted', 'Pick up cough syrup', 'Prescription is ready under my name.',
   'Mercury Drug, Bioto', '329bfbfc-cd26-9498-9bc7-b53fd67042a9', null,
   'Dagocdoc Barangay Hall', 'ee8d3fb6-0ce9-0227-375e-4ae61b6a70c7', null,
-  9500, 9500, 0, 'cash',
+  9500, 9500, 1000, 'cash',
   '2026-09-30T10:00:00.000+00:00', '2026-09-30T10:30:00.000+00:00', null, null, null,
   '2026-09-30T10:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2004,7 +2008,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2019,7 +2025,7 @@ values ('2b5bff86-1581-9c01-5f15-76c27fc16bbf', '6e8dbe00-d9da-bfe0-71bc-0922bca
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'laundry', 'delivering', 'Wash and fold 2kg laundry', 'Same detergent I bought last time.',
   'Purok 5, Telaje', '7df8f3ff-b87d-34b7-3071-67603c53cdeb', null,
   'Purok 4, San Agustin Sur', 'fc9f2346-7cbe-d9e3-0cfa-148885643b40', null,
-  22000, 22000, 0, 'cash',
+  22000, 22000, 1000, 'cash',
   '2026-10-04T10:00:00.000+00:00', '2026-10-04T10:30:00.000+00:00', '2026-10-04T11:30:00.000+00:00', null, null,
   '2026-10-04T10:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2029,7 +2035,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2044,7 +2052,7 @@ values ('03494a90-8c36-717b-d0a7-5e90773c17fa', '043bb2a5-4aa9-0680-c252-0ec4aa5
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'parcel', 'delivered', 'Deliver parcel to San Agustin Sur', 'Fragile — do not stack anything on top.',
   'Purok 2, Buenavista', '9fb5e0c3-1efa-5692-2679-f2ae50a20887', null,
   'Purok 5, San Agustin Sur', 'fc9f2346-7cbe-d9e3-0cfa-148885643b40', null,
-  13000, 13000, 0, 'cash',
+  13000, 13000, 1000, 'cash',
   '2026-09-29T10:00:00.000+00:00', '2026-09-29T10:30:00.000+00:00', '2026-09-29T11:30:00.000+00:00', '2026-09-29T12:00:00.000+00:00', null,
   '2026-09-29T10:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2054,7 +2062,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2069,7 +2079,7 @@ values ('6425970c-b845-0ebd-3fdd-353248952a81', 'ead213ad-285a-a69b-6a89-2f587ad
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'food_delivery', 'delivered', 'Bring lunch from the canteen', 'Extra rice please.',
   'School canteen, Mabua', '3eebf15c-f0de-0187-3d2d-b552dfc3f1d5', null,
   'Purok 3, Bongtod Poblacion', 'ff7f6195-56eb-d2eb-9ea1-301f306f7164', null,
-  11000, 11000, 0, 'cash',
+  11000, 11000, 1000, 'cash',
   '2026-10-05T10:00:00.000+00:00', '2026-10-05T10:30:00.000+00:00', '2026-10-05T11:30:00.000+00:00', '2026-10-05T12:00:00.000+00:00', null,
   '2026-10-05T10:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2079,7 +2089,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2094,7 +2106,7 @@ values ('61d4d5fe-e1b0-06c8-8ab3-b0426dfc9b24', '19aa7137-bdef-93ed-1610-0139c32
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'groceries', 'accepted', 'Rice 5kg and cooking oil', null,
   'Jollibee, Maitum', '175138bc-bf90-33bc-6e88-63fbbaaa477f', null,
   'Purok 2, San Jose', '41d6b034-e0a5-2bb1-0101-e3931f4d21fa', null,
-  19000, 19000, 0, 'cash',
+  19000, 19000, 1000, 'cash',
   '2026-09-30T18:00:00.000+00:00', '2026-09-30T18:30:00.000+00:00', null, null, null,
   '2026-09-30T18:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2104,7 +2116,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2119,7 +2133,7 @@ values ('e7610c81-4643-2d38-a801-d79bd4717399', '2db06d3b-a51d-e5a7-f9d7-2b459fc
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'food_delivery', 'available', 'Chicken BBQ for dinner', null,
   'SurGo Terminal, Telaje', '7df8f3ff-b87d-34b7-3071-67603c53cdeb', null,
   'Purok 4, Bongtod Poblacion (East West)', 'ff7f6195-56eb-d2eb-9ea1-301f306f7164', null,
-  37000, 37000, 0, 'cash',
+  37000, 37000, 1000, 'cash',
   '2026-09-29T13:00:00.000+00:00', null, null, null, null,
   '2026-09-29T13:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2129,7 +2143,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2144,7 +2160,7 @@ values ('c4e7b28d-29ab-66cb-1217-df41b9d8d69c', '6e8dbe00-d9da-bfe0-71bc-0922bca
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'pharmacy', 'cancelled', 'Vitamin C for my mother', null,
   'SurGo Terminal, Mabuhay', '93c3c938-b069-c2b7-1e18-8f56552e35bb', null,
   'Purok 1, Telaje', '7df8f3ff-b87d-34b7-3071-67603c53cdeb', null,
-  15000, 15000, 0, 'cash',
+  15000, 15000, 1000, 'cash',
   '2026-09-28T16:00:00.000+00:00', null, null, null, '2026-09-28T17:00:00.000+00:00',
   '2026-09-28T16:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2154,7 +2170,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2169,7 +2187,7 @@ values ('9a2c92a4-72d2-2fd9-432c-9d4101dcd3bc', '043bb2a5-4aa9-0680-c252-0ec4aa5
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'parcel', 'delivered', 'Buy gasoline can and receipt', null,
   'Gaisano Mall, Salvacion', 'fed2245f-cf50-4c4f-a0fc-c745b2448011', null,
   'Purok 3, Maitum', '175138bc-bf90-33bc-6e88-63fbbaaa477f', null,
-  16000, 16000, 0, 'cash',
+  16000, 16000, 1000, 'cash',
   '2026-09-27T19:00:00.000+00:00', '2026-09-27T19:30:00.000+00:00', '2026-09-27T20:30:00.000+00:00', '2026-09-27T21:00:00.000+00:00', null,
   '2026-09-27T19:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2179,7 +2197,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2194,7 +2214,7 @@ values ('97aead22-0bd0-2cc9-79c2-b25be67aaccb', 'ead213ad-285a-a69b-6a89-2f587ad
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'other', 'delivered', 'Water refill 5 gallons', null,
   'Tandag Public Hall, Rosario', 'a11a5143-c338-84f0-6b74-8c6264ad2b4d', null,
   'Purok 1, Bioto', '329bfbfc-cd26-9498-9bc7-b53fd67042a9', null,
-  18000, 18000, 0, 'cash',
+  18000, 18000, 1000, 'cash',
   '2026-10-05T18:00:00.000+00:00', '2026-10-05T18:30:00.000+00:00', '2026-10-05T19:30:00.000+00:00', '2026-10-05T20:00:00.000+00:00', null,
   '2026-10-05T18:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2204,7 +2224,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2219,7 +2241,7 @@ values ('0e70253a-7b33-2146-7e8c-16e4fbb62dca', '19aa7137-bdef-93ed-1610-0139c32
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'groceries', 'delivered', 'Buy 2 Chickenjoy, 1 Coca-Cola', null,
   'Caraga State University, Rosario', 'a11a5143-c338-84f0-6b74-8c6264ad2b4d', null,
   'Purok 1, Pandanon', 'ae519b23-850f-4f0c-2d9f-6291d7da3da8', null,
-  24000, 24000, 0, 'cash',
+  24000, 24000, 1000, 'cash',
   '2026-10-04T07:00:00.000+00:00', '2026-10-04T07:30:00.000+00:00', '2026-10-04T08:30:00.000+00:00', '2026-10-04T09:00:00.000+00:00', null,
   '2026-10-04T07:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2229,7 +2251,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2244,7 +2268,7 @@ values ('3d32951e-8ebb-f127-ea95-39744971f63e', '2db06d3b-a51d-e5a7-f9d7-2b459fc
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'food_delivery', 'delivering', 'Spaghetti from Kuya Ong''s', null,
   'Caraga State University, Quezon', '7759d806-65d3-445b-ba8d-10dae15be468', null,
   'Purok 3, Telaje', '7df8f3ff-b87d-34b7-3071-67603c53cdeb', null,
-  39000, 39000, 0, 'cash',
+  39000, 39000, 1000, 'cash',
   '2026-10-03T07:00:00.000+00:00', '2026-10-03T07:30:00.000+00:00', '2026-10-03T08:30:00.000+00:00', null, null,
   '2026-10-03T07:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2254,7 +2278,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2269,7 +2295,7 @@ values ('1b75db4b-35d3-6208-bb02-0c174a6cc8c3', '6e8dbe00-d9da-bfe0-71bc-0922bca
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'pharmacy', 'at_pickup', 'Paracetamol and Band-Aid', null,
   'SM Terminal, Awasian', 'e5bd4acc-8d65-f1d2-e8cd-2cfb1fb21ef9', null,
   'Purok 1, San Isidro', '82e73be8-7727-8fd0-aa53-8790836df72e', null,
-  43000, 43000, 0, 'cash',
+  43000, 43000, 1000, 'cash',
   '2026-10-02T15:00:00.000+00:00', '2026-10-02T15:30:00.000+00:00', null, null, null,
   '2026-10-02T15:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2279,7 +2305,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2294,7 +2322,7 @@ values ('53d53fc8-b986-725c-e96b-701b4fa10b25', '043bb2a5-4aa9-0680-c252-0ec4aa5
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'parcel', 'accepted', 'Pick up a padded envelope at the post office', null,
   'Gaisano Mall, Maitum', '175138bc-bf90-33bc-6e88-63fbbaaa477f', null,
   'Purok 1, Bagong Lungsod (Poblacion)', '507eb5a9-88a3-0854-e345-d96d085e18b3', null,
-  20000, 20000, 0, 'cash',
+  20000, 20000, 1000, 'cash',
   '2026-10-01T19:00:00.000+00:00', '2026-10-01T19:30:00.000+00:00', null, null, null,
   '2026-10-01T19:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2304,7 +2332,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2319,7 +2349,7 @@ values ('6c963d06-d29e-bf37-640a-dea18cc29473', 'ead213ad-285a-a69b-6a89-2f587ad
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'laundry', 'available', 'Wash and fold two loads', null,
   'Tandag Port, Maitum', '175138bc-bf90-33bc-6e88-63fbbaaa477f', null,
   'Purok 3, Bioto', '329bfbfc-cd26-9498-9bc7-b53fd67042a9', null,
-  16000, 16000, 0, 'cash',
+  16000, 16000, 1000, 'cash',
   '2026-09-30T10:00:00.000+00:00', null, null, null, null,
   '2026-09-30T10:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2329,7 +2359,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2344,7 +2376,7 @@ values ('bfa0091d-19da-473a-6a60-58d677cf78ab', '19aa7137-bdef-93ed-1610-0139c32
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'groceries', 'cancelled', 'Rice 5kg and cooking oil', null,
   'Tandag Public Hall, Bagong Lungsod (Poblacion)', '507eb5a9-88a3-0854-e345-d96d085e18b3', null,
   'Purok 2, San Jose', '41d6b034-e0a5-2bb1-0101-e3931f4d21fa', null,
-  33000, 33000, 0, 'cash',
+  33000, 33000, 1000, 'cash',
   '2026-09-29T14:00:00.000+00:00', null, null, null, '2026-09-29T15:00:00.000+00:00',
   '2026-09-29T14:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2354,7 +2386,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2369,7 +2403,7 @@ values ('51369642-0a8f-7777-d5bf-b0bbdeb8e1f6', '2db06d3b-a51d-e5a7-f9d7-2b459fc
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'food_delivery', 'delivered', 'Chicken BBQ for dinner', null,
   'BDO Tandag, San Jose', '41d6b034-e0a5-2bb1-0101-e3931f4d21fa', null,
   'Purok 3, Maitum', '175138bc-bf90-33bc-6e88-63fbbaaa477f', null,
-  31000, 31000, 0, 'cash',
+  31000, 31000, 1000, 'cash',
   '2026-09-28T09:00:00.000+00:00', '2026-09-28T09:30:00.000+00:00', '2026-09-28T10:30:00.000+00:00', '2026-09-28T11:00:00.000+00:00', null,
   '2026-09-28T09:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2379,7 +2413,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2394,7 +2430,7 @@ values ('836ab339-4506-d44d-95b7-21afdaf4169a', '6e8dbe00-d9da-bfe0-71bc-0922bca
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'pharmacy', 'delivered', 'Vitamin C for my mother', null,
   'Mercy Hospital, Awasian', 'e5bd4acc-8d65-f1d2-e8cd-2cfb1fb21ef9', null,
   'Purok 1, San Agustin Norte', 'e14b5405-4ce0-17d3-7d8b-b4c4d8cd4ff7', null,
-  42000, 42000, 0, 'cash',
+  42000, 42000, 1000, 'cash',
   '2026-09-27T14:00:00.000+00:00', '2026-09-27T14:30:00.000+00:00', '2026-09-27T15:30:00.000+00:00', '2026-09-27T16:00:00.000+00:00', null,
   '2026-09-27T14:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2404,7 +2440,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2419,7 +2457,7 @@ values ('545053ba-7d78-c89c-db4a-8ec1d78fbf45', '043bb2a5-4aa9-0680-c252-0ec4aa5
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'parcel', 'delivered', 'Buy gasoline can and receipt', null,
   'Mambajao, Telaje', '7df8f3ff-b87d-34b7-3071-67603c53cdeb', null,
   'Purok 2, Rosario', 'a11a5143-c338-84f0-6b74-8c6264ad2b4d', null,
-  24000, 24000, 0, 'cash',
+  24000, 24000, 1000, 'cash',
   '2026-10-05T15:00:00.000+00:00', '2026-10-05T15:30:00.000+00:00', '2026-10-05T16:30:00.000+00:00', '2026-10-05T17:00:00.000+00:00', null,
   '2026-10-05T15:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2429,7 +2467,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2444,7 +2484,7 @@ values ('ff298583-7dad-eea0-37ca-2957162dfcab', 'ead213ad-285a-a69b-6a89-2f587ad
   'aa68e07a-5f97-ea7f-d458-68eafe8cb3f7', 'other', 'delivering', 'Water refill 5 gallons', null,
   'BDO Tandag, Buenavista', '9fb5e0c3-1efa-5692-2679-f2ae50a20887', null,
   'Purok 2, San Agustin Norte', 'e14b5405-4ce0-17d3-7d8b-b4c4d8cd4ff7', null,
-  12000, 12000, 0, 'cash',
+  12000, 12000, 1000, 'cash',
   '2026-10-04T07:00:00.000+00:00', '2026-10-04T07:30:00.000+00:00', '2026-10-04T08:30:00.000+00:00', null, null,
   '2026-10-04T07:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
@@ -2454,7 +2494,9 @@ on conflict (id) do update set
   pickup_barangay_id = excluded.pickup_barangay_id, pickup_purok_id = excluded.pickup_purok_id,
   dropoff_address = excluded.dropoff_address, dropoff_barangay_id = excluded.dropoff_barangay_id,
   dropoff_purok_id = excluded.dropoff_purok_id, budget_centavos = excluded.budget_centavos,
-  quoted_fee_centavos = excluded.quoted_fee_centavos, requested_at = excluded.requested_at,
+  quoted_fee_centavos = excluded.quoted_fee_centavos,
+  platform_fee_centavos = excluded.platform_fee_centavos,
+  requested_at = excluded.requested_at,
   accepted_at = excluded.accepted_at, picked_up_at = excluded.picked_up_at,
   delivered_at = excluded.delivered_at, cancelled_at = excluded.cancelled_at;
 
@@ -2643,7 +2685,7 @@ on conflict (id) do update set
   quantity = excluded.quantity;
 
 -- ============================================================================
--- service_transactions (zero platform fee settlements)
+-- service_transactions (cash settlements; Pasuyo carries the ₱10 add-on)
 -- ============================================================================
 
 insert into public.service_transactions
@@ -2926,7 +2968,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('4bb3c7ca-acb2-61d8-035c-0665b3323c85', 'pasuyo', '03494a90-8c36-717b-d0a7-5e90773c17fa',
   '043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', '19aa7137-bdef-93ed-1610-0139c328cf0e', 'PHP',
-  13000, 0, 13000, 13000, 0, 'cash',
+  13000, 1000, 14000, 13000, 1000, 'cash',
   'completed', '2026-09-29T12:00:00.000+00:00', '2026-09-29T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -2939,7 +2981,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('471da362-04a9-552f-5f1c-039f4b06e96d', 'pasuyo', '6425970c-b845-0ebd-3fdd-353248952a81',
   'ead213ad-285a-a69b-6a89-2f587ad3fcf5', 'f4ad1842-a5ff-c9e3-9b43-d141b0f0745e', 'PHP',
-  11000, 0, 11000, 11000, 0, 'cash',
+  11000, 1000, 12000, 11000, 1000, 'cash',
   'completed', '2026-10-05T12:00:00.000+00:00', '2026-10-05T12:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -2952,7 +2994,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('f40b0845-217a-e8ae-75b3-97a5a78b5799', 'pasuyo', '9a2c92a4-72d2-2fd9-432c-9d4101dcd3bc',
   '043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', 'f0be59a4-1186-ebe9-bcbb-8ecab26716bc', 'PHP',
-  16000, 0, 16000, 16000, 0, 'cash',
+  16000, 1000, 17000, 16000, 1000, 'cash',
   'completed', '2026-09-27T21:00:00.000+00:00', '2026-09-27T21:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -2965,7 +3007,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('320d509c-078d-69c2-cbc9-eea4777e2bf6', 'pasuyo', '97aead22-0bd0-2cc9-79c2-b25be67aaccb',
   'ead213ad-285a-a69b-6a89-2f587ad3fcf5', 'f4ad1842-a5ff-c9e3-9b43-d141b0f0745e', 'PHP',
-  18000, 0, 18000, 18000, 0, 'cash',
+  18000, 1000, 19000, 18000, 1000, 'cash',
   'completed', '2026-10-05T20:00:00.000+00:00', '2026-10-05T20:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -2978,7 +3020,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('59493db2-9b05-194d-40c7-907bdf59d359', 'pasuyo', '0e70253a-7b33-2146-7e8c-16e4fbb62dca',
   '19aa7137-bdef-93ed-1610-0139c328cf0e', 'e5f153af-2b86-ddcd-3ace-fb16a216a0da', 'PHP',
-  24000, 0, 24000, 24000, 0, 'cash',
+  24000, 1000, 25000, 24000, 1000, 'cash',
   'completed', '2026-10-04T09:00:00.000+00:00', '2026-10-04T09:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -2991,7 +3033,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('8f9ea587-db11-4ee1-5b7a-d60f47ec2909', 'pasuyo', '51369642-0a8f-7777-d5bf-b0bbdeb8e1f6',
   '2db06d3b-a51d-e5a7-f9d7-2b459fc14694', '19aa7137-bdef-93ed-1610-0139c328cf0e', 'PHP',
-  31000, 0, 31000, 31000, 0, 'cash',
+  31000, 1000, 32000, 31000, 1000, 'cash',
   'completed', '2026-09-28T11:00:00.000+00:00', '2026-09-28T11:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -3004,7 +3046,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('38921fb3-709a-33e8-39c7-33510eb12f68', 'pasuyo', '836ab339-4506-d44d-95b7-21afdaf4169a',
   '6e8dbe00-d9da-bfe0-71bc-0922bcaf5a79', 'ed2aa82a-f064-9589-b57d-24f7c1820f3f', 'PHP',
-  42000, 0, 42000, 42000, 0, 'cash',
+  42000, 1000, 43000, 42000, 1000, 'cash',
   'completed', '2026-09-27T16:00:00.000+00:00', '2026-09-27T16:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,
@@ -3017,7 +3059,7 @@ insert into public.service_transactions
    status, settled_at, created_at, updated_at)
 values ('50e34598-d1fa-3845-1ac6-418d1f100c2a', 'pasuyo', '545053ba-7d78-c89c-db4a-8ec1d78fbf45',
   '043bb2a5-4aa9-0680-c252-0ec4aa5e5a7c', 'f0be59a4-1186-ebe9-bcbb-8ecab26716bc', 'PHP',
-  24000, 0, 24000, 24000, 0, 'cash',
+  24000, 1000, 25000, 24000, 1000, 'cash',
   'completed', '2026-10-05T17:00:00.000+00:00', '2026-10-05T17:00:00.000+00:00', '2026-11-06T12:00:00.000+00:00')
 on conflict (id) do update set
   customer_id = excluded.customer_id, provider_id = excluded.provider_id,

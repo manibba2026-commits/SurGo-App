@@ -81,9 +81,31 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
         latest.id == state.activeRide?.id &&
         (latest.status != state.activeRide?.status ||
             latest.riderId != state.activeRide?.riderId)) {
+      final before = state.activeRide?.status;
       state.applyHostedRideUpdate(latest);
+      // The rider completes the trip from their own device; the passenger's
+      // screen is tracking it, so open the receipt here instead of dropping
+      // them on an empty "No active trip" page.
+      if (latest.status == RideStatus.completed &&
+          before != RideStatus.completed &&
+          state.mode != UserMode.earner) {
+        _openReceipt();
+      }
     }
     setState(() {});
+  }
+
+  bool _receiptOpened = false;
+
+  void _openReceipt() {
+    if (_receiptOpened) return;
+    _receiptOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/rate', (route) => route.settings.name == '/home');
+    });
   }
 
   @override
@@ -598,12 +620,14 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                             : SbNoticeTone.info,
                       );
                       if (next == RideStatus.completed) {
-                        final home = state.mode == UserMode.earner
-                            ? '/earner'
-                            : '/home';
-                        Navigator.of(
-                          context,
-                        ).pushNamedAndRemoveUntil(home, (route) => false);
+                        if (state.mode == UserMode.earner) {
+                          final home = '/earner';
+                          Navigator.of(
+                            context,
+                          ).pushNamedAndRemoveUntil(home, (route) => false);
+                        } else {
+                          _openReceipt();
+                        }
                       }
                     } on RepositoryFailure catch (failure) {
                       if (!context.mounted) return;

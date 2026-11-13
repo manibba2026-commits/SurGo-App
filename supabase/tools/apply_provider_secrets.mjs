@@ -20,12 +20,8 @@ const DEFAULT_FILE = path.join(os.homedir(), '.surgo-secrets', 'providers.env');
 const FUNCTION_SECRETS = new Set([
   'GEOAPIFY_API_KEY',
   'SMS_PROVIDER',
-  'UNISMS_ACCESS_KEY_ID',
-  'UNISMS_ACCESS_KEY_SECRET',
-  'UNISMS_SIGNATURE',
-  'UNISMS_TEMPLATE_ID',
-  'UNISMS_CODE_VARIABLE',
-  'UNISMS_AUTH_MODE',
+  'UNISMS_API_KEY',
+  'UNISMS_SENDER_ID',
 ]);
 
 // Local-only helpers that must never be uploaded.
@@ -50,6 +46,11 @@ function parse(file) {
     if ((value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
+    } else {
+      // A trailing "# note" is a comment, not part of the secret. Values that
+      // legitimately contain '#' are quoted and keep it.
+      const comment = value.search(/\s#/);
+      if (comment >= 0) value = value.slice(0, comment).trim();
     }
     if (LOCAL_ONLY.has(key)) return;
     if (!FUNCTION_SECRETS.has(key)) {
@@ -70,15 +71,8 @@ function validate(values) {
     throw new Error('SMS_PROVIDER must be unisms or semaphore');
   }
   if (provider !== 'unisms') return;
-  const mode = values.get('UNISMS_AUTH_MODE') ?? 'hmac';
-  if (mode !== 'hmac' && mode !== 'simple') {
-    throw new Error('UNISMS_AUTH_MODE must be hmac or simple');
-  }
-  const required = ['UNISMS_ACCESS_KEY_ID', 'UNISMS_SIGNATURE', 'UNISMS_TEMPLATE_ID'];
-  if (mode === 'hmac') required.push('UNISMS_ACCESS_KEY_SECRET');
-  const missing = required.filter((name) => !values.has(name));
-  if (missing.length) {
-    throw new Error(`SMS_PROVIDER=unisms requires: ${missing.join(', ')}`);
+  if (!values.has('UNISMS_API_KEY')) {
+    throw new Error('SMS_PROVIDER=unisms requires UNISMS_API_KEY');
   }
 }
 

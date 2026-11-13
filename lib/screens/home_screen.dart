@@ -169,6 +169,17 @@ class _HomeContent extends StatelessWidget {
                     _liveRideCard(context, ride),
                     const SizedBox(height: 16),
                   ],
+                  if (ride == null &&
+                      state.rideReceiptPending &&
+                      state.lastCompletedRide != null) ...[
+                    const Text(
+                      'Trip completed',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    _completedRideCard(context, state.lastCompletedRide!),
+                    const SizedBox(height: 16),
+                  ],
                 ],
               );
             },
@@ -612,6 +623,61 @@ class _HomeContent extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             '${Money.format(request.fare)} · Tap to follow your ride',
+            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A trip that just finished. The live card disappears at completion, so
+  /// this keeps the receipt reachable from Home.
+  Widget _completedRideCard(BuildContext context, RideHistoryItem ride) {
+    return SbTintedCard(
+      tone: SbTone.ride,
+      onTap: () => Navigator.pushNamed(context, '/rate'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SbToneIcon(
+                tone: SbTone.ride,
+                icon: Icons.receipt_long_outlined,
+                size: 38,
+                iconSize: 18,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ride.route,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Completed · ${ride.date}',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SbTag('Receipt'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${Money.format(ride.fare)} · View receipt and rate your trip',
             style: const TextStyle(color: AppColors.muted, fontSize: 11),
           ),
         ],

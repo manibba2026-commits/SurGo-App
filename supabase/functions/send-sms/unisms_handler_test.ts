@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
 import test from 'node:test';
 
 import { handleSendSms } from './handler.ts';
 import type { SendSmsHandlerConfig } from './handler.ts';
 import { SEMAPHORE_ENDPOINT } from './semaphore.ts';
+import { UNISMS_ENDPOINT } from './unisms.ts';
 import { base64Secret, signWebhook, webhookHeaders } from './test_support.ts';
 
 const KEY = base64Secret();
@@ -14,10 +14,8 @@ const CONFIG: SendSmsHandlerConfig = {
   smsProvider: 'unisms',
   nowSeconds: NOW,
   unisms: {
-    accessKeyId: 'uni_test_key',
-    accessKeySecret: 'uni_test_secret',
-    signature: 'ApprovedTestSender',
-    templateId: 'test_login_template',
+    apiKey: 'uni_test_key',
+    senderId: 'Unisoft',
   },
 };
 
@@ -35,11 +33,16 @@ async function signedRequest(body = payload(), timestamp = NOW): Promise<Request
 
 function uniOk(): Response {
   return new Response(JSON.stringify({
-    code: 0, data: { messages: [{ id: 'test_id', status: 'sent' }] },
-  }));
+    message: {
+      status: 'pending',
+      reference_id: 'msg_test',
+      content: 'accepted',
+      fail_reason: null,
+    },
+  }), { status: 201 });
 }
 
-test('signed UniSMS hooks preserve Supabase OTPs and normalize PH recipients without Semaphore config', async () => {
+test('signed UniSMS hooks send the OTP text with Basic auth and a normalized PH recipient', async () => {
   let calls = 0;
   const cases = [
     ['+639175124809', '001234'],
@@ -49,21 +52,18 @@ test('signed UniSMS hooks preserve Supabase OTPs and normalize PH recipients wit
   for (const [phone, otp] of cases) {
     const response = await handleSendSms(await signedRequest(payload(phone, otp)), {
       ...CONFIG,
-      unisms: { ...CONFIG.unisms!, codeVariable: 'otp_code' },
       fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
         calls++;
-        const url = new URL(String(input));
-        assert.equal(url.origin, 'https://uni.apistd.com');
-        assert.equal(url.searchParams.get('action'), 'sms.message.send');
-        const signature = url.searchParams.get('signature');
-        url.searchParams.delete('signature');
-        const canonical = [...url.searchParams].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-          .map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
-        assert.equal(signature, createHmac('sha256', CONFIG.unisms!.accessKeySecret!)
-          .update(canonical).digest('base64'));
+        assert.equal(String(input), UNISMS_ENDPOINT);
+        const headers = new Headers(init?.headers);
+        assert.equal(
+          headers.get('authorization'),
+          `Basic ${Buffer.from(`${CONFIG.unisms!.apiKey}:`).toString('base64')}`,
+        );
         assert.deepEqual(JSON.parse(String(init?.body)), {
-          to: '+639175124809', signature: CONFIG.unisms!.signature,
-          templateId: CONFIG.unisms!.templateId, templateData: { otp_code: otp },
+          recipient: '+639175124809',
+          content: `Your SurGo verification code is: ${otp}. Do not share this code with anyone.`,
+          sender_id: 'Unisoft',
         });
         return uniOk();
       }) as typeof fetch,
@@ -81,11 +81,8 @@ test('unknown providers and incomplete UniSMS configuration fail closed despite 
     { ...CONFIG, smsProvider: 'UniSMS' },
     { ...CONFIG, hookSecret: '' },
     { ...CONFIG, unisms: undefined },
-    ...[
-      { accessKeyId: '' }, { signature: '' }, { templateId: '' },
-      { accessKeySecret: undefined }, { authMode: 'hmac', accessKeySecret: '' },
-      { authMode: '' }, { authMode: 'unknown' }, { codeVariable: '' },
-    ].map((override) => ({ ...CONFIG, unisms: { ...CONFIG.unisms!, ...override } })),
+    { ...CONFIG, unisms: { apiKey: '' } },
+    { ...CONFIG, unisms: { apiKey: '   ' } },
   ];
   let calls = 0;
   for (const config of cases) {
@@ -157,8 +154,8 @@ test('UniSMS rejection, network and body failures never fall back, retry or leak
   t.mock.method(console, 'error', (...args: unknown[]) => { logs.push(args); });
   const fetches: typeof fetch[] = [
     (async () => new Response('sensitive provider body', { status: 401 })) as typeof fetch,
-    (async () => new Response(JSON.stringify({ code: 1, message: 'sensitive provider body' }))) as typeof fetch,
-    (async () => new Response(JSON.stringify({ code: 0, data: { messageIds: ['id'], messages: [{ id: 'id', status: 'failed' }] } }))) as typeof fetch,
+    (async () => new Response(JSON.stringify({ error: 'sensitive provider body' }), { status: 201 })) as typeof fetch,
+    (async () => new Response(JSON.stringify({ message: { status: 'failed', fail_reason: 'sensitive provider body' } }), { status: 201 })) as typeof fetch,
     (async () => new Response('sensitive provider body')) as typeof fetch,
     (async () => { throw new Error('sensitive provider body'); }) as typeof fetch,
   ];
@@ -174,12 +171,12 @@ test('UniSMS rejection, network and body failures never fall back, retry or leak
     assert.equal(response.status, 502);
     assert.deepEqual(await response.json(), { error: 'sms_delivery_failed' });
     assert.equal(urls.length, 1);
-    assert.equal(new URL(urls[0]).origin, 'https://uni.apistd.com');
+    assert.equal(urls[0], UNISMS_ENDPOINT);
     assert.notEqual(urls[0], SEMAPHORE_ENDPOINT);
   }
   const logged = JSON.stringify(logs);
-  for (const sensitive of ['sensitive provider body', CONFIG.unisms!.accessKeyId,
-    CONFIG.unisms!.accessKeySecret!, CONFIG.unisms!.signature, '639175124809', '001234']) {
+  for (const sensitive of ['sensitive provider body', CONFIG.unisms!.apiKey,
+    CONFIG.unisms!.senderId!, '639175124809', '001234']) {
     assert.equal(logged.includes(sensitive), false, sensitive);
   }
 });
@@ -197,7 +194,7 @@ test('signed UniSMS hook timeouts cover fetch and parsing with one call and no f
         calls++;
         signal = init?.signal ?? undefined;
         return stalledBody
-          ? Promise.resolve({ ok: true, status: 200, text: () => new Promise<string>(() => {}) } as unknown as Response)
+          ? Promise.resolve({ ok: true, status: 201, text: () => new Promise<string>(() => {}) } as unknown as Response)
           : new Promise<Response>(() => {});
       }) as typeof fetch,
     });
@@ -239,23 +236,22 @@ test('Semaphore remains the default or explicit provider and never falls back to
   assert.equal(calls, 0);
 });
 
-test('index reads runtime UniSMS env values, defaults, and rejects unknown env selection locally', async (t) => {
+test('index reads runtime UniSMS env values, defaults the sender, and rejects unknown env selection locally', async (t) => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'Deno');
   const env = new Map<string, string>([
     ['SEND_SMS_HOOK_SECRET', CONFIG.hookSecret],
     ['SMS_PROVIDER', 'unisms'],
-    ['UNISMS_ACCESS_KEY_ID', 'env_test_key'],
-    ['UNISMS_ACCESS_KEY_SECRET', 'env_test_secret'],
-    ['UNISMS_SIGNATURE', 'EnvApprovedSender'],
-    ['UNISMS_TEMPLATE_ID', 'env_test_template'],
+    ['UNISMS_API_KEY', 'env_test_key'],
+    ['UNISMS_SENDER_ID', 'EnvApprovedSender'],
   ]);
   let serve: ((request: Request) => Promise<Response>) | undefined;
   let calls = 0;
   const bodies: Record<string, unknown>[] = [];
-  const queries: URLSearchParams[] = [];
+  const headers: Headers[] = [];
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     calls++;
-    queries.push(new URL(String(input)).searchParams);
+    assert.equal(String(input), UNISMS_ENDPOINT);
+    headers.push(new Headers(init?.headers));
     bodies.push(JSON.parse(String(init?.body)));
     return uniOk();
   });
@@ -268,19 +264,19 @@ test('index reads runtime UniSMS env values, defaults, and rejects unknown env s
     assert.ok(serve);
     const request = () => signedRequest(payload(), Math.floor(Date.now() / 1000));
     assert.equal((await serve(await request())).status, 200);
-    assert.equal(queries[0].get('accessKeyId'), 'env_test_key');
-    assert.equal(queries[0].get('algorithm'), 'hmac-sha256');
+    assert.equal(
+      headers[0].get('authorization'),
+      `Basic ${Buffer.from('env_test_key:').toString('base64')}`,
+    );
     assert.deepEqual(bodies[0], {
-      to: '+639175124809', signature: 'EnvApprovedSender',
-      templateId: 'env_test_template', templateData: { code: '001234' },
+      recipient: '+639175124809',
+      content: 'Your SurGo verification code is: 001234. Do not share this code with anyone.',
+      sender_id: 'EnvApprovedSender',
     });
-    env.set('UNISMS_AUTH_MODE', 'simple');
-    env.delete('UNISMS_ACCESS_KEY_SECRET');
-    env.set('UNISMS_CODE_VARIABLE', 'env_otp');
+    env.delete('UNISMS_SENDER_ID');
     assert.equal((await serve(await request())).status, 200);
-    assert.equal(queries[1].has('algorithm'), false);
-    assert.deepEqual(bodies[1].templateData, { env_otp: '001234' });
-    env.delete('UNISMS_AUTH_MODE');
+    assert.equal(bodies[1].sender_id, 'UniSMS');
+    env.delete('UNISMS_API_KEY');
     assert.equal((await serve(await request())).status, 500);
     env.set('SMS_PROVIDER', 'typo');
     env.set('SEMAPHORE_API_KEY', 'sem_test_key');

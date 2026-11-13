@@ -93,7 +93,7 @@ export async function handleSendSms(
 
   // Exactly one provider call: configuration/rejection never triggers fallback.
   const accepted = provider === 'unisms'
-    ? await sendUniSms(number, extracted.otp, {
+    ? await sendUniSms(number, buildOtpMessage(extracted.otp), {
       ...config.unisms!,
       fetchImpl: config.fetchImpl,
       timeoutMs: config.timeoutMs,
