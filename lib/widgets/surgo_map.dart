@@ -226,7 +226,13 @@ class _SurgoMapState extends State<SurgoMap>
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) _markerFrom.clear();
       });
-    if (_hasMapTilerKey) _startLoadTimeout();
+    if (_hasMapTilerKey) {
+      _startLoadTimeout();
+      // The engine's ready signals are unreliable on web (some maps paint
+      // without ever reporting style-loaded or idle). Never leave a false
+      // failure over a working map: let the overlay clear on its own.
+      _readyTimer = Timer(const Duration(milliseconds: 2500), _markReady);
+    }
     if (widget.showUserLocation) _resolveUserLocation(recenter: false);
   }
 
@@ -265,6 +271,8 @@ class _SurgoMapState extends State<SurgoMap>
       _styleLoaded = false;
     });
     _startLoadTimeout();
+    _readyTimer?.cancel();
+    _readyTimer = Timer(const Duration(milliseconds: 2500), _markReady);
   }
 
   @override
@@ -495,6 +503,12 @@ class _SurgoMapState extends State<SurgoMap>
           if (!mounted || generation != _mapGeneration) return;
           _mapController = controller;
           _fitCamera();
+          // The engine reports style-loaded/idle unreliably for small inline
+          // maps even though tiles paint. A created map is usable; give the
+          // first frames a moment, then drop the loading overlay.
+          _styleLoaded = true;
+          _readyTimer?.cancel();
+          _readyTimer = Timer(const Duration(milliseconds: 1200), _markReady);
         },
         onStyleLoaded: (_) {
           if (!mounted || generation != _mapGeneration) return;

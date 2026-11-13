@@ -2015,12 +2015,13 @@ class AppState extends ChangeNotifier {
       DomainSlot.riderIncomingRides,
     );
     if (records == null) return;
-    // [isActive] excludes completed and cancelled history, which the same
-    // rider read also returns; re-seating one of those would resurrect a
-    // finished trip as a live banner.
+    // [isCommitted] excludes completed and cancelled history, and also
+    // requests still awaiting this rider's acceptance: those belong in the
+    // inbox, not in the live-trip banner. Re-seating either would show a trip
+    // that has not started yet.
     RideRecord? mine;
     for (final record in records) {
-      if (record.riderId == profileId && record.status.isActive) {
+      if (record.riderId == profileId && record.status.isCommitted) {
         mine = record;
         break;
       }

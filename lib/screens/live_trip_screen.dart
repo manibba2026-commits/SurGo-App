@@ -43,6 +43,18 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
 
   void _syncTracking() {
     final state = AppState.instance;
+    // Two feeds can deliver the completion: the trip tracker and the
+    // passenger ride session's poll. Whichever lands first clears activeRide,
+    // so check the committed request itself instead of only the tracker, or
+    // the screen would sit on "No active trip" after a finished ride.
+    final request = state.myRideRequest;
+    if (_trackedRideId != null &&
+        request != null &&
+        request.id == _trackedRideId &&
+        request.status == RideStatus.completed &&
+        state.mode != UserMode.earner) {
+      _openReceipt();
+    }
     final ride = state.activeRide;
     if (_trackedRideId == ride?.id &&
         _trackedRiderId == ride?.riderId &&
