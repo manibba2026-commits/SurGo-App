@@ -41,6 +41,32 @@ abstract interface class SurgoRealtimeBackend {
   });
 }
 
+/// One ephemeral presence channel, as seen by this client.
+abstract interface class SurgoPresenceSession {
+  /// Every member's latest published payload, including this client's own when
+  /// the server echoes it.
+  Stream<List<Map<String, dynamic>>> get members;
+
+  /// Replaces the payload the other members see for this client.
+  Future<void> track(Map<String, dynamic> payload);
+
+  /// Leaves the channel and stops sharing. Safe to call more than once.
+  Future<void> close();
+}
+
+/// Shares a live, unpersisted payload with the other members of one channel.
+///
+/// Presence is for positions that should exist only while both parties have
+/// the screen open: nothing is written to a table and nothing outlives the
+/// connection, so a shared position cannot be read back later.
+abstract interface class SurgoPresenceBackend {
+  SurgoPresenceSession joinPresence({
+    required String channel,
+    required String key,
+    required Map<String, dynamic> self,
+  });
+}
+
 /// The private-storage surface: signed links out, object cleanup in.
 ///
 /// Kept apart from [SurgoBackend] because most repositories only read tables
@@ -96,7 +122,8 @@ class SupabaseBackend
         SurgoBackend,
         SurgoWriteBackend,
         SurgoStorageBackend,
-        SurgoRealtimeBackend {
+        SurgoRealtimeBackend,
+        SurgoPresenceBackend {
   SupabaseBackend({SupabaseClient? client, this.requestTimeout = _timeout})
     : _client = client ?? Supabase.instance.client;
 
@@ -105,6 +132,18 @@ class SupabaseBackend
 
   final SupabaseClient _client;
   final Duration requestTimeout;
+
+  @override
+  SurgoPresenceSession joinPresence({
+    required String channel,
+    required String key,
+    required Map<String, dynamic> self,
+  }) => _SupabasePresenceSession(
+    _client,
+    channel: channel,
+    key: key,
+    self: self,
+  );
 
   @override
   Stream<void> watchRows({
@@ -293,6 +332,150 @@ class SupabaseBackend
     } catch (error) {
       throw mapBackendError(error);
     }
+  }
+}
+
+/// A presence channel over the app's realtime client.
+///
+/// The topic comes from the channel name alone, so two clients given the same
+/// name meet; [key] identifies this client inside it.
+///
+/// A channel can die without the socket dropping — the server closes a client
+/// that exceeds the presence rate limit, and a join can time out. A dead
+/// presence channel is otherwise permanent, so this session reopens it with a
+/// backoff and republishes the last payload.
+class _SupabasePresenceSession implements SurgoPresenceSession {
+  _SupabasePresenceSession(
+    this._client, {
+    required String channel,
+    required String key,
+    required Map<String, dynamic> self,
+  }) : _channelName = 'surgo-presence-$channel' {
+    _key = key;
+    _self = self;
+    _open();
+  }
+
+  final SupabaseClient _client;
+  final String _channelName;
+  late final String _key;
+  late final Map<String, dynamic> _self;
+  final StreamController<List<Map<String, dynamic>>> _events =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+
+  RealtimeChannel? _channel;
+  Map<String, dynamic>? _lastPayload;
+  Timer? _reopenTimer;
+  Duration _reopenDelay = _reopenDelayStart;
+  bool _joined = false;
+  bool _closed = false;
+
+  static const Duration _reopenDelayStart = Duration(seconds: 5);
+  static const Duration _reopenDelayMax = Duration(seconds: 60);
+
+  @override
+  Stream<List<Map<String, dynamic>>> get members => _events.stream;
+
+  @override
+  Future<void> track(Map<String, dynamic> payload) async {
+    if (_closed) return;
+    _lastPayload = payload;
+    final channel = _channel;
+    if (!_joined || channel == null) return;
+    await channel.track(payload);
+  }
+
+  void _open() {
+    if (_closed) return;
+    _joined = false;
+    final realtime = _client.channel(
+      _channelName,
+      opts: RealtimeChannelConfig(key: _key, self: true),
+    );
+    _channel = realtime;
+    realtime
+        .onPresenceSync((_) => _emit())
+        .onPresenceJoin((_) => _emit())
+        .onPresenceLeave((_) => _emit())
+        .subscribe((status, error) {
+          // A channel this session already replaced keeps reporting its own
+          // close; those reports must not schedule another reopen.
+          if (_closed || !identical(_channel, realtime)) return;
+          switch (status) {
+            case RealtimeSubscribeStatus.subscribed:
+              _joined = true;
+              _reopenDelay = _reopenDelayStart;
+              unawaited(track(_lastPayload ?? _self));
+              _emit();
+            case RealtimeSubscribeStatus.timedOut:
+              _fail(
+                error == null
+                    ? RepositoryFailure.offline(
+                        TimeoutException('Presence subscription timed out'),
+                      )
+                    : mapBackendError(error),
+              );
+            case RealtimeSubscribeStatus.channelError:
+            case RealtimeSubscribeStatus.closed:
+              _fail(
+                error == null
+                    ? RepositoryFailure.unavailable(status)
+                    : mapBackendError(error),
+              );
+          }
+        });
+  }
+
+  void _fail(RepositoryFailure failure) {
+    if (_closed) return;
+    _joined = false;
+    if (!_events.isClosed) _events.addError(failure);
+    _scheduleReopen();
+  }
+
+  void _scheduleReopen() {
+    if (_closed || _reopenTimer != null) return;
+    final delay = _reopenDelay;
+    _reopenDelay = delay * 2 > _reopenDelayMax ? _reopenDelayMax : delay * 2;
+    _reopenTimer = Timer(delay, () {
+      _reopenTimer = null;
+      if (_closed) return;
+      final stale = _channel;
+      _channel = null;
+      if (stale != null) unawaited(_drop(stale));
+      _open();
+    });
+  }
+
+  Future<void> _drop(RealtimeChannel channel) async {
+    try {
+      await _client.removeChannel(channel);
+    } catch (_) {
+      // The channel is already gone on the server, or the socket is down.
+    }
+  }
+
+  void _emit() {
+    if (_closed || _events.isClosed) return;
+    final members = <Map<String, dynamic>>[];
+    for (final state in _channel?.presenceState() ?? const []) {
+      for (final presence in state.presences) {
+        members.add({...presence.payload, 'presence_key': state.key});
+      }
+    }
+    _events.add(members);
+  }
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    _reopenTimer?.cancel();
+    _reopenTimer = null;
+    final channel = _channel;
+    _channel = null;
+    if (channel != null) await _drop(channel);
+    await _events.close();
   }
 }
 

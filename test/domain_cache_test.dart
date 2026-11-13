@@ -20,6 +20,16 @@ void main() {
 
   setUpAll(() async => db.load());
 
+  setUp(() {
+    // Production reads barangays from the hosted catalog. These cache tests
+    // need one row so "prefill settles" and "follows the seed" are meaningful.
+    if (db.barangays.isEmpty) {
+      db.barangays = [
+        Barangay(name: 'Bongtod Poblacion', puroks: const ['Purok 1']),
+      ];
+    }
+  });
+
   DomainCache mockCache({String Function()? profileKey}) => DomainCache(
     registry: () => RepositoryRegistry.mock(db),
     profileKey: profileKey ?? () => DbService.primaryPassengerId,

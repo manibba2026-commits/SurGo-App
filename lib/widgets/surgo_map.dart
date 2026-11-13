@@ -105,6 +105,9 @@ class SurgoMapMarker {
 /// Route geometry is supplied by the caller: this widget does not calculate
 /// road routes, ETAs, or driver positions.
 class SurgoMap extends StatefulWidget {
+  /// The neutral route color used while a request is still being arranged.
+  static const defaultRouteColor = _kRouteBlue;
+
   final List<SurgoMapMarker> markers;
 
   /// If true, resolves the device's live GPS position on load and shows a
@@ -125,6 +128,17 @@ class SurgoMap extends StatefulWidget {
   /// Caller-supplied geometry, never generated road routing.
   final List<MapPoint> route;
   final bool routeIsEstimate;
+
+  /// Color of the drawn route. Defaults to the neutral blue used while a
+  /// request is still being arranged; active trips pass the success green.
+  final Color routeColor;
+
+  /// Native map gestures. Inline previews disable these so a drag that lands
+  /// on the map scrolls the surrounding form instead of panning the map.
+  final bool panEnabled;
+  final bool zoomEnabled;
+  final bool rotateEnabled;
+  final bool pitchEnabled;
 
   /// Draws expanding search rings around this point (the pickup while the app
   /// looks for a rider). Purely visual; it never changes the map camera.
@@ -154,6 +168,11 @@ class SurgoMap extends StatefulWidget {
     this.borderRadius,
     this.route = const [],
     this.routeIsEstimate = false,
+    this.routeColor = _kRouteBlue,
+    this.panEnabled = true,
+    this.zoomEnabled = true,
+    this.rotateEnabled = true,
+    this.pitchEnabled = true,
     this.pulseCenter,
     this.cameraPadding = EdgeInsets.zero,
     this.onMapTap,
@@ -169,9 +188,11 @@ class _SurgoMapState extends State<SurgoMap>
   // MapLibre owns the controller's native lifetime.
   ml.MapController? _mapController;
   Timer? _loadTimeout;
+  Timer? _readyTimer;
   int _mapGeneration = 0;
   bool _waitingForIdle = true;
   bool _loadTimedOut = false;
+  bool _styleLoaded = false;
   late final AnimationController _routeAnimation;
 
   /// Interpolates a marker between its old and new coordinates so live rider
@@ -214,8 +235,23 @@ class _SurgoMapState extends State<SurgoMap>
     final generation = _mapGeneration;
     _loadTimeout = Timer(const Duration(seconds: 15), () {
       if (!mounted || generation != _mapGeneration || !_waitingForIdle) return;
-      // 0.3.6 exposes no load errors. A timeout is not evidence of an error.
+      // A drawn style means the map is usable even if the engine never
+      // reports "idle"; the engine gives no load errors to distinguish them.
+      if (_styleLoaded) {
+        _markReady();
+        return;
+      }
       setState(() => _loadTimedOut = true);
+    });
+  }
+
+  void _markReady() {
+    if (!mounted || !_waitingForIdle) return;
+    _loadTimeout?.cancel();
+    _readyTimer?.cancel();
+    setState(() {
+      _waitingForIdle = false;
+      _loadTimedOut = false;
     });
   }
 
@@ -226,6 +262,7 @@ class _SurgoMapState extends State<SurgoMap>
       _mapController = null;
       _waitingForIdle = true;
       _loadTimedOut = false;
+      _styleLoaded = false;
     });
     _startLoadTimeout();
   }
@@ -272,6 +309,10 @@ class _SurgoMapState extends State<SurgoMap>
     if (routeChanged) {
       _route = List.of(widget.route);
       _animateRoute();
+    } else if (oldWidget.routeColor != widget.routeColor) {
+      // A request that turns green when a provider is found should draw the
+      // found route again, not just recolor a line that already finished.
+      _animateRoute();
     }
     if (!widget.showUserLocation) {
       _userPosition = null;
@@ -316,6 +357,7 @@ class _SurgoMapState extends State<SurgoMap>
   @override
   void dispose() {
     _loadTimeout?.cancel();
+    _readyTimer?.cancel();
     _mapController = null;
     _routeAnimation.dispose();
     _markerAnimation.dispose();
@@ -441,7 +483,12 @@ class _SurgoMapState extends State<SurgoMap>
           initCenter: _geographic(frame.center),
           initZoom: frame.zoom,
           gestures: widget.interactive
-              ? const ml.MapGestures.all()
+              ? ml.MapGestures(
+                  pan: widget.panEnabled,
+                  zoom: widget.zoomEnabled,
+                  rotate: widget.rotateEnabled,
+                  pitch: widget.pitchEnabled,
+                )
               : const ml.MapGestures.none(),
         ),
         onMapCreated: (controller) {
@@ -451,18 +498,15 @@ class _SurgoMapState extends State<SurgoMap>
         },
         onStyleLoaded: (_) {
           if (!mounted || generation != _mapGeneration) return;
-          // Style readiness is not tile readiness; wait for the first idle.
+          // The basemap is styled and painting; tiles finish on their own.
+          _styleLoaded = true;
+          _readyTimer?.cancel();
+          _readyTimer = Timer(const Duration(milliseconds: 1200), _markReady);
           _animateRoute();
         },
         onEvent: (event) {
           if (!mounted || generation != _mapGeneration) return;
-          if (event is ml.MapEventIdle && _waitingForIdle) {
-            _loadTimeout?.cancel();
-            setState(() {
-              _waitingForIdle = false;
-              _loadTimedOut = false;
-            });
-          }
+          if (event is ml.MapEventIdle) _markReady();
           if (event is ml.MapEventClick && widget.onMapTap != null) {
             _handleMapPress(event, widget.onMapTap!);
           }
@@ -473,13 +517,13 @@ class _SurgoMapState extends State<SurgoMap>
         layers: [
           ml.PolylineLayer(
             polylines: features,
-            color: _kRouteBlue.withValues(alpha: 0.18),
+            color: widget.routeColor.withValues(alpha: 0.18),
             width: 10,
             dashArray: dashes,
           ),
           ml.PolylineLayer(
             polylines: features,
-            color: _kRouteBlue,
+            color: widget.routeColor,
             width: 4,
             dashArray: dashes,
           ),
@@ -556,6 +600,7 @@ class _SurgoMapState extends State<SurgoMap>
               frame: frame,
               route: drawnRoute,
               routeIsEstimate: widget.routeIsEstimate,
+              routeColor: widget.routeColor,
             ),
           ),
           for (final marker in widget.markers)
@@ -1230,10 +1275,12 @@ class _PreviewPainter extends CustomPainter {
   final _MapFrame frame;
   final List<MapPoint> route;
   final bool routeIsEstimate;
+  final Color routeColor;
   const _PreviewPainter({
     required this.frame,
     required this.route,
     required this.routeIsEstimate,
+    required this.routeColor,
   });
 
   @override
@@ -1274,8 +1321,8 @@ class _PreviewPainter extends CustomPainter {
         drawnPath,
         Paint()
           ..color = width == 10
-              ? _kRouteBlue.withValues(alpha: 0.18)
-              : _kRouteBlue
+              ? routeColor.withValues(alpha: 0.18)
+              : routeColor
           ..style = PaintingStyle.stroke
           ..strokeWidth = width
           ..strokeCap = StrokeCap.round,
@@ -1287,5 +1334,6 @@ class _PreviewPainter extends CustomPainter {
   bool shouldRepaint(covariant _PreviewPainter oldDelegate) =>
       oldDelegate.frame != frame ||
       oldDelegate.route != route ||
-      oldDelegate.routeIsEstimate != routeIsEstimate;
+      oldDelegate.routeIsEstimate != routeIsEstimate ||
+      oldDelegate.routeColor != routeColor;
 }

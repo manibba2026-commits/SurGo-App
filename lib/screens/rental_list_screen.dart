@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/db_service.dart';
 import '../data/models.dart';
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_mappers.dart';
@@ -80,7 +81,11 @@ class _RentalListScreenState extends State<RentalListScreen> {
     for (final vehicle in vehicles) {
       final record = hostedRecords[vehicle.id];
       if (record == null) continue;
-      final location = approximateVehicleLocation(record.id);
+      final location = approximateVehicleLocation(
+        record.id,
+        center: DbService.instance.mapConfig.defaultCenter,
+        serviceAreaName: record.serviceAreaName,
+      );
       markers.add(
         SurgoMapMarker(
           id: 'rental-${record.id}',

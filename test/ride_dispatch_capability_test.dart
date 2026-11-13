@@ -350,6 +350,14 @@ void main() {
 
       state.configureAuth(_HostedAuth());
       state.configureRepositories(RepositoryRegistry.mock());
+      state.setPickup(
+        'Seeded pickup',
+        coordinates: const MapPoint(9.0790, 126.1980),
+      );
+      state.setDestination(
+        'Seeded destination',
+        coordinates: const MapPoint(9.0805, 126.1995),
+      );
 
       await tester.pumpWidget(
         MaterialApp(

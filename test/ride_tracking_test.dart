@@ -423,6 +423,7 @@ void main() {
         wallet: mock.wallet,
         verifications: mock.verifications,
         attachments: mock.attachments,
+        personalLists: mock.personalLists,
         isSupabaseBacked: false,
       );
       expect(direct.rideLocations, isNull);

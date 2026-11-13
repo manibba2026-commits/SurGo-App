@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
@@ -10,7 +11,9 @@ import '../repositories/repository_mappers.dart';
 import '../repositories/repository_registry.dart';
 import '../repositories/repository_state.dart';
 import '../services/fee_calculator.dart';
+import '../services/geoapify_service.dart';
 import '../services/money.dart';
+import '../services/rental_presence.dart';
 import '../state/app_state.dart';
 import '../state/domain_cache.dart';
 import '../state/rental_status.dart';
@@ -614,6 +617,16 @@ class _HostedActiveRentalScreenState extends State<_HostedActiveRentalScreen> {
         snapshot.status == RepositoryStatus.idle) {
       return _lastBooking;
     }
+    final record = _recordFromCache();
+    if (record == null) return null;
+    return _lastBooking = rentalBookingFromRecord(record);
+  }
+
+  /// The raw row behind [_bookingFromCache], for the fields the display
+  /// booking does not carry (handover coordinates).
+  RentalRecord? _recordFromCache() {
+    final snapshot = _cache.stateOf<List<RentalRecord>>(_slot);
+    if (snapshot.status != RepositoryStatus.data) return null;
     final records = List<RentalRecord>.of(snapshot.data ?? const []);
     RentalRecord? record;
     if (_trackedId != null) {
@@ -628,9 +641,8 @@ class _HostedActiveRentalScreenState extends State<_HostedActiveRentalScreen> {
       );
       if (records.isNotEmpty) record = records.first;
     }
-    if (record == null) return null;
-    _trackedId = record.id;
-    return _lastBooking = rentalBookingFromRecord(record);
+    if (record != null) _trackedId = record.id;
+    return record;
   }
 
   Future<void> _advance(RentalBooking booking) async {
@@ -692,6 +704,7 @@ class _HostedActiveRentalScreenState extends State<_HostedActiveRentalScreen> {
   ) {
     final snapshot = _cache.stateOf<List<RentalRecord>>(_slot);
     final booking = _bookingFromCache();
+    final record = _recordFromCache();
     final failure = snapshot.failure?.message ?? refreshFailure;
     if (booking == null) {
       final loading =
@@ -927,13 +940,15 @@ class _HostedActiveRentalScreenState extends State<_HostedActiveRentalScreen> {
                         height: 1.6,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    if (!booking.status.isTerminal)
-                      const Text(
-                        'Live vehicle / delivery position is unavailable. '
-                        'Arrange handover with the owner.',
-                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    const SizedBox(height: 14),
+                    if (!booking.status.isTerminal && record != null) ...[
+                      _RentalLiveSection(
+                        record: record,
+                        ownerMode: widget.ownerMode,
+                        profileId: AppState.instance.identity?.userId ?? '',
                       ),
+                      const SizedBox(height: 14),
+                    ],
                     const SizedBox(height: 18),
                     if (pending && !widget.ownerMode)
                       SbOutlineButton(
@@ -983,6 +998,293 @@ String _statusMessage(
   RentalStatus.declined => 'The owner declined this rental request.',
   RentalStatus.cancelled => 'This rental request was cancelled.',
 };
+
+/// The handover point and both parties' live positions for one booking.
+///
+/// Positions travel over an ephemeral presence channel scoped to the rental,
+/// so the renter and the owner see each other while their screens are open and
+/// nothing is stored. Without a GPS fix the map still shows the agreed
+/// handover point and says plainly that sharing is off.
+class _RentalLiveSection extends StatefulWidget {
+  const _RentalLiveSection({
+    required this.record,
+    required this.ownerMode,
+    required this.profileId,
+  });
+
+  final RentalRecord record;
+  final bool ownerMode;
+  final String profileId;
+
+  @override
+  State<_RentalLiveSection> createState() => _RentalLiveSectionState();
+}
+
+class _RentalLiveSectionState extends State<_RentalLiveSection> {
+  final RideRouting _routing = RideRouting();
+  RentalPresenceSession? _presence;
+  MapPoint? _routeStart;
+  DateTime? _routeAt;
+  MapPoint? _geocodedHandover;
+  bool _geocoding = false;
+
+  /// Position sharing belongs to a handover that is actually being arranged,
+  /// not to a request the owner has not answered yet.
+  bool get _shares =>
+      widget.record.status == RentalStatus.accepted ||
+      widget.record.status == RentalStatus.active;
+
+  MapPoint? get _handover {
+    final latitude = widget.record.pickupLatitude;
+    final longitude = widget.record.pickupLongitude;
+    return latitude == null || longitude == null
+        ? null
+        : MapPoint(latitude, longitude);
+  }
+
+  /// The stored point when the request carried one, otherwise a Geoapify
+  /// geocode of the named handover area. Never a bundled barangay centre.
+  MapPoint? get _effectiveHandover => _handover ?? _geocodedHandover;
+
+  @override
+  void initState() {
+    super.initState();
+    _routing.addListener(_onRouting);
+    if (_shares) {
+      unawaited(_startPresence());
+      unawaited(_geocodeHandover());
+    }
+  }
+
+  Future<void> _geocodeHandover() async {
+    if (!_shares || _handover != null || _geocoding) return;
+    final label = widget.record.pickupLocation?.trim();
+    if (label == null || label.isEmpty) return;
+    if (!AppState.instance.repositories.isSupabaseBacked) return;
+    setState(() => _geocoding = true);
+    try {
+      final places = await GeoapifyService().autocomplete('$label, Tandag City');
+      if (!mounted) return;
+      setState(() {
+        _geocodedHandover = places.isEmpty ? null : places.first.point;
+        _geocoding = false;
+      });
+      _syncRoute();
+    } on Object {
+      if (mounted) setState(() => _geocoding = false);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _RentalLiveSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_shares) {
+      unawaited(_stopPresence());
+    } else if (_presence == null &&
+        (oldWidget.record.id != widget.record.id ||
+            oldWidget.profileId != widget.profileId ||
+            oldWidget.record.status != widget.record.status)) {
+      unawaited(_startPresence());
+      unawaited(_geocodeHandover());
+    }
+  }
+
+  @override
+  void dispose() {
+    _routing.removeListener(_onRouting);
+    _routing.dispose();
+    unawaited(_stopPresence());
+    super.dispose();
+  }
+
+  void _onRouting() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _startPresence() async {
+    final presence = AppState.instance.repositories.presence;
+    if (presence == null || widget.profileId.isEmpty) return;
+    final session = RentalPresenceSession(
+      presence: presence,
+      rentalId: widget.record.id,
+      profileId: widget.profileId,
+      role: widget.ownerMode ? 'owner' : 'renter',
+    );
+    session.ownPosition.addListener(_onPosition);
+    session.partner.addListener(_onPosition);
+    try {
+      await session.start();
+    } on Object {
+      session.ownPosition.removeListener(_onPosition);
+      session.partner.removeListener(_onPosition);
+      return;
+    }
+    if (!mounted || !_shares) {
+      session.ownPosition.removeListener(_onPosition);
+      session.partner.removeListener(_onPosition);
+      await session.stop();
+      return;
+    }
+    setState(() => _presence = session);
+    _onPosition();
+  }
+
+  Future<void> _stopPresence() async {
+    final session = _presence;
+    _presence = null;
+    if (session == null) return;
+    session.ownPosition.removeListener(_onPosition);
+    session.partner.removeListener(_onPosition);
+    await session.stop();
+  }
+
+  void _onPosition() {
+    if (!mounted) return;
+    _syncRoute();
+    setState(() {});
+  }
+
+  /// Recalculates the approach only when the start point moved meaningfully,
+  /// so a live fix does not turn into a routing call every few metres.
+  void _syncRoute() {
+    final handover = _effectiveHandover;
+    final start =
+        _presence?.ownPosition.value ?? _presence?.partner.value?.point;
+    if (handover == null || start == null) {
+      _routing.sync(start: null, end: null, enabled: false);
+      return;
+    }
+    final moved =
+        _routeStart == null || _metersBetween(_routeStart!, start) >= 80;
+    final stale =
+        _routeAt == null ||
+        DateTime.now().difference(_routeAt!) > const Duration(minutes: 2);
+    if (!moved && !stale) return;
+    _routeStart = start;
+    _routeAt = DateTime.now();
+    _routing.sync(start: start, end: handover, enabled: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final handover = _effectiveHandover;
+    final own = _presence?.ownPosition.value;
+    final partner = _presence?.partner.value;
+    final center = handover ?? own ?? partner?.point;
+    final partnerLabel = widget.ownerMode ? 'renter' : 'owner';
+    final canShare = AppState.instance.repositories.presence != null;
+
+    if (center == null) {
+      return Text(
+        canShare
+            ? 'No handover point on file for this booking. Arrange the '
+                  'handover in chat with the $partnerLabel.'
+            : 'Live vehicle / delivery position is unavailable. Arrange '
+                  'handover with the $partnerLabel.',
+        style: const TextStyle(color: AppColors.muted, fontSize: 12),
+      );
+    }
+
+    final message = partner != null
+        ? '${widget.ownerMode ? 'Renter' : 'Owner'} sharing live'
+              '${handover == null ? '' : ' · ${_distanceLabel(_metersBetween(partner.point, handover))} from handover'}'
+              ' · ${_ageLabel(partner.seenAt)}'
+        : own != null
+        ? 'You are sharing your position. Waiting for the $partnerLabel to '
+              'share theirs.'
+        : 'Location is off for this device. Turn on location to share your '
+              'position; the handover point is still shown.';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            SbTag(
+              partner != null ? 'Live' : (own != null ? 'Sharing' : 'Map'),
+              secondary: partner == null,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: AppColors.muted, fontSize: 11.5),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SurgoMap(
+          height: 190,
+          borderRadius: BorderRadius.circular(14),
+          // A status map inside a scrolling form: letting it take drags would
+          // stop the page from scrolling when the finger lands on it.
+          interactive: false,
+          showUserLocation: false,
+          fallbackCenter: center,
+          route: _routing.route?.points ?? const [],
+          routeIsEstimate: _routing.route == null,
+          routeColor: AppColors.success,
+          markers: [
+            if (handover != null)
+              SurgoMapMarker(
+                id: 'handover',
+                position: handover,
+                icon: Icons.handshake_outlined,
+                title: 'Handover point',
+                subtitle:
+                    widget.record.pickupLocation ?? 'Agreed handover point',
+              ),
+            if (own != null)
+              SurgoMapMarker(
+                id: 'you',
+                position: own,
+                icon: Icons.my_location,
+                title: 'You',
+                subtitle: 'Live position',
+                color: AppColors.secondary,
+              ),
+            if (partner != null)
+              SurgoMapMarker(
+                id: 'partner',
+                position: partner.point,
+                icon: widget.ownerMode
+                    ? Icons.person_pin_circle_outlined
+                    : Icons.directions_car_filled,
+                title: widget.ownerMode ? 'Renter' : 'Owner',
+                subtitle: 'Live position',
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static String _ageLabel(DateTime seenAt) {
+    final age = DateTime.now().difference(seenAt);
+    if (age.inSeconds < 45) return 'now';
+    if (age.inMinutes < 60) return '${age.inMinutes} min ago';
+    return 'stale';
+  }
+
+  static String _distanceLabel(double meters) => meters < 1000
+      ? '${meters.round()} m'
+      : '${(meters / 1000).toStringAsFixed(1)} km';
+
+  static double _metersBetween(MapPoint a, MapPoint b) {
+    const radius = 6371000.0;
+    const toRadians = math.pi / 180;
+    final dLat = (b.latitude - a.latitude) * toRadians;
+    final dLng = (b.longitude - a.longitude) * toRadians;
+    final h =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(a.latitude * toRadians) *
+            math.cos(b.latitude * toRadians) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return 2 * radius * math.asin(math.min(1, math.sqrt(h)));
+  }
+}
 
 /// Screen-scoped invalidation: authenticated, payload-free row events plus
 /// reconciliation for missed events. Shared only by the rental screens.

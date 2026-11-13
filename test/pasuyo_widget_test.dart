@@ -184,6 +184,7 @@ RepositoryRegistry _registry(
     wallet: seed.wallet,
     verifications: seed.verifications,
     attachments: seed.attachments,
+    personalLists: seed.personalLists,
     isSupabaseBacked: hosted,
     realtime: realtime,
   );

@@ -149,6 +149,7 @@ class _Rig {
         wallet: mock.wallet,
         verifications: mock.verifications,
         attachments: mock.attachments,
+        personalLists: mock.personalLists,
         isSupabaseBacked: true,
         realtime: realtime,
       ),

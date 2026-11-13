@@ -16,6 +16,7 @@ import '../widgets/common.dart';
 import '../widgets/pasuyo_stepper.dart';
 import '../widgets/repository_states.dart';
 import '../widgets/ride_request_card.dart';
+import '../widgets/route_preview.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_notice.dart';
 import 'notifications_screen.dart';
@@ -36,6 +37,12 @@ class RiderHomeScreen extends StatefulWidget {
 class _RiderHomeScreenState extends State<RiderHomeScreen> {
   Timer? _refreshTimer;
 
+  /// Realtime invalidation for this rider's inbox, so a request assigned while
+  /// the screen is open appears as soon as the passenger confirms it. The timer
+  /// stays as the fallback for a dropped socket.
+  StreamSubscription<void>? _inbox;
+  String? _inboxRiderId;
+
   @override
   void initState() {
     super.initState();
@@ -46,13 +53,57 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
         Timer.periodic(const Duration(seconds: 15), (_) => _refresh());
     // The first read also restores a trip that was already accepted before
     // the app was reopened, so the rider keeps the banner and its actions.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refresh();
+      _syncInbox();
+    });
+    AppState.instance.addListener(_onStateChanged);
   }
 
   @override
   void dispose() {
+    AppState.instance.removeListener(_onStateChanged);
+    final inbox = _inbox;
+    _inbox = null;
+    if (inbox != null) unawaited(inbox.cancel().catchError((Object _) {}));
     _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _onStateChanged() => _syncInbox();
+
+  /// Attaches the inbox subscription to the signed-in rider, and drops it when
+  /// the session changes or signs out. A no-op while the identity is unchanged.
+  void _syncInbox() {
+    if (!mounted) return;
+    final state = AppState.instance;
+    final riderId = state.usesHostedRideDispatch && state.isSignedIn
+        ? state.identity?.userId
+        : null;
+    if (riderId == _inboxRiderId) return;
+    final previous = _inbox;
+    _inbox = null;
+    _inboxRiderId = riderId;
+    if (previous != null) {
+      unawaited(previous.cancel().catchError((Object _) {}));
+    }
+    final realtime = state.repositories.realtime;
+    if (riderId == null || realtime == null) return;
+    try {
+      _inbox = realtime
+          .watchRows(
+            table: 'ride_requests',
+            column: 'rider_id',
+            value: riderId,
+          )
+          .listen(
+            (_) => _refresh(),
+            onError: (Object _) => _refresh(),
+          );
+    } on Object {
+      // Failing to subscribe is not an outage: the timer still re-reads.
+      _inboxRiderId = null;
+    }
   }
 
   void _refresh() {
@@ -273,6 +324,20 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
     }
   }
 
+  /// Answers one hosted request and, when the rider accepts, opens the trip the
+  /// database just committed. Declining leaves the rider on the dashboard.
+  Future<void> _respond(
+    BuildContext context,
+    AppState state,
+    RideRequestItem request, {
+    required bool accepted,
+  }) async {
+    await state.respondToHostedRequest(request, accepted: accepted);
+    if (!accepted || !context.mounted) return;
+    if (state.activeRide?.id != request.id) return;
+    await Navigator.pushNamed(context, '/livetrip');
+  }
+
   Widget _incomingSection(BuildContext context, AppState state) {
     if (!state.usesHostedRideDispatch) return _mockIncoming(state);
     return RepositoryView<List<RideRecord>>(
@@ -340,7 +405,9 @@ class _RiderHomeScreenState extends State<RiderHomeScreen> {
                 final request = rideRequestFromRecord(record);
                 return SbRideRequestCard(
                   request: request,
-                  onRespond: (accepted) => state.respondToHostedRequest(
+                  onRespond: (accepted) => _respond(
+                    context,
+                    state,
                     request,
                     accepted: accepted,
                   ),
@@ -849,6 +916,18 @@ class _ActivePasuyoCard extends StatelessWidget {
                     fontWeight: FontWeight.w700, fontSize: 12.5)),
             const SizedBox(height: 12),
             PasuyoStepper(task: task),
+            if (task.helperId != null &&
+                task.pickupPoint != null &&
+                task.dropoffPoint != null) ...[
+              const SizedBox(height: 12),
+              SbRoutePreview(
+                start: task.pickupPoint!,
+                end: task.dropoffPoint!,
+                height: 112,
+                startLabel: 'Pickup',
+                endLabel: 'Drop-off',
+              ),
+            ],
             const SizedBox(height: 12),
             // Progress only. The advance button is deliberately absent here: one
             // screen per task owns its actions, so a stray tap on a banner in the

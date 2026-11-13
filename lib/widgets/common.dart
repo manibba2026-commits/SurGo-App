@@ -256,6 +256,31 @@ class SbIconButton extends StatelessWidget {
   }
 }
 
+/// Keeps a swipe that starts on a card or sheet from reaching the map behind.
+///
+/// MapLibre renders into an opaque platform view, so a `Listener` above it is
+/// not enough: a drag that begins on transparent padding can still reach the
+/// native surface. A full-size [AbsorbPointer] behind the child terminates hit
+/// testing at the overlay, while the child keeps its own buttons, inputs, and
+/// scrollables working normally.
+class SbMapOverlay extends StatelessWidget {
+  final Widget child;
+  const SbMapOverlay({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(
+          child: AbsorbPointer(child: const SizedBox.expand()),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
 /// Mirrors `.map-placeholder` — grid-lined dark panel standing in for a map.
 class SbMapPlaceholder extends StatelessWidget {
   final double height;

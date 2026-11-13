@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
 import '../repositories/repository_failure.dart';
-import '../services/tandag_places.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -32,23 +31,6 @@ class _BookingScreenState extends State<BookingScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) AppState.instance.refreshBookingRoute();
     });
-    _seedHostedDefaults();
-  }
-
-  /// The draft's placeholder labels describe a fictional "SM Terminal". A
-  /// hosted build starts from two real Tandag places instead, so the map,
-  /// route and fare are meaningful before the passenger touches anything.
-  void _seedHostedDefaults() {
-    final state = AppState.instance;
-    if (!state.usesHostedRideDispatch) return;
-    if (state.pickupLabel != 'Purok 3, Barangay Poblacion' ||
-        state.destinationLabel != 'SM Terminal, Downtown') {
-      return;
-    }
-    final plaza = TandagPlaces.byId('plaza');
-    final market = TandagPlaces.byId('market');
-    state.setPickup(plaza.label, coordinates: plaza.point);
-    state.setDestination(market.label, coordinates: market.point);
   }
 
   @override
@@ -62,7 +44,7 @@ class _BookingScreenState extends State<BookingScreen> {
         stateKey: 'booking',
         sheetFraction: 0.6,
         map: SurgoMap(
-          height: MediaQuery.sizeOf(context).height,
+          height: MediaQuery.sizeOf(context).height * 0.4,
           borderRadius: BorderRadius.zero,
           fallbackCenter:
               state.bookingPickup ??
@@ -70,12 +52,7 @@ class _BookingScreenState extends State<BookingScreen> {
               db.mapConfig.defaultCenter,
           initialZoom: db.mapConfig.defaultZoom,
           showUserLocation: false,
-          cameraPadding: EdgeInsets.fromLTRB(
-            24,
-            80,
-            24,
-            MediaQuery.sizeOf(context).height * 0.6 + 20,
-          ),
+          cameraPadding: const EdgeInsets.fromLTRB(24, 80, 24, 20),
           routeIsEstimate: state.bookingRouting.route == null,
           route:
               state.bookingRouting.route?.points ??
@@ -139,6 +116,8 @@ class _BookingScreenState extends State<BookingScreen> {
                         state.setPickup(
                           picked.label,
                           coordinates: picked.point,
+                          barangayName: picked.barangayName,
+                          purokName: picked.purokName,
                         );
                       }
                     },
@@ -158,25 +137,12 @@ class _BookingScreenState extends State<BookingScreen> {
                         state.setDestination(
                           picked.label,
                           coordinates: picked.point,
+                          barangayName: picked.barangayName,
+                          purokName: picked.purokName,
                         );
                       }
                     },
                   ),
-                  if (!state.repositories.isSupabaseBacked) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        for (final place in db.places.take(6))
-                          ActionChip(
-                            avatar: const Icon(Icons.place_outlined, size: 16),
-                            label: Text(place.label),
-                            onPressed: () => state.setDestination(place.label),
-                          ),
-                      ],
-                    ),
-                  ],
                   const SizedBox(height: 16),
                   _priceBreakdown(state),
                 ],
@@ -209,6 +175,14 @@ class _BookingScreenState extends State<BookingScreen> {
     if (_submitting) return;
     if (state.liveRideRequest != null) {
       Navigator.pushNamed(context, '/matching');
+      return;
+    }
+    if (state.bookingPickup == null || state.bookingDestination == null) {
+      SurgoNotice.show(
+        context,
+        'Choose both the pickup and destination first.',
+        tone: SbNoticeTone.warning,
+      );
       return;
     }
     setState(() => _submitting = true);

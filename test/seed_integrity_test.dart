@@ -209,15 +209,11 @@ void main() {
           db.ownerVehicles.map((v) => v.id).toSet());
     });
 
-    test('every seed place has coordinates inside the city area', () {
-      expect(db.places, isNotEmpty);
-      for (final place in db.places) {
-        expect(place.label, isNotEmpty);
-        expect(place.latitude, inInclusiveRange(9.0, 9.2),
-            reason: '${place.id} latitude ${place.latitude}');
-        expect(place.longitude, inInclusiveRange(126.1, 126.3),
-            reason: '${place.id} longitude ${place.longitude}');
-      }
+    test('the seed ships no local barangay or landmark catalog', () {
+      // Geography comes from the hosted catalog and Geoapify/OpenStreetMap.
+      // A bundled list would silently disagree with the database.
+      expect(db.barangays, isEmpty);
+      expect(db.places, isEmpty);
     });
   });
 

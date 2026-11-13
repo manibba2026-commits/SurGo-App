@@ -102,8 +102,14 @@ void main() {
   /// A request created through the real booking path, so the tests exercise the
   /// same state the booking screen produces rather than a hand-built fixture.
   RideRequestItem newRequest() {
-    state.setPickup('SM Terminal');
-    state.setDestination('Tandag Public Hall');
+    state.setPickup(
+      'SM Terminal',
+      coordinates: const MapPoint(9.0790, 126.1980),
+    );
+    state.setDestination(
+      'Tandag Public Hall',
+      coordinates: const MapPoint(9.0805, 126.1995),
+    );
     return state.createRideRequest();
   }
 

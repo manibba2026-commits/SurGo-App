@@ -38,6 +38,12 @@ class Driver {
   final String plate;
   final String vehicleType;
 
+  /// The rider's profile id when the trip came from the hosted dispatch, so
+  /// starring this driver after the ride writes the database star against the
+  /// account itself rather than a name that other riders may share. Null for
+  /// a seeded driver, which has no hosted profile.
+  final String? riderProfileId;
+
   const Driver({
     required this.name,
     required this.initials,
@@ -45,6 +51,7 @@ class Driver {
     required this.trips,
     required this.plate,
     required this.vehicleType,
+    this.riderProfileId,
   });
 }
 

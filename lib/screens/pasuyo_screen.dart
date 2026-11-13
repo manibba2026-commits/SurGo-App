@@ -11,6 +11,7 @@ import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
 import '../widgets/pasuyo_stepper.dart';
 import '../widgets/repository_states.dart';
+import '../widgets/route_preview.dart';
 import '../widgets/surfaces.dart';
 import 'pasuyo_post_screen.dart';
 import 'pasuyo_task_screen.dart';
@@ -228,6 +229,20 @@ class _TaskRow extends StatelessWidget {
             ),
             const SizedBox(height: 11),
             PasuyoStepper(task: task, compact: true),
+            if (task.helperId != null &&
+                !task.isComplete &&
+                !task.isCancelled &&
+                task.pickupPoint != null &&
+                task.dropoffPoint != null) ...[
+              const SizedBox(height: 10),
+              SbRoutePreview(
+                start: task.pickupPoint!,
+                end: task.dropoffPoint!,
+                height: 104,
+                startLabel: 'Pickup',
+                endLabel: 'Drop-off',
+              ),
+            ],
             const SizedBox(height: 9),
             Row(
               children: [

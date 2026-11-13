@@ -111,7 +111,7 @@ SurGo-App-main/
 | `users.json` | Passenger/earner/owner profiles, settings, notifications, favourites, contacts |
 | `accounts.json` | Login accounts, capabilities, status |
 | `applications.json` | Verification applications and documents |
-| `locations.json` | Barangays, puroks/places, saved places |
+| `locations.json` | City identity and saved places; barangays/puroks come from the hosted catalog, search from Geoapify/OpenStreetMap |
 | `vehicles.json` | Owner fleet, vehicle documents, owner booking requests |
 | `rides.json` | Ride requests + passenger ride history |
 | `rentals.json` | Rental history |

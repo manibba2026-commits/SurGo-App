@@ -80,6 +80,7 @@ RepositoryRegistry _registry(_Rides rides, {bool hosted = true}) {
     wallet: mock.wallet,
     verifications: mock.verifications,
     attachments: mock.attachments,
+    personalLists: mock.personalLists,
     isSupabaseBacked: hosted,
   );
 }

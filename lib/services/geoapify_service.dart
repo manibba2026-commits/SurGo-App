@@ -35,8 +35,8 @@ class GeoapifyService {
   final GeoFunctionCall _invoke;
 
   /// The Tandag pilot area. The deployed function currently biases only to the
-  /// Philippines, so suggestions are also clipped here; local barangay and
-  /// landmark matches are unaffected.
+  /// Philippines, so suggestions are also clipped here. This is the only place
+  /// search results come from: there is no bundled landmark or barangay list.
   static const serviceAreaSouth = 8.95;
   static const serviceAreaNorth = 9.25;
   static const serviceAreaWest = 125.95;

@@ -402,6 +402,7 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
                                         type: vehicle.type,
                                         pricePerDay: vehicle.pricePerDay,
                                         ownerName: vehicle.ownerName,
+                                        vehicleId: vehicle.id,
                                       ),
                                 );
                               },
@@ -704,6 +705,10 @@ class _RentalDetailScreenState extends State<RentalDetailScreen> {
       final location = vehicle.location.isEmpty
           ? barangay.name
           : '${barangay.name}, ${vehicle.location}';
+      // The hosted barangay table has no centre coordinate, so the request
+      // stores only the named handover area. The active-rental map geocodes
+      // that label through Geoapify when it needs a point; it never invents a
+      // coordinate from a bundled barangay list.
       final booking = await state.createHostedRentalRequest(
         vehicle: vehicle,
         pickupDate: _pickup!,

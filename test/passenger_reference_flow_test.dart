@@ -34,8 +34,16 @@ void main() {
     state.lastCompletedRide = null;
     state.lastCompletedRideDriver = null;
     state.lastRideBreakdown = null;
-    state.setPickup('SM Terminal');
-    state.setDestination('Public Market');
+    // Labels alone no longer resolve to a point: the picker supplies the real
+    // coordinate, and the booking screen requires both ends before submitting.
+    state.setPickup(
+      'SM Terminal',
+      coordinates: const MapPoint(9.0790, 126.1980),
+    );
+    state.setDestination(
+      'Public Market',
+      coordinates: const MapPoint(9.0805, 126.1995),
+    );
   });
 
   test('picked coordinates survive request creation and clear on a new label',
@@ -125,21 +133,23 @@ void main() {
     await tester.pump();
     await tester.enterText(find.byType(TextField), 'zzzzzz');
     await tester.pump();
-    expect(find.text('No matching place. Drop a pin on the map instead.'),
-        findsOneWidget);
+    expect(
+      find.text(
+        'Address search needs a hosted account. Drop a pin or use your '
+        'current location instead.',
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     await tester.enterText(find.byType(TextField), 'Tandag Diagnostic Center');
     await tester.pump();
-    await tester.ensureVisible(find.text('Tandag Diagnostic Center').first);
-    await tester.tap(
-      find.text('Tandag Diagnostic Center').first,
-      warnIfMissed: false,
+    expect(
+      find.text(
+        'Address search needs a hosted account. Drop a pin or use your '
+        'current location instead.',
+      ),
+      findsOneWidget,
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump();
-    expect(state.destinationLabel, 'Tandag Diagnostic Center · Draga');
-    expect(state.bookingDestination, isNotNull);
     expect(tester.takeException(), isNull);
   });
 

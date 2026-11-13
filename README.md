@@ -102,7 +102,7 @@ there and one line in `pubspec.yaml`:
 |------|-------|
 | `config.json` | commission rates, currency, fare and payout rules |
 | `users.json` | passenger, rider, vehicle owner, payment methods, contacts, settings |
-| `locations.json` | barangays, map landmarks, saved places |
+| `locations.json` | city identity and saved places; barangays and landmarks come from the hosted catalog and Geoapify/OpenStreetMap |
 | `vehicles.json` | owned fleet, vehicle documents, owner booking requests |
 | `rides.json` | live ride requests and completed ride history |
 | `rentals.json` | rental history |

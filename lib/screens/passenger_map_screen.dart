@@ -283,47 +283,49 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
                   MediaQuery.paddingOf(context).bottom + (_hosted ? 126 : 0),
             ),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-              child: Row(
-                children: [
-                  SbIconButton(
-                    icon: Icons.arrow_back,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: SizedBox(
-                      height: 36,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: AppColors.panel.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Row(
-                          children: [
-                            _filterChip('All'),
-                            _filterChip('Riders'),
-                            _filterChip('Rentals'),
-                          ],
+          SbMapOverlay(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Row(
+                  children: [
+                    SbIconButton(
+                      icon: Icons.arrow_back,
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 36,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: AppColors.panel.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Row(
+                            children: [
+                              _filterChip('All'),
+                              _filterChip('Riders'),
+                              _filterChip('Rentals'),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  if (_hosted) ...[
-                    const SizedBox(width: 8),
-                    SbIconButton(
-                      icon: Icons.refresh,
-                      onTap: () {
-                        unawaited(_loadRiders());
-                        if (_rentalRequested) unawaited(_loadRentals());
-                      },
-                    ),
+                    if (_hosted) ...[
+                      const SizedBox(width: 8),
+                      SbIconButton(
+                        icon: Icons.refresh,
+                        onTap: () {
+                          unawaited(_loadRiders());
+                          if (_rentalRequested) unawaited(_loadRentals());
+                        },
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -332,11 +334,13 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
               left: 14,
               right: 14,
               bottom: 18,
-              child: SafeArea(
-                top: false,
-                child: filter == 'Rentals'
-                    ? _hostedRentalNotice()
-                    : _hostedStatusPill(),
+              child: SbMapOverlay(
+                child: SafeArea(
+                  top: false,
+                  child: filter == 'Rentals'
+                      ? _hostedRentalNotice()
+                      : _hostedStatusPill(),
+                ),
               ),
             ),
         ],
@@ -383,7 +387,11 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
     return [
       for (final record in _rentals)
         () {
-          final location = approximateVehicleLocation(record.id);
+          final location = approximateVehicleLocation(
+            record.id,
+            center: DbService.instance.mapConfig.defaultCenter,
+            serviceAreaName: record.serviceAreaName,
+          );
           final listing = rentalListingFromRecord(record);
           return SurgoMapMarker(
             id: 'rental-${record.id}',

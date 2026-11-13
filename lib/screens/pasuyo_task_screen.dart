@@ -15,6 +15,7 @@ import '../state/pasuyo_status.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/pasuyo_stepper.dart';
+import '../widgets/route_preview.dart';
 import '../widgets/surgo_notice.dart';
 
 /// One Pasuyo task, seen from the customer's side: live progress, the fee
@@ -142,6 +143,17 @@ class PasuyoTaskScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                     _PasuyoProgress(task: task),
+                    if (task.helperId != null &&
+                        task.pickupPoint != null &&
+                        task.dropoffPoint != null) ...[
+                      const SizedBox(height: 14),
+                      SbRoutePreview(
+                        start: task.pickupPoint!,
+                        end: task.dropoffPoint!,
+                        startLabel: 'Pickup',
+                        endLabel: 'Drop-off',
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     _line(
                       Icons.storefront_outlined,
@@ -1009,6 +1021,17 @@ class _HostedPasuyoTaskScreenState extends State<_HostedPasuyoTaskScreen> {
                   ),
                   const SizedBox(height: 14),
                   _PasuyoProgress(task: task),
+                  if (task.helperId != null &&
+                      task.pickupPoint != null &&
+                      task.dropoffPoint != null) ...[
+                    const SizedBox(height: 14),
+                    SbRoutePreview(
+                      start: task.pickupPoint!,
+                      end: task.dropoffPoint!,
+                      startLabel: 'Pickup',
+                      endLabel: 'Drop-off',
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   _line(
                     Icons.storefront_outlined,

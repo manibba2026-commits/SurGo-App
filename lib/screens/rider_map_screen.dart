@@ -64,30 +64,32 @@ class EarnerMapScreen extends StatelessWidget {
             height: MediaQuery.of(context).size.height,
             borderRadius: BorderRadius.zero,
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-              child: Row(
-                children: [
-                  SbIconButton(icon: Icons.arrow_back, onTap: () => Navigator.pop(context)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.panel.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Text(
-                        hosted
-                            ? 'Nearby demand is not mapped yet'
-                            : '${db.mapPassengers.length} nearby passengers',
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+          SbMapOverlay(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Row(
+                  children: [
+                    SbIconButton(icon: Icons.arrow_back, onTap: () => Navigator.pop(context)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.panel.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          hosted
+                              ? 'Nearby demand is not mapped yet'
+                              : '${db.mapPassengers.length} nearby passengers',
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

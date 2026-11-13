@@ -10,6 +10,7 @@ import '../state/ride_status.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import 'common.dart';
+import 'route_preview.dart';
 import 'surgo_map.dart';
 import 'surgo_notice.dart';
 
@@ -366,6 +367,26 @@ class SbActiveRideBanner extends StatelessWidget {
                 ),
               ],
             ),
+            if (ride.pickupLatitude != null &&
+                ride.pickupLongitude != null &&
+                ride.dropoffLatitude != null &&
+                ride.dropoffLongitude != null) ...[
+              const SizedBox(height: 12),
+              SbRoutePreview(
+                start: MapPoint(
+                  ride.pickupLatitude!,
+                  ride.pickupLongitude!,
+                ),
+                end: MapPoint(
+                  ride.dropoffLatitude!,
+                  ride.dropoffLongitude!,
+                ),
+                route: state.rideRouting.route?.points ?? const [],
+                height: 116,
+                startLabel: 'Pickup',
+                endLabel: 'Drop-off',
+              ),
+            ],
             const SizedBox(height: 14),
             Row(
               children: [

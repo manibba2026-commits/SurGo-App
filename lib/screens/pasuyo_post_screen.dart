@@ -4,7 +4,6 @@ import '../data/db_models.dart';
 import '../repositories/repository_failure.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
-import '../services/tandag_places.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
@@ -69,45 +68,9 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
     super.dispose();
   }
 
-  /// The label the location picker hands back is "Purok 3, San Isidro" — split
-  /// it so the task stores barangay and purok separately like every other
-  /// request in the app.
-  void _applyLocation(String label, {required bool isPickup}) {
-    final parts = label.split(',').map((p) => p.trim()).toList();
-    final purok = parts.isNotEmpty ? parts.first : '';
-    final barangay = parts.length > 1 ? parts[1] : '';
-    final anchor = TandagPlaces.barangayAnchors[barangay];
-    setState(() {
-      if (isPickup) {
-        _pickup = label;
-        _pickupPurok = purok;
-        _pickupBarangay = barangay;
-        _pickupPoint = anchor == null ? null : _purokPoint(anchor, purok);
-      } else {
-        _dropoff = label;
-        _dropoffPurok = purok;
-        _dropoffBarangay = barangay;
-        _dropoffPoint = anchor == null ? null : _purokPoint(anchor, purok);
-      }
-    });
-  }
-
-  /// A stable point inside the barangay for the preview map; the actual
-  /// errand uses the barangay and purok ids, not this coordinate.
-  static MapPoint _purokPoint(MapPoint anchor, String purok) {
-    var hash = 0;
-    for (final unit in purok.codeUnits) {
-      hash = (hash * 31 + unit) & 0x7fffffff;
-    }
-    return MapPoint(
-      anchor.latitude + ((hash % 13) - 6) / 10000,
-      anchor.longitude + (((hash >> 5) % 13) - 6) / 10000,
-    );
-  }
-
-  /// Hosted variant: keeps the chosen barangay and purok ids so the database
-  /// row can reference them instead of a free-text label, and remembers the
-  /// pin for the shared map preview.
+  /// Keeps the chosen barangay and purok ids so the database row can reference
+  /// them instead of a free-text label, and remembers the real pin for the
+  /// shared map preview.
   void _applyRideLocation(
     RideLocationChoice picked, {
     required bool isPickup,
@@ -139,16 +102,6 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         mounted &&
         identical(registry, state.repositories) &&
         userId == state.identity?.userId;
-    if (!_hosted) {
-      final picked = await showLocationPicker(
-        context,
-        title: isPickup ? 'Pickup location' : 'Drop-off location',
-      );
-      if (current() && picked != null) {
-        _applyLocation(picked, isPickup: isPickup);
-      }
-      return;
-    }
     final picked = await showRideLocationPicker(
       context,
       title: isPickup ? 'Pickup location' : 'Drop-off location',
@@ -202,6 +155,10 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         dropoff: _dropoff,
         budget: _budget,
         note: _noteCtrl.text.trim(),
+        pickupLatitude: _pickupPoint?.latitude,
+        pickupLongitude: _pickupPoint?.longitude,
+        dropoffLatitude: _dropoffPoint?.latitude,
+        dropoffLongitude: _dropoffPoint?.longitude,
         bookedForSomeone: _bookedForSomeone,
         recipientName: _recipientNameCtrl.text.trim(),
         recipientPhone: normalizePhoneNumber(_recipientPhoneCtrl.text) ?? '',
@@ -238,6 +195,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         pickupAddress: _pickup,
         pickupBarangayId: _pickupBarangayId!,
         pickupPurokId: _pickupPurokId,
+        pickupLatitude: _pickupPoint?.latitude,
+        pickupLongitude: _pickupPoint?.longitude,
         quotedFeeCentavos: _budget,
         items: [
           for (final item in _items) {'name': item},
@@ -246,6 +205,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
         dropoffAddress: _dropoff,
         dropoffBarangayId: _dropoffBarangayId,
         dropoffPurokId: _dropoffPurokId,
+        dropoffLatitude: _dropoffPoint?.latitude,
+        dropoffLongitude: _dropoffPoint?.longitude,
         bookedForSomeone: _bookedForSomeone,
         recipientName: _bookedForSomeone
             ? _recipientNameCtrl.text.trim()
@@ -424,6 +385,7 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
                 child: SurgoMap(
                   height: 190,
                   borderRadius: BorderRadius.circular(16),
+                  interactive: false,
                   showUserLocation: false,
                   initialZoom: 13.5,
                   cameraPadding: const EdgeInsets.fromLTRB(18, 30, 18, 30),

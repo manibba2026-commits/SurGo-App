@@ -136,21 +136,25 @@ void main() {
     });
 
     test('a purok round-trips through the barangay list', () async {
+      final saved = db.barangays;
+      db.barangays = const [
+        Barangay(name: 'Test Barangay', puroks: ['Purok 1', 'Purok 2']),
+      ];
+      addTearDown(() => db.barangays = saved);
+
       final repository = MockCatalogRepository(db);
       final barangays = await repository.fetchBarangays('sa-tandag-city');
-      final first = barangays.first.puroks.isNotEmpty
-          ? barangays.first.puroks.first
-          : barangays[1].puroks.first;
+      final first = barangays.first.puroks.first;
       expect(await repository.fetchPurok(first.id), isNotNull);
       expect((await repository.fetchPurok(first.id))!.name, first.name);
       expect(await repository.fetchPurok('mock-barangay-999-purok-0'), isNull);
     });
 
-    test('landmarks exist only in the seed', () async {
+    test('the seed has no local landmark table', () async {
+      // Landmark search is Geoapify/OpenStreetMap only; the hosted catalog
+      // still has no places table, so the mock must not invent one.
       final places = await MockCatalogRepository(db).fetchPlaces();
-      expect(places, isNotEmpty);
-      expect(places.every((p) => p.latitude.abs() > 0), isTrue);
-      expect(places.map((p) => p.id).toSet(), hasLength(places.length));
+      expect(places, isEmpty);
     });
 
     test('no pricing policy is claimed', () async {
@@ -437,14 +441,21 @@ void main() {
       expect(registry.description, 'local mock seed');
     });
 
-    test('the default build does not silently switch to Supabase', () {
-      // `SURGO_DATA_SOURCE` is the only lever; a build that asks for the
-      // database must not quietly end up on the seed.
-      expect(DataSourceConfig.usesSupabase, isFalse);
-      expect(buildRepositoryRegistry(supabaseReady: true).isSupabaseBacked,
-          DataSourceConfig.usesSupabase);
-      expect(buildRepositoryRegistry(supabaseReady: false).description,
-          'local mock seed');
+    test('the default build reads Supabase, not the seed', () {
+      // The hosted database is the source of truth for an ordinary build; only
+      // an explicit `--dart-define=SURGO_DATA_SOURCE=mock` puts the seed back.
+      // A Supabase build that could not reach the database still gets the
+      // Supabase repositories so reads fail with a typed failure rather than
+      // presenting seeded rows as real account data.
+      expect(DataSourceConfig.usesSupabase, isTrue);
+      expect(
+        buildRepositoryRegistry(supabaseReady: false).isSupabaseBacked,
+        isTrue,
+      );
+      expect(
+        buildRepositoryRegistry(supabaseReady: false).description,
+        'Supabase',
+      );
     });
   });
 }

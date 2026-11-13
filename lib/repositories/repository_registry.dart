@@ -3,6 +3,7 @@ import 'attachment_repository.dart';
 import 'backend.dart';
 import 'catalog_repository.dart';
 import 'notification_repository.dart';
+import 'personal_list_repository.dart';
 import 'pasuyo_repository.dart';
 import 'profile_repository.dart';
 import 'rental_repository.dart';
@@ -12,7 +13,7 @@ import 'vehicle_repository.dart';
 import 'verification_repository.dart';
 import 'wallet_repository.dart';
 
-/// The nine data domains the app reads, already bound to one backend.
+/// The ten data domains the app reads, already bound to one backend.
 ///
 /// This is the composition root for the data layer: a build gets either the
 /// Supabase set, through [RepositoryRegistry.supabase], or the seeded set,
@@ -30,9 +31,11 @@ class RepositoryRegistry {
     required this.wallet,
     required this.verifications,
     required this.attachments,
+    required this.personalLists,
     required this.isSupabaseBacked,
     this.rideLocations,
     this.realtime,
+    this.presence,
   });
 
   factory RepositoryRegistry.mock([DbService? database]) {
@@ -49,6 +52,7 @@ class RepositoryRegistry {
       wallet: MockWalletRepository(db),
       verifications: MockVerificationRepository(db),
       attachments: const MockAttachmentRepository(),
+      personalLists: MockPersonalListRepository(db),
     );
   }
 
@@ -75,6 +79,9 @@ class RepositoryRegistry {
       realtime: backend is SurgoRealtimeBackend
           ? backend as SurgoRealtimeBackend
           : null,
+      presence: backend is SurgoPresenceBackend
+          ? backend as SurgoPresenceBackend
+          : null,
       rentals: SupabaseRentalRepository(backend, writer: writer),
       pasuyo: SupabasePasuyoRepository(backend, writer: writer),
       notifications: SupabaseNotificationRepository(backend, writer: writer),
@@ -85,6 +92,7 @@ class RepositoryRegistry {
         writer: writer,
         storage: storage,
       ),
+      personalLists: SupabasePersonalListRepository(backend, writer: writer),
     );
   }
 
@@ -99,10 +107,18 @@ class RepositoryRegistry {
   final VerificationRepository verifications;
   final AttachmentRepository attachments;
 
+  /// The signed-in account's saved places and starred riders and vehicles.
+  /// Written only through server-side functions that key on the session.
+  final PersonalListRepository personalLists;
+
   /// Optional tracking reads and invalidations. Read-only backends can poll;
   /// direct constructors and the mock set need not supply either capability.
   final RideLocationRepository? rideLocations;
   final SurgoRealtimeBackend? realtime;
+
+  /// Live, unpersisted sharing between the two parties of a booking. Null when
+  /// the backend cannot host a presence channel.
+  final SurgoPresenceBackend? presence;
 
   /// False for the seeded set. Screens use this to decide whether a failure is
   /// a real outage or a test fixture, never to substitute the other set.

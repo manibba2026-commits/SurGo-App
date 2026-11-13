@@ -163,6 +163,9 @@ class AppState extends ChangeNotifier {
     repositories = registry;
     if (monitored) _cache?.restart();
     _startNotifications();
+    // Personal lists ride with the data layer: re-hydrate them when the
+    // registry is swapped under a live hosted session (no-op otherwise).
+    unawaited(refreshHostedPersonalLists());
   }
 
   NotificationSession? _notifications;
@@ -170,6 +173,7 @@ class AppState extends ChangeNotifier {
   void _stopNotifications() {
     _notifications?.stop();
     _notifications = null;
+    _stopRentalWatch();
   }
 
   void _startNotifications() {
@@ -189,6 +193,74 @@ class AppState extends ChangeNotifier {
     _notifications = session;
     session.start();
     unawaited(session.refresh());
+    _startRentalWatch();
+  }
+
+  /// Watches this account's rental bookings so an owner's decision reaches the
+  /// renter on every screen, without a manual refresh.
+  ///
+  /// Rentals have no per-record session object like rides: the same account can
+  /// be the renter on one booking and the owner on another, and a realtime
+  /// channel takes one equality filter, so the watch opens one per side.
+  final List<StreamSubscription<void>> _rentalWatch = [];
+  String? _rentalWatchUserId;
+  Timer? _rentalRefreshDebounce;
+
+  void _stopRentalWatch() {
+    for (final watch in _rentalWatch) {
+      unawaited(watch.cancel().catchError((Object _) {}));
+    }
+    _rentalWatch.clear();
+    _rentalWatchUserId = null;
+    _rentalRefreshDebounce?.cancel();
+    _rentalRefreshDebounce = null;
+  }
+
+  void _startRentalWatch() {
+    final profileId = identity?.userId;
+    final realtime = repositories.realtime;
+    if (!usesHostedRideDispatch || profileId == null || realtime == null) return;
+    if (_rentalWatchUserId == profileId && _rentalWatch.isNotEmpty) return;
+    _stopRentalWatch();
+    _rentalWatchUserId = profileId;
+    for (final (column, value) in [
+      ('renter_id', profileId),
+      ('owner_id', profileId),
+    ]) {
+      try {
+        _rentalWatch.add(
+          realtime
+              .watchRows(
+                table: 'rental_bookings',
+                column: column,
+                value: value,
+              )
+              .listen(
+                (_) => _scheduleRentalRefresh(),
+                onError: (Object _) => _scheduleRentalRefresh(),
+              ),
+        );
+      } on Object {
+        // A watch that cannot open is not an outage: entry reads still work.
+      }
+    }
+  }
+
+  /// Coalesces a burst of row events into one read of each rental slot.
+  void _scheduleRentalRefresh() {
+    _rentalRefreshDebounce?.cancel();
+    _rentalRefreshDebounce = Timer(const Duration(milliseconds: 250), () {
+      final userId = identity?.userId;
+      if (!isSignedIn || userId == null || userId != _rentalWatchUserId) return;
+      unawaited(
+        cache
+            .refresh(DomainSlot.passengerRentalBookings)
+            .catchError((Object _) {}),
+      );
+      unawaited(
+        cache.refresh(DomainSlot.ownerRentalBookings).catchError((Object _) {}),
+      );
+    });
   }
 
   DemoRideRequestStore? demoRideStore;
@@ -706,6 +778,10 @@ class AppState extends ChangeNotifier {
       authStatus = AuthStatus.signedIn;
       authError = null;
       _startNotifications();
+      // The hosted account's personal lists are read once per session
+      // application; the isolated session the account just started begins
+      // with the seeded lists cleared away.
+      unawaited(refreshHostedPersonalLists());
       await restorePassengerRide();
       if (valid()) notifyListeners();
     } on AuthFailure catch (failure) {
@@ -1205,8 +1281,14 @@ class AppState extends ChangeNotifier {
     currentAccount = null;
     identity = null;
     _pinRequired = false;
+    pickupLabel = 'Set pickup';
+    destinationLabel = 'Set destination';
     _pickedPickup = null;
     _pickedDestination = null;
+    _pickedPickupBarangay = null;
+    _pickedPickupPurok = null;
+    _pickedDestinationBarangay = null;
+    _pickedDestinationPurok = null;
     bookingRouting.sync(start: null, end: null, enabled: false);
     rideRouting.sync(start: null, end: null, enabled: false);
     // The hosted session's empty slices must not survive into the signed-out
@@ -1547,15 +1629,21 @@ class AppState extends ChangeNotifier {
   }
 
   // ---- booking draft ----
-  String pickupLabel = 'Purok 3, Barangay Poblacion';
-  String destinationLabel = 'SM Terminal, Downtown';
+  String pickupLabel = 'Set pickup';
+  String destinationLabel = 'Set destination';
   MapPoint? _pickedPickup;
   MapPoint? _pickedDestination;
+  String? _pickedPickupBarangay;
+  String? _pickedPickupPurok;
+  String? _pickedDestinationBarangay;
+  String? _pickedDestinationPurok;
   RideOption get rideQuote => MockData.rideOptions.first;
 
-  MapPoint? get bookingPickup => _pickedPickup ?? _coordinatesFor(pickupLabel);
-  MapPoint? get bookingDestination =>
-      _pickedDestination ?? _coordinatesFor(destinationLabel);
+  // Only a real picked point counts. There is no local landmark table to
+  // resolve a typed label against, and a guessed coordinate would make rider
+  // ranking and ETAs look real while being wrong.
+  MapPoint? get bookingPickup => _pickedPickup;
+  MapPoint? get bookingDestination => _pickedDestination;
 
   void refreshBookingRoute({bool retry = false}) {
     bookingRouting.sync(
@@ -1595,16 +1683,30 @@ class AppState extends ChangeNotifier {
     return minutes < 1 ? 1 : minutes;
   }
 
-  void setPickup(String label, {MapPoint? coordinates}) {
+  void setPickup(
+    String label, {
+    MapPoint? coordinates,
+    String? barangayName,
+    String? purokName,
+  }) {
     pickupLabel = label;
     _pickedPickup = coordinates;
+    _pickedPickupBarangay = barangayName;
+    _pickedPickupPurok = purokName;
     refreshBookingRoute();
     notifyListeners();
   }
 
-  void setDestination(String label, {MapPoint? coordinates}) {
+  void setDestination(
+    String label, {
+    MapPoint? coordinates,
+    String? barangayName,
+    String? purokName,
+  }) {
     destinationLabel = label;
     _pickedDestination = coordinates;
+    _pickedDestinationBarangay = barangayName;
+    _pickedDestinationPurok = purokName;
     refreshBookingRoute();
     notifyListeners();
   }
@@ -1739,16 +1841,16 @@ class AppState extends ChangeNotifier {
 
     final record = await rides.createRideRequest(
       pickupAddress: pickup,
-      // The full label is passed as the barangay hint. The database function
-      // strips a leading "Barangay" and matches the known barangay name inside
-      // the label, so "Purok 3, San Isidro" still resolves to San Isidro.
-      pickupBarangay: pickup,
-      pickupPurok: _purokFrom(pickup),
+      // The picker confirms a hosted barangay; use that name rather than
+      // relying on the free-text label. The RPC still accepts a label hint
+      // when the confirmation was skipped.
+      pickupBarangay: _pickedPickupBarangay ?? pickup,
+      pickupPurok: _pickedPickupPurok ?? _purokFrom(pickup),
       pickupLatitude: bookingPickup?.latitude,
       pickupLongitude: bookingPickup?.longitude,
       dropoffAddress: destination,
-      dropoffBarangay: destination,
-      dropoffPurok: _purokFrom(destination),
+      dropoffBarangay: _pickedDestinationBarangay ?? destination,
+      dropoffPurok: _pickedDestinationPurok ?? _purokFrom(destination),
       dropoffLatitude: bookingDestination?.latitude,
       dropoffLongitude: bookingDestination?.longitude,
       distanceKm: distance.kilometres,
@@ -1978,6 +2080,9 @@ class AppState extends ChangeNotifier {
           trips: 0,
           plate: '',
           vehicleType: 'Ride',
+          // The account the star targets: rating this trip can favorite its
+          // rider without a name lookup that other riders could also answer.
+          riderProfileId: record.riderId,
         );
         lastRideBreakdown = RidePricing.breakdown(priceFor(updated));
       }
@@ -2444,57 +2549,6 @@ class AppState extends ChangeNotifier {
       id = 'rq${DateTime.now().microsecondsSinceEpoch}_${_requestSequence++}';
     }
     return id;
-  }
-
-  /// Resolves a free-text place label to a point, or null when it is not one of
-  /// the city's seeded places.
-  ///
-  /// Matching is exact against the place's label or address first, then a
-  /// case-insensitive substring either way, so "SM Terminal, Downtown" still
-  /// finds "SM Terminal". Returning null rather than a guess is deliberate: a
-  /// fabricated coordinate would make rider ranking and ETAs look real while
-  /// being wrong, which is worse than admitting the distance is unknown.
-  MapPoint? _coordinatesFor(String label) {
-    final needle = label.trim().toLowerCase();
-    if (needle.isEmpty) return null;
-
-    final places = db.places;
-    for (final place in places) {
-      if (place.label.toLowerCase() == needle ||
-          place.address.toLowerCase() == needle) {
-        return MapPoint(place.latitude, place.longitude);
-      }
-    }
-    for (final place in places) {
-      final candidate = place.label.toLowerCase();
-      if (candidate.isNotEmpty &&
-          (needle.contains(candidate) || candidate.contains(needle))) {
-        return MapPoint(place.latitude, place.longitude);
-      }
-    }
-    // A saved address often names only its barangay ("Purok 3, Barangay
-    // Poblacion"). The seed has no purok coordinates but every barangay has a
-    // known place, so the first place there stands in for the area. That is
-    // enough to draw the pickup and rank riders, and it is still a real seed
-    // coordinate rather than one invented at the city centre.
-    final barangay = _barangayFrom(label);
-    if (barangay != null) {
-      for (final place in places) {
-        if (place.barangay.toLowerCase().contains(barangay)) {
-          return MapPoint(place.latitude, place.longitude);
-        }
-      }
-    }
-    return null;
-  }
-
-  String? _barangayFrom(String label) {
-    final match = RegExp(
-      r'barangay\s+([^,]+)',
-      caseSensitive: false,
-    ).firstMatch(label);
-    final name = match?.group(1)?.trim().toLowerCase();
-    return (name == null || name.isEmpty) ? null : name;
   }
 
   /// Straight-line distance from [riderAt] to the pickup, or null when either
@@ -3030,31 +3084,109 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- saved places ----
+  // ---- saved places and favorites ----
   List<SavedPlace> get savedPlaces => db.savedPlaces;
 
-  void addSavedPlace(SavedPlace place) {
-    db.savedPlaces.add(place);
-    notifyListeners();
+  // A hosted account keeps these three personal lists in the database
+  // (owner-only tables written through server-side functions), and the local
+  // slices the screens read are hydrated from it. Every hosted write fires the
+  // function first and re-reads the lists afterwards, so what the screens show
+  // is the server's answer, never a local guess. The seeded build keeps
+  // mutating the seed lists directly, exactly as before.
+
+  /// Re-reads the signed-in account's personal lists into the local slices.
+  /// Best effort: a failed read keeps the current lists rather than emptying
+  /// them, and the next write retries the whole read.
+  Future<void> refreshHostedPersonalLists() async {
+    if (!usesHostedRideDispatch || !isSignedIn) return;
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    try {
+      final places = await registry.personalLists.fetchSavedPlaces();
+      _requireHostedSession(registry, revision);
+      final riders = await registry.personalLists.fetchFavoriteRiders();
+      _requireHostedSession(registry, revision);
+      final vehicles = await registry.personalLists.fetchFavoriteVehicles();
+      _requireHostedSession(registry, revision);
+      db.savedPlaces
+        ..clear()
+        ..addAll(places);
+      db.favoriteRiders
+        ..clear()
+        ..addAll(riders);
+      db.favoriteVehicles
+        ..clear()
+        ..addAll(vehicles);
+      notifyListeners();
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Saved places and favorites read failed: $failure');
+    }
   }
 
-  void removeSavedPlace(SavedPlace place) {
-    db.savedPlaces.remove(place);
-    notifyListeners();
+  Future<void> addSavedPlace(SavedPlace place) async {
+    if (!usesHostedRideDispatch) {
+      db.savedPlaces.add(place);
+      notifyListeners();
+      return;
+    }
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    try {
+      await registry.personalLists.addSavedPlace(
+        label: place.label,
+        address: place.address,
+        icon: place.icon,
+      );
+      _requireHostedSession(registry, revision);
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Saved place write failed: $failure');
+      return;
+    }
+    await refreshHostedPersonalLists();
+  }
+
+  Future<void> removeSavedPlace(SavedPlace place) async {
+    if (!usesHostedRideDispatch) {
+      db.savedPlaces.remove(place);
+      notifyListeners();
+      return;
+    }
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    try {
+      await registry.personalLists.removeSavedPlace(place.id);
+      _requireHostedSession(registry, revision);
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Saved place removal failed: $failure');
+      return;
+    }
+    await refreshHostedPersonalLists();
   }
 
   // ---- favorites ----
   List<FavoriteRider> get favoriteRiders => db.favoriteRiders;
   List<FavoriteVehicle> get favoriteVehicles => db.favoriteVehicles;
 
-  void removeFavoriteRider(FavoriteRider r) {
-    db.favoriteRiders.remove(r);
-    notifyListeners();
+  Future<void> removeFavoriteRider(FavoriteRider r) async {
+    if (!usesHostedRideDispatch) {
+      db.favoriteRiders.remove(r);
+      notifyListeners();
+      return;
+    }
+    // A hydrated star carries the rider's profile id, which is the identity
+    // the database star answers to.
+    await _unstarHostedRider(r.id);
   }
 
-  void removeFavoriteVehicle(FavoriteVehicle v) {
-    db.favoriteVehicles.remove(v);
-    notifyListeners();
+  Future<void> removeFavoriteVehicle(FavoriteVehicle v) async {
+    if (!usesHostedRideDispatch) {
+      db.favoriteVehicles.remove(v);
+      notifyListeners();
+      return;
+    }
+    await _unstarHostedVehicle(v.id);
   }
 
   // ---- emergency contacts ----
@@ -3607,57 +3739,177 @@ class AppState extends ChangeNotifier {
   bool isFavoriteRiderName(String name) =>
       db.favoriteRiders.any((r) => r.name == name);
 
-  void toggleFavoriteRiderByDriver({
+  Future<void> toggleFavoriteRiderByDriver({
     required String name,
     required String initials,
     required double rating,
     required int trips,
     required String vehicleType,
     required String plate,
-  }) {
+    String? riderProfileId,
+  }) async {
+    if (!usesHostedRideDispatch) {
+      final existing = db.favoriteRiders.where((r) => r.name == name).toList();
+      if (existing.isNotEmpty) {
+        db.favoriteRiders.remove(existing.first);
+      } else {
+        db.favoriteRiders.add(
+          FavoriteRider(
+            id: 'fr${DateTime.now().microsecondsSinceEpoch}',
+            name: name,
+            initials: initials,
+            rating: rating,
+            trips: trips,
+            vehicleType: vehicleType,
+            plate: plate,
+          ),
+        );
+      }
+      notifyListeners();
+      return;
+    }
+    // The unstar needs no lookup: a hydrated star carries the rider's profile
+    // id, which is the identity the database star answers to.
     final existing = db.favoriteRiders.where((r) => r.name == name).toList();
     if (existing.isNotEmpty) {
-      db.favoriteRiders.remove(existing.first);
-    } else {
-      db.favoriteRiders.add(
-        FavoriteRider(
-          id: 'fr${DateTime.now().microsecondsSinceEpoch}',
-          name: name,
-          initials: initials,
-          rating: rating,
-          trips: trips,
-          vehicleType: vehicleType,
-          plate: plate,
-        ),
-      );
+      await _unstarHostedRider(existing.first.id);
+      return;
     }
-    notifyListeners();
+    // A star must be written against the rider's account. The id rides in from
+    // the completed trip when it can; otherwise the name resolves through the
+    // readable profiles, which for a ride counterparty is exactly this rider.
+    final id = riderProfileId ??
+        await _withHostedSessionGuard(
+          () => repositories.personalLists.findRiderProfileIdByName(name),
+        );
+    if (id == null) {
+      debugPrint(
+        'Favorite rider "$name" could not be resolved to an account.',
+      );
+      return;
+    }
+    await _starHostedRider(id);
   }
 
   bool isFavoriteVehicleName(String name) =>
       db.favoriteVehicles.any((v) => v.name == name);
 
-  void toggleFavoriteVehicleByListing({
+  Future<void> toggleFavoriteVehicleByListing({
     required String name,
     required String type,
     required int pricePerDay,
     required String ownerName,
-  }) {
+    String? vehicleId,
+  }) async {
+    if (!usesHostedRideDispatch) {
+      final existing = db.favoriteVehicles.where((v) => v.name == name).toList();
+      if (existing.isNotEmpty) {
+        db.favoriteVehicles.remove(existing.first);
+      } else {
+        db.favoriteVehicles.add(
+          FavoriteVehicle(
+            id: 'fv${DateTime.now().microsecondsSinceEpoch}',
+            name: name,
+            type: type,
+            pricePerDay: pricePerDay,
+            ownerName: ownerName,
+          ),
+        );
+      }
+      notifyListeners();
+      return;
+    }
     final existing = db.favoriteVehicles.where((v) => v.name == name).toList();
     if (existing.isNotEmpty) {
-      db.favoriteVehicles.remove(existing.first);
-    } else {
-      db.favoriteVehicles.add(
-        FavoriteVehicle(
-          id: 'fv${DateTime.now().microsecondsSinceEpoch}',
-          name: name,
-          type: type,
-          pricePerDay: pricePerDay,
-          ownerName: ownerName,
-        ),
-      );
+      await _unstarHostedVehicle(existing.first.id);
+      return;
     }
-    notifyListeners();
+    // The listing screen passes its own listing id; the name lookup is the
+    // fallback for a caller that only knows the listing's name.
+    final id = vehicleId ??
+        await _withHostedSessionGuard(
+          () => repositories.personalLists.findVehicleIdByName(name),
+        );
+    if (id == null) {
+      debugPrint('Favorite vehicle "$name" could not be resolved to a listing.');
+      return;
+    }
+    await _starHostedVehicle(id);
+  }
+
+  /// Runs one hosted personal-list read with the session guard, reporting the
+  /// failure instead of throwing it — a toggle tap that cannot resolve its
+  /// target must not crash the screen it was tapped on.
+  Future<String?> _withHostedSessionGuard(
+    Future<String?> Function() read,
+  ) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    try {
+      _requireHostedSession(registry, revision);
+      final result = await read();
+      _requireHostedSession(registry, revision);
+      return result;
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Favorite lookup failed: $failure');
+      return null;
+    }
+  }
+
+  Future<void> _starHostedRider(String riderProfileId) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    try {
+      await registry.personalLists.addFavoriteRider(riderProfileId);
+      _requireHostedSession(registry, revision);
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Favorite rider write failed: $failure');
+      return;
+    }
+    await refreshHostedPersonalLists();
+  }
+
+  Future<void> _unstarHostedRider(String riderProfileId) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    try {
+      await registry.personalLists.removeFavoriteRider(riderProfileId);
+      _requireHostedSession(registry, revision);
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Favorite rider removal failed: $failure');
+      return;
+    }
+    await refreshHostedPersonalLists();
+  }
+
+  Future<void> _starHostedVehicle(String vehicleId) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    try {
+      await registry.personalLists.addFavoriteVehicle(vehicleId);
+      _requireHostedSession(registry, revision);
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Favorite vehicle write failed: $failure');
+      return;
+    }
+    await refreshHostedPersonalLists();
+  }
+
+  Future<void> _unstarHostedVehicle(String vehicleId) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    _requireHostedSession(registry, revision);
+    try {
+      await registry.personalLists.removeFavoriteVehicle(vehicleId);
+      _requireHostedSession(registry, revision);
+    } on RepositoryFailure catch (failure) {
+      debugPrint('Favorite vehicle removal failed: $failure');
+      return;
+    }
+    await refreshHostedPersonalLists();
   }
 
   // ---- rider earnings ----
@@ -3756,6 +4008,10 @@ class AppState extends ChangeNotifier {
     required String dropoff,
     required int budget,
     String note = '',
+    double? pickupLatitude,
+    double? pickupLongitude,
+    double? dropoffLatitude,
+    double? dropoffLongitude,
     bool bookedForSomeone = false,
     String recipientName = '',
     String recipientPhone = '',
@@ -3774,6 +4030,10 @@ class AppState extends ChangeNotifier {
       dropoff: dropoff,
       budget: budget,
       note: note,
+      pickupLatitude: pickupLatitude,
+      pickupLongitude: pickupLongitude,
+      dropoffLatitude: dropoffLatitude,
+      dropoffLongitude: dropoffLongitude,
       bookedForSomeone: bookedForSomeone,
       recipientName: bookedForSomeone ? recipientName : '',
       recipientPhone: bookedForSomeone ? recipientPhone : '',

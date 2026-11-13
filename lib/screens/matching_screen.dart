@@ -12,6 +12,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
 import '../widgets/flow_scaffold.dart';
+import '../widgets/route_preview.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_map.dart';
 import '../widgets/surgo_notice.dart';
@@ -56,6 +57,10 @@ class _MatchingScreenState extends State<MatchingScreen> {
   int _requestRevision = 0;
   bool _dispatchRunning = false;
 
+  /// True once this screen handed the trip to the live-trip route, so the
+  /// acceptance listener cannot push it twice while the route animates.
+  bool _openingLiveTrip = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +74,9 @@ class _MatchingScreenState extends State<MatchingScreen> {
       final request = state.myRideRequest;
       if (request != null) state.syncRideRoute(request);
       if (request?.status == RideStatus.searching) unawaited(_dispatch());
+      // Reopening this screen on a request the rider already accepted must land
+      // on the trip, not on a read-only "request sent" card.
+      _enterLiveTripIfCommitted();
     });
   }
 
@@ -76,6 +84,31 @@ class _MatchingScreenState extends State<MatchingScreen> {
   void dispose() {
     state.removeListener(_onRequestChanged);
     super.dispose();
+  }
+
+  /// Follows the passenger's request into the live trip the moment the rider
+  /// accepts.
+  ///
+  /// Acceptance arrives through the passenger session's realtime read, which
+  /// updates [AppState.myRideRequest] without any tap here. Only a hosted build
+  /// can receive it asynchronously; the seeded build keeps its explicit
+  /// "Preview demo trip" handoff.
+  void _enterLiveTripIfCommitted() {
+    if (_openingLiveTrip || !state.usesHostedRideDispatch) return;
+    final request = state.myRideRequest;
+    if (request == null ||
+        !request.status.isCommitted ||
+        request.status.isTerminal) {
+      return;
+    }
+    _openingLiveTrip = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _openingLiveTrip = false;
+        return;
+      }
+      Navigator.pushReplacementNamed(context, '/livetrip');
+    });
   }
 
   void _onRequestChanged() {
@@ -100,6 +133,8 @@ class _MatchingScreenState extends State<MatchingScreen> {
         if (mounted) unawaited(_dispatch());
       });
     }
+    // The rider answered while this screen was open: the trip is now active.
+    _enterLiveTripIfCommitted();
   }
 
   Future<void> _dispatch({bool nextCandidate = false}) async {
@@ -348,18 +383,16 @@ class _MatchingScreenState extends State<MatchingScreen> {
       onBack: onBack,
       sheetFraction: 0.62,
       map: SurgoMap(
-        height: MediaQuery.sizeOf(context).height,
+        height: MediaQuery.sizeOf(context).height * 0.38,
         borderRadius: BorderRadius.zero,
         showUserLocation: false,
         fallbackCenter: pickup ?? state.db.mapConfig.defaultCenter,
         pulseCenter: _searching ? pickup : null,
-        cameraPadding: EdgeInsets.fromLTRB(
-          24,
-          80,
-          24,
-          MediaQuery.sizeOf(context).height * 0.62 + 20,
-        ),
+        cameraPadding: const EdgeInsets.fromLTRB(24, 80, 24, 20),
         routeIsEstimate: state.rideRouting.route == null,
+        routeColor: proposal == null
+            ? SurgoMap.defaultRouteColor
+            : AppColors.success,
         route:
             state.rideRouting.route?.points ??
             [
@@ -630,6 +663,25 @@ class _MatchingScreenState extends State<MatchingScreen> {
             ],
           ),
         ),
+        if (request.pickupLatitude != null &&
+            request.pickupLongitude != null &&
+            request.dropoffLatitude != null &&
+            request.dropoffLongitude != null) ...[
+          const SizedBox(height: 14),
+          SbRoutePreview(
+            start: MapPoint(
+              request.pickupLatitude!,
+              request.pickupLongitude!,
+            ),
+            end: MapPoint(
+              request.dropoffLatitude!,
+              request.dropoffLongitude!,
+            ),
+            route: state.rideRouting.route?.points ?? const [],
+            startLabel: 'Pickup',
+            endLabel: 'Destination',
+          ),
+        ],
         const SizedBox(height: 14),
         SbCard(
           child: Column(

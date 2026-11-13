@@ -17,6 +17,7 @@ import 'package:surgo/state/pasuyo_status.dart';
 import 'package:surgo/state/rental_status.dart';
 import 'package:surgo/state/ride_status.dart';
 import 'package:surgo/widgets/common.dart';
+import 'package:surgo/widgets/location_picker.dart';
 import 'package:surgo/widgets/ride_request_card.dart';
 
 /// Pins the button wiring on the live job screens: each press must call the
@@ -347,7 +348,18 @@ void main() {
     await _useTallSurface(tester);
 
     await tester.pumpWidget(MaterialApp(
-      home: const AssistedBookingScreen(),
+      home: const AssistedBookingScreen(
+        initialPickup: RideLocationChoice(
+          label: 'Tandag City Hall',
+          point: MapPoint(9.0790, 126.1980),
+          barangayName: 'Bongtod Poblacion',
+        ),
+        initialDestination: RideLocationChoice(
+          label: 'Tandag Public Market',
+          point: MapPoint(9.0805, 126.1995),
+          barangayName: 'Dagocdoc',
+        ),
+      ),
       routes: {'/matching': (_) => const Scaffold(body: Text('matching'))},
     ));
 

@@ -273,6 +273,7 @@ void main() {
               wallet: mock.wallet,
               verifications: mock.verifications,
               attachments: mock.attachments,
+              personalLists: mock.personalLists,
               isSupabaseBacked: true,
               realtime: realtime,
             )
@@ -340,6 +341,14 @@ void main() {
 
   setUpAll(() async => db.load());
   setUp(() {
+    // The rental request form needs one hosted barangay to confirm the
+    // handover area. Production reads this from Supabase; the test fixture
+    // supplies the row so the form can be exercised without a network.
+    if (db.barangays.isEmpty) {
+      db.barangays = const [
+        Barangay(name: 'Bongtod Poblacion', puroks: ['Purok 1']),
+      ];
+    }
     rentals = _Rentals();
     realtime = _Realtime();
     history = List.of(db.rentalHistory);

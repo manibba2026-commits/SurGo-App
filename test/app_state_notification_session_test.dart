@@ -193,6 +193,7 @@ RepositoryRegistry _mockRegistry(_Backend backend) {
     wallet: mock.wallet,
     verifications: mock.verifications,
     attachments: mock.attachments,
+    personalLists: mock.personalLists,
     isSupabaseBacked: false,
     realtime: backend,
   );

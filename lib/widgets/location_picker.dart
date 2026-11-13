@@ -6,7 +6,6 @@ import '../repositories/backend_rows.dart';
 import '../repositories/repository_failure.dart';
 import '../services/geoapify_service.dart';
 import '../services/location_service.dart';
-import '../services/tandag_places.dart';
 import '../state/app_state.dart';
 import '../state/domain_cache.dart';
 import '../theme/app_colors.dart';
@@ -123,12 +122,13 @@ Future<RideLocationChoice?> showRideLocationPicker(
   );
   if (picked == null || !context.mounted) return null;
   if (!hosted) return picked;
-  final guessed = picked.barangayName ??
-      (picked.point == null ? null : TandagPlaces.nearestBarangay(picked.point!));
+  // The barangay comes from the hosted catalog matched against the chosen
+  // label, not from a local centroid table. If it cannot be inferred the
+  // confirmation sheet simply asks the user to pick one.
   final area = await showHostedLocationPicker(
     context,
     title: 'Confirm service area',
-    initialBarangayName: guessed,
+    initialBarangayName: picked.barangayName,
   );
   if (area == null) return null;
   return RideLocationChoice(
@@ -169,6 +169,7 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
   String _pinLabel = '';
   String? _pinBarangay;
   List<GeoPlace> _remote = const [];
+  List<BarangayRecord> _barangays = const [];
 
   @override
   void initState() {
@@ -176,8 +177,23 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
     _pin = widget.initialPoint;
     if (_pin != null) {
       _pinLabel = _labelForPoint(_pin!, null);
-      _pinBarangay = TandagPlaces.nearestBarangay(_pin!);
+      _pinBarangay = _barangayFromText(_pinLabel);
     }
+    if (widget.hosted) unawaited(_loadBarangays());
+  }
+
+  /// Barangay names are hosted catalog rows, so the picker can only infer one
+  /// after that slot has been read. It is not a local list of puroks.
+  Future<void> _loadBarangays() async {
+    final cache = AppState.instance.cache;
+    await cache.ensure(DomainSlot.barangays);
+    if (!mounted) return;
+    final rows = cache.dataOf<List<BarangayRecord>>(DomainSlot.barangays);
+    if (rows == null) return;
+    setState(() {
+      _barangays = rows;
+      _pinBarangay = _barangayFromText(_pinLabel) ?? _pinBarangay;
+    });
   }
 
   @override
@@ -220,7 +236,7 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
     final generation = ++_generation;
     setState(() {
       _pin = point;
-      _pinBarangay = TandagPlaces.nearestBarangay(point);
+      _pinBarangay = null;
       _pinLabel = _labelForPoint(point, null);
       _resolvingPin = widget.hosted;
     });
@@ -266,8 +282,7 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
 
   String _labelForPoint(MapPoint point, GeoPlace? place) {
     if (place != null) return _compact(place.label);
-    final nearest = TandagPlaces.nearestPlace(point);
-    return nearest == null ? _coordinateLabel(point) : 'Near ${nearest.name}';
+    return _coordinateLabel(point);
   }
 
   static String _coordinateLabel(MapPoint point) =>
@@ -283,32 +298,26 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
     return parts.join(' · ');
   }
 
-  static String? _barangayFromText(String text) {
+  String? _barangayFromText(String text) {
     final lower = text.toLowerCase();
-    for (final entry in TandagPlaces.barangayAnchors.entries) {
-      final short = entry.key
-          .replaceAll(' (Poblacion)', '')
-          .replaceAll(' Poblacion (East West)', ' Poblacion')
-          .toLowerCase();
-      if (lower.contains(short)) return entry.key;
+    if (lower.trim().isEmpty) return null;
+    for (final barangay in _barangays) {
+      final name = barangay.name.toLowerCase();
+      final short = name
+          .replaceAll(' (poblacion)', '')
+          .replaceAll(' poblacion (east west)', ' poblacion')
+          .trim();
+      if (short.isNotEmpty && lower.contains(short)) return barangay.name;
     }
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final local = TandagPlaces.search(_query);
-    final remote = _remote
-        .where(
-          (place) => !local.any(
-            (match) =>
-                match.label.toLowerCase() == place.label.toLowerCase() ||
-                (match.point.latitude - place.point.latitude).abs() < 0.0002 &&
-                    (match.point.longitude - place.point.longitude).abs() <
-                        0.0002,
-          ),
-        )
-        .toList();
+    // Address search is Geoapify/OpenStreetMap only. Barangays and puroks are
+    // chosen from the hosted catalog in the confirmation step; there is no
+    // bundled landmark or purok list to fall back to.
+    final remote = _remote;
     // The modal route hands down the height left after the keyboard, so the
     // sheet sizes itself from that instead of the whole screen. The map is the
     // one block that gives up height when the phone is short.
@@ -395,8 +404,9 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
                   child: SurgoMap(
                     height: mapHeight,
                     borderRadius: BorderRadius.circular(16),
-                  fallbackCenter:
-                      _pin ?? widget.initialPoint ?? TandagPlaces.center,
+                  fallbackCenter: _pin ??
+                      widget.initialPoint ??
+                      AppState.instance.db.mapConfig.defaultCenter,
                   initialZoom: 14.5,
                   cameraPadding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
                   showUserLocation: true,
@@ -467,7 +477,7 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
                     child: Text(
-                      _query.isEmpty ? 'Popular in Tandag' : 'Places',
+                      _query.isEmpty ? 'Search or drop a pin' : 'Address results',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
@@ -476,26 +486,16 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
                       ),
                     ),
                   ),
-                  for (final place in local)
-                    _PlaceTile(
-                      icon: _iconFor(place.kind),
-                      title: place.name,
-                      subtitle: place.label,
-                      onTap: () => Navigator.pop(
-                        context,
-                        _choice(place.label, place.point, place.barangay),
-                      ),
-                    ),
-                  if (remote.isNotEmpty)
+                  if (_query.isEmpty)
                     const Padding(
-                      padding: EdgeInsets.fromLTRB(8, 10, 8, 4),
+                      padding: EdgeInsets.fromLTRB(8, 6, 8, 8),
                       child: Text(
-                        'More from the address search',
+                        'Type at least two characters to search OpenStreetMap '
+                        'addresses, or tap the map to drop a pin.',
                         style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.4,
                           color: AppColors.muted,
+                          fontSize: 12,
+                          height: 1.45,
                         ),
                       ),
                     ),
@@ -503,19 +503,29 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
                     _PlaceTile(
                       icon: Icons.place_outlined,
                       title: place.label,
-                      subtitle: 'Address search',
+                      subtitle: 'OpenStreetMap address',
                       onTap: () => Navigator.pop(
                         context,
                         _choice(
                           _compact(place.label),
                           place.point,
-                          TandagPlaces.nearestBarangay(place.point),
+                          _barangayFromText(place.label),
                         ),
                       ),
                     ),
-                  if (!_loading &&
+                  if (!widget.hosted && _query.length >= 2)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: Text(
+                        'Address search needs a hosted account. Drop a pin or '
+                        'use your current location instead.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      ),
+                    ),
+                  if (widget.hosted &&
+                      !_loading &&
                       _query.length >= 2 &&
-                      local.isEmpty &&
                       remote.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 18),
@@ -548,15 +558,6 @@ class _RidePlaceSearchState extends State<_RidePlaceSearch> {
     );
   }
 
-  static IconData _iconFor(TandagPlaceKind kind) => switch (kind) {
-    TandagPlaceKind.barangay => Icons.location_city,
-    TandagPlaceKind.market => Icons.storefront_outlined,
-    TandagPlaceKind.health => Icons.local_hospital_outlined,
-    TandagPlaceKind.school => Icons.school_outlined,
-    TandagPlaceKind.government => Icons.account_balance_outlined,
-    TandagPlaceKind.transport => Icons.directions_bus_outlined,
-    TandagPlaceKind.landmark => Icons.place_outlined,
-  };
 }
 
 class _PlaceTile extends StatelessWidget {

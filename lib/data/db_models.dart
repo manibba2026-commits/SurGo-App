@@ -1879,6 +1879,13 @@ class PasuyoTask {
   final int budget;
   final String note;
 
+  /// Real coordinates from the picker. Hosted errands store the dropped pin or
+  /// address-search point; a seeded task may not have one.
+  final double? pickupLatitude;
+  final double? pickupLongitude;
+  final double? dropoffLatitude;
+  final double? dropoffLongitude;
+
   /// True when the customer ordered the errand for another person. The
   /// recipient receives the goods; the customer still pays.
   final bool bookedForSomeone;
@@ -1924,6 +1931,10 @@ class PasuyoTask {
     required this.dropoff,
     required this.budget,
     this.note = '',
+    this.pickupLatitude,
+    this.pickupLongitude,
+    this.dropoffLatitude,
+    this.dropoffLongitude,
     this.bookedForSomeone = false,
     this.recipientName = '',
     this.recipientPhone = '',
@@ -1951,6 +1962,14 @@ class PasuyoTask {
     dropoff: j['dropoff'] ?? '',
     budget: j['budget'] ?? 0,
     note: j['note'] ?? '',
+    pickupLatitude:
+        ((j['pickupLatitude'] ?? j['pickup_latitude']) as num?)?.toDouble(),
+    pickupLongitude:
+        ((j['pickupLongitude'] ?? j['pickup_longitude']) as num?)?.toDouble(),
+    dropoffLatitude:
+        ((j['dropoffLatitude'] ?? j['dropoff_latitude']) as num?)?.toDouble(),
+    dropoffLongitude:
+        ((j['dropoffLongitude'] ?? j['dropoff_longitude']) as num?)?.toDouble(),
     bookedForSomeone: j['bookedForSomeone'] ?? j['booked_for_someone'] ?? false,
     recipientName: j['recipientName'] ?? j['recipient_name'] ?? '',
     recipientPhone: j['recipientPhone'] ?? j['recipient_phone'] ?? '',
@@ -1962,6 +1981,15 @@ class PasuyoTask {
     rating: j['rating'] ?? 0,
     rated: j['rated'] ?? false,
   );
+
+  MapPoint? get pickupPoint => pickupLatitude == null || pickupLongitude == null
+      ? null
+      : MapPoint(pickupLatitude!, pickupLongitude!);
+
+  MapPoint? get dropoffPoint =>
+      dropoffLatitude == null || dropoffLongitude == null
+      ? null
+      : MapPoint(dropoffLatitude!, dropoffLongitude!);
 
   /// Position in [PasuyoStatus.flow], or -1 for a cancelled errand.
   int get stepIndex => status.stepIndex;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:surgo/data/db_models.dart';
 import 'package:surgo/data/db_service.dart';
 import 'package:surgo/repositories/backend.dart';
 import 'package:surgo/repositories/backend_rows.dart';
@@ -43,7 +44,14 @@ void main() {
     await settle();
   }
 
-  setUp(() => use(RepositoryRegistry.mock(db)));
+  setUp(() {
+    // Production geography is hosted; these tests still need one catalog row
+    // to prove the picker renders and returns a barangay + purok label.
+    db.barangays = const [
+      Barangay(name: 'Bongtod Poblacion', puroks: ['Purok 1', 'Purok 2']),
+    ];
+    return use(RepositoryRegistry.mock(db));
+  });
 
   tearDown(() => use(RepositoryRegistry.mock(db)));
 

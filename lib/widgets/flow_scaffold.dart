@@ -28,88 +28,111 @@ class SbFlowScaffold extends StatelessWidget {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: LayoutBuilder(
-        builder: (context, constraints) => Stack(
-          children: [
-            Positioned.fill(child: map),
-            Positioned(
-              top: 10,
-              left: 12,
-              right: 12,
-              child: SafeArea(
-                bottom: false,
-                child: Row(
-                  children: [
-                    SbIconButton(
-                      icon: Icons.arrow_back,
-                      onTap: onBack ?? () => Navigator.maybePop(context),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.panel.withValues(alpha: 0.94),
-                          borderRadius: BorderRadius.circular(99),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+        builder: (context, constraints) {
+          final sheetHeight = constraints.maxHeight * sheetFraction;
+          return Stack(
+            children: [
+              // The map stops where the sheet starts. A web map is a real DOM
+              // element: if it extended behind the sheet it would receive the
+              // pointer directly and pan while the user scrolls the sheet.
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: constraints.maxHeight - sheetHeight,
+                child: map,
+              ),
+              Positioned(
+                top: 10,
+                left: 12,
+                right: 12,
+                child: SafeArea(
+                  bottom: false,
+                  child: Row(
+                    children: [
+                      SbIconButton(
+                        icon: Icons.arrow_back,
+                        onTap: onBack ?? () => Navigator.maybePop(context),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        // A drag that starts on the title strip belongs to the
+                        // card, not to the map underneath it.
+                        child: SbMapOverlay(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.panel.withValues(alpha: 0.94),
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (actions.isNotEmpty) ...[const Spacer(), ...actions],
-                  ],
-                ),
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: TweenAnimationBuilder<double>(
-                key: ValueKey(stateKey),
-                tween: Tween(begin: 0, end: 1),
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 450),
-                curve: const Cubic(0.2, 0.9, 0.3, 1),
-                builder: (context, value, child) => Opacity(
-                  opacity: value,
-                  child: Transform.translate(
-                    offset: Offset(0, 40 * (1 - value)),
-                    child: child,
-                  ),
-                ),
-                child: Container(
-                  height: constraints.maxHeight * sheetFraction,
-                  width: double.infinity,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: const BoxDecoration(
-                    color: AppColors.panel,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(22),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x80000000),
-                        blurRadius: 30,
-                        offset: Offset(0, -10),
-                      ),
+                      if (actions.isNotEmpty) ...[const Spacer(), ...actions],
                     ],
                   ),
-                  child: SafeArea(top: false, child: sheet),
                 ),
               ),
-            ),
-          ],
-        ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(stateKey),
+                  tween: Tween(begin: 0, end: 1),
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 450),
+                  curve: const Cubic(0.2, 0.9, 0.3, 1),
+                  builder: (context, value, child) => Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, 40 * (1 - value)),
+                      child: child,
+                    ),
+                  ),
+                  // The sheet paints above the map, but a plain Container does
+                  // not take part in hit testing, so a swipe on its padding used
+                  // to reach the map and pan it. An opaque surface makes the
+                  // whole sheet area swallow the pointer; the map is only
+                  // reachable above the sheet.
+                  child: SbMapOverlay(
+                    child: Container(
+                      height: sheetHeight,
+                      width: double.infinity,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: const BoxDecoration(
+                        color: AppColors.panel,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(22),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x80000000),
+                            blurRadius: 30,
+                            offset: Offset(0, -10),
+                          ),
+                        ],
+                      ),
+                      child: SafeArea(top: false, child: sheet),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

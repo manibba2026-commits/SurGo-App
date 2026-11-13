@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../auth/auth_models.dart';
-import '../services/tandag_places.dart';
 import '../state/app_state.dart';
 import 'booking_screen.dart';
 import '../theme/app_colors.dart';
@@ -16,7 +15,17 @@ import '../widgets/surgo_notice.dart';
 /// booking flows — it collects the other person's details, then hands off
 /// to the normal matching flow.
 class AssistedBookingScreen extends StatefulWidget {
-  const AssistedBookingScreen({super.key});
+  const AssistedBookingScreen({
+    super.key,
+    this.initialPickup,
+    this.initialDestination,
+  });
+
+  /// A caller that already knows the trip (a saved address, a call-centre
+  /// ticket) can hand the points in. Without them both fields start empty and
+  /// the shared picker fills them from search, a dropped pin, or live GPS.
+  final RideLocationChoice? initialPickup;
+  final RideLocationChoice? initialDestination;
 
   @override
   State<AssistedBookingScreen> createState() => _AssistedBookingScreenState();
@@ -28,18 +37,18 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
   String channel = 'App';
   bool _submitting = false;
 
-  // Real Tandag landmarks instead of fictional defaults, and the shared
-  // picker means these can be changed by search, dropped pin, or live GPS.
-  RideLocationChoice _pickup = _place('plaza');
-  RideLocationChoice _destination = _place('market');
+  late RideLocationChoice _pickup;
+  late RideLocationChoice _destination;
 
-  static RideLocationChoice _place(String id) {
-    final place = TandagPlaces.byId(id);
-    return RideLocationChoice(
-      label: place.label,
-      point: place.point,
-      barangayName: place.barangay,
-    );
+  @override
+  void initState() {
+    super.initState();
+    _pickup =
+        widget.initialPickup ??
+        const RideLocationChoice(label: 'Tap to choose');
+    _destination =
+        widget.initialDestination ??
+        const RideLocationChoice(label: 'Tap to choose');
   }
 
   @override
@@ -189,6 +198,7 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
       child: SurgoMap(
         height: 190,
         borderRadius: BorderRadius.circular(SbRadius.md),
+        interactive: false,
         showUserLocation: false,
         initialZoom: 13.5,
         cameraPadding: const EdgeInsets.fromLTRB(18, 30, 18, 30),
@@ -232,9 +242,27 @@ class _AssistedBookingScreenState extends State<AssistedBookingScreen> {
       );
       return;
     }
+    if (_pickup.point == null || _destination.point == null) {
+      SurgoNotice.show(
+        context,
+        'Choose both the pickup and destination first.',
+        tone: SbNoticeTone.warning,
+      );
+      return;
+    }
     setState(() => _submitting = true);
-    state.setPickup(_pickup.label, coordinates: _pickup.point);
-    state.setDestination(_destination.label, coordinates: _destination.point);
+    state.setPickup(
+      _pickup.label,
+      coordinates: _pickup.point,
+      barangayName: _pickup.barangayName,
+      purokName: _pickup.purokName,
+    );
+    state.setDestination(
+      _destination.label,
+      coordinates: _destination.point,
+      barangayName: _destination.barangayName,
+      purokName: _destination.purokName,
+    );
     await Navigator.push(
       context,
       MaterialPageRoute(

@@ -33,7 +33,11 @@ class VehicleOwnerMapScreen extends StatelessWidget {
           [
             for (final record in records)
               () {
-                final location = approximateVehicleLocation(record.id);
+                final location = approximateVehicleLocation(
+                  record.id,
+                  center: state.db.mapConfig.defaultCenter,
+                  serviceAreaName: record.serviceAreaName,
+                );
                 return SurgoMapMarker(
                   id: record.id,
                   position: location.point,
@@ -106,37 +110,39 @@ class VehicleOwnerMapScreen extends StatelessWidget {
             borderRadius: BorderRadius.zero,
             cameraPadding: const EdgeInsets.fromLTRB(20, 80, 20, 40),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-              child: Row(
-                children: [
-                  SbIconButton(
-                    icon: Icons.arrow_back,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.panel.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Text(
-                        message,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
+          SbMapOverlay(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Row(
+                  children: [
+                    SbIconButton(
+                      icon: Icons.arrow_back,
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.panel.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          message,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
