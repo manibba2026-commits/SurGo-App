@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart' as ml;
 import '../data/db_models.dart';
 import '../services/location_service.dart';
+import '../services/map_bootstrap.dart';
 import '../theme/app_colors.dart';
 import 'flow_scaffold.dart';
 import 'surgo_notice.dart';
@@ -24,13 +25,7 @@ import 'surgo_notice.dart';
 // Without a key, render a labelled offline preview, never unrestricted tiles.
 // ---------------------------------------------------------------------------
 
-const _kMapTilerKey = String.fromEnvironment('MAPTILER_API_KEY');
-bool get _hasMapTilerKey => _kMapTilerKey.isNotEmpty;
-
-/// MapLibre vector style; the existing build-time key is the only credential.
-final _kStyleUrl =
-    'https://api.maptiler.com/maps/dataviz-dark/style.json'
-    '?key=${Uri.encodeQueryComponent(_kMapTilerKey)}';
+bool get _hasMapTilerKey => MapBootstrap.hasKey;
 const _kRouteBlue = Color(0xFF4A90E2);
 const _kAttribution = '© MapTiler · © OpenStreetMap contributors';
 
@@ -139,6 +134,15 @@ class SurgoMap extends StatefulWidget {
   /// Route bounds and marker endpoints are fitted inside the remaining area.
   final EdgeInsets cameraPadding;
 
+  /// Called when the user taps the basemap itself. Marker taps are excluded,
+  /// so a screen can turn a tap into a dropped pin or a reverse-geocoded
+  /// address without also firing when a pin is opened.
+  final ValueChanged<MapPoint>? onMapTap;
+
+  /// Called when the user long-presses the basemap; used to drop a pin on
+  /// touch devices where a precise tap is hard.
+  final ValueChanged<MapPoint>? onMapLongPress;
+
   const SurgoMap({
     super.key,
     required this.markers,
@@ -152,6 +156,8 @@ class SurgoMap extends StatefulWidget {
     this.routeIsEstimate = false,
     this.pulseCenter,
     this.cameraPadding = EdgeInsets.zero,
+    this.onMapTap,
+    this.onMapLongPress,
   });
 
   @override
@@ -352,6 +358,18 @@ class _SurgoMapState extends State<SurgoMap>
       widget.fallbackCenter ?? const MapPoint(9.0785, 126.1985);
 
   _MapFrame get _frame {
+    // Reserve space for the pin bodies, labels, and missing-key warning. The
+    // inset shrinks with short preview maps: a fixed 76/70 inset would swallow
+    // almost the whole viewport and MapLibre would fit the entire province.
+    final height = _mapSize.height;
+    final pinPadding = height > 0 && height.isFinite
+        ? EdgeInsets.fromLTRB(
+            36,
+            math.min(76, height * 0.22),
+            36,
+            math.min(70, height * 0.20),
+          )
+        : const EdgeInsets.fromLTRB(36, 76, 36, 70);
     final frame = _MapFrame.fit(
       size: _mapSize,
       center: _previewCenter ?? _userPosition ?? _fallback,
@@ -359,8 +377,7 @@ class _SurgoMapState extends State<SurgoMap>
       points: _previewCenter != null || _route.isEmpty
           ? const []
           : [..._route, ...widget.markers.map((m) => m.position)],
-      // Reserve space for the pin bodies, labels, and missing-key warning.
-      padding: widget.cameraPadding + const EdgeInsets.fromLTRB(36, 76, 36, 70),
+      padding: widget.cameraPadding + pinPadding,
     );
     if (!_mapSize.isEmpty) {
       // Keep the fitted offline camera until an intentional fit or gesture.
@@ -420,7 +437,7 @@ class _SurgoMapState extends State<SurgoMap>
       child: ml.MapLibreMap(
         key: ValueKey('surgo-map-$generation'),
         options: ml.MapOptions(
-          initStyle: _kStyleUrl,
+          initStyle: MapBootstrap.instance.styleSource,
           initCenter: _geographic(frame.center),
           initZoom: frame.zoom,
           gestures: widget.interactive
@@ -445,6 +462,12 @@ class _SurgoMapState extends State<SurgoMap>
               _waitingForIdle = false;
               _loadTimedOut = false;
             });
+          }
+          if (event is ml.MapEventClick && widget.onMapTap != null) {
+            _handleMapPress(event, widget.onMapTap!);
+          }
+          if (event is ml.MapEventLongClick && widget.onMapLongPress != null) {
+            _handleMapPress(event, widget.onMapLongPress!);
           }
         },
         layers: [
@@ -696,6 +719,34 @@ class _SurgoMapState extends State<SurgoMap>
           },
         ),
       ),
+    );
+  }
+
+  /// A basemap press should not also drop a pin when it landed on one of our
+  /// own pins. The platform widget layer usually swallows those taps, but the
+  /// screen-point check keeps the behavior honest on every platform.
+  void _handleMapPress(
+    ml.MapEventUserInput event,
+    ValueChanged<MapPoint> callback,
+  ) {
+    final controller = _mapController;
+    if (controller != null) {
+      try {
+        final markerScreens = controller.toScreenLocations([
+          for (final marker in widget.markers)
+            _geographic(_displayPoint(marker.id, marker.position)),
+          if (_userPosition != null) _geographic(_userPosition!),
+        ]);
+        for (final markerPoint in markerScreens) {
+          if ((markerPoint - event.screenPoint).distance <= 26) return;
+        }
+      } catch (_) {
+        // Projection is unavailable while the camera is rebuilding; a press
+        // that cannot be checked still counts as a basemap press.
+      }
+    }
+    callback(
+      MapPoint(event.point.lat, event.point.lon),
     );
   }
 

@@ -79,7 +79,7 @@ test('delivers a signed hook to Semaphore', async () => {
   assert.equal(form.get('number'), '639175124809');
   assert.equal(
     form.get('message'),
-    'Your SurGo verification code is: 654321. Do not share this code with anyone.',
+    'Your SurGo OTP code is 654321. Please do not share. Expires in 1 minute.',
   );
   assert.equal(form.get('sendername'), 'SurGo');
 });
@@ -143,7 +143,12 @@ test('rejects non-PH phone numbers and non-numeric OTPs', async () => {
       nowSeconds: NOW,
       fetchImpl: captureFetch(calls, semaphoreOk),
     });
-    assert.equal(response.status, 400, body);
+    assert.equal(response.status, 200, body);
+    const json = await response.json() as {
+      error: { http_code: number; message: string };
+    };
+    assert.equal(json.error.http_code, 400, body);
+    assert.equal(typeof json.error.message, 'string');
     assert.equal(calls.length, 0, body);
   }
 });
@@ -154,10 +159,16 @@ test('rejects malformed JSON after a valid signature', async () => {
     semaphoreApiKey: 'sem_test_key',
     nowSeconds: NOW,
   });
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    error: {
+      http_code: 400,
+      message: 'That request could not be processed. Try again.',
+    },
+  });
 });
 
-test('returns 502 when Semaphore rejects the request', async (t) => {
+test('returns a hook error object when Semaphore rejects the request', async (t) => {
   t.mock.method(console, 'error', () => {});
   const response = await handleSendSms(await signedRequest(payload()), {
     hookSecret: HOOK_SECRET,
@@ -169,11 +180,16 @@ test('returns 502 when Semaphore rejects the request', async (t) => {
     ),
   });
 
-  assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { error: 'sms_delivery_failed' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    error: {
+      http_code: 422,
+      message: 'We could not send the SurGo code to this number. Try again in a moment.',
+    },
+  });
 });
 
-test('returns 502 when Semaphore reports a failed message', async (t) => {
+test('returns a hook error object when Semaphore reports a failed message', async (t) => {
   t.mock.method(console, 'error', () => {});
   const response = await handleSendSms(await signedRequest(payload()), {
     hookSecret: HOOK_SECRET,
@@ -188,10 +204,16 @@ test('returns 502 when Semaphore reports a failed message', async (t) => {
     ),
   });
 
-  assert.equal(response.status, 502);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    error: {
+      http_code: 422,
+      message: 'We could not send the SurGo code to this number. Try again in a moment.',
+    },
+  });
 });
 
-test('returns 502 on a network failure', async (t) => {
+test('returns a hook error object on a network failure', async (t) => {
   t.mock.method(console, 'error', () => {});
   const response = await handleSendSms(await signedRequest(payload()), {
     hookSecret: HOOK_SECRET,
@@ -202,16 +224,28 @@ test('returns 502 on a network failure', async (t) => {
     }) as typeof fetch,
   });
 
-  assert.equal(response.status, 502);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    error: {
+      http_code: 422,
+      message: 'We could not send the SurGo code to this number. Try again in a moment.',
+    },
+  });
 });
 
-test('returns 500 when secrets are missing', async () => {
+test('returns a hook error object when secrets are missing', async () => {
   const response = await handleSendSms(await signedRequest(payload()), {
     hookSecret: '',
     semaphoreApiKey: '',
     nowSeconds: NOW,
   });
-  assert.equal(response.status, 500);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    error: {
+      http_code: 500,
+      message: 'Sign-in is temporarily unavailable. Please try again.',
+    },
+  });
 });
 
 test('rejects oversized bodies', async () => {
@@ -223,7 +257,13 @@ test('rejects oversized bodies', async () => {
       nowSeconds: NOW,
     },
   );
-  assert.equal(response.status, 413);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    error: {
+      http_code: 413,
+      message: 'That request is too large. Try again.',
+    },
+  });
 });
 
 test('rejects non-POST requests', async () => {
@@ -253,10 +293,51 @@ test('never sends an OTP to a demo number in any spelling', async (t) => {
         fetchImpl: captureFetch(calls, semaphoreOk),
       },
     );
-    assert.equal(response.status, 403, phone);
-    assert.deepEqual(await response.json(), { error: 'demo_number_blocked' });
+    assert.equal(response.status, 200, phone);
+    assert.deepEqual(await response.json(), {
+      error: {
+        http_code: 403,
+        message: 'This number cannot receive a SurGo code.',
+      },
+    });
     assert.equal(calls.length, 0, phone);
   }
+});
+
+test('prefers sms.phone over user.phone for the destination', async () => {
+  const calls: FetchCall[] = [];
+  const body = JSON.stringify({
+    user: { id: 'user_1', phone: '+639175124809' },
+    sms: { otp: '654321', phone: '+639175124810' },
+  });
+  const response = await handleSendSms(await signedRequest(body), {
+    hookSecret: HOOK_SECRET,
+    semaphoreApiKey: 'sem_test_key',
+    nowSeconds: NOW,
+    fetchImpl: captureFetch(calls, semaphoreOk),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  const form = new URLSearchParams(String(calls[0].init.body));
+  assert.equal(form.get('number'), '639175124810');
+});
+
+test('delivers a first-time phone link when user.phone is null', async () => {
+  const calls: FetchCall[] = [];
+  const body = JSON.stringify({
+    user: { id: 'user_1', phone: null },
+    sms: { otp: '654321', phone: '639175124810' },
+  });
+  const response = await handleSendSms(await signedRequest(body), {
+    hookSecret: HOOK_SECRET,
+    semaphoreApiKey: 'sem_test_key',
+    nowSeconds: NOW,
+    fetchImpl: captureFetch(calls, semaphoreOk),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  const form = new URLSearchParams(String(calls[0].init.body));
+  assert.equal(form.get('number'), '639175124810');
 });
 
 test('a real number next to the demo block still delivers', async () => {

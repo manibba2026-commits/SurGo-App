@@ -23,6 +23,9 @@ export interface SemaphoreSendOptions {
    * and network. Keep this well below that budget.
    */
   timeoutMs?: number;
+  /** Injectable timer functions for tests. */
+  setTimeoutImpl?: (handler: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutImpl?: (timer: ReturnType<typeof setTimeout>) => void;
 }
 
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -65,13 +68,15 @@ export async function sendSemaphoreSms(
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;
+  const setTimer = options.setTimeoutImpl ?? setTimeout;
+  const clearTimer = options.clearTimeoutImpl ?? clearTimeout;
   const controller = new AbortController();
   const budget = Number.isFinite(options.timeoutMs) && options.timeoutMs! > 0
     ? Math.min(options.timeoutMs!, DEFAULT_TIMEOUT_MS)
     : DEFAULT_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<SemaphoreSendResult>((resolve) => {
-    timer = setTimeout(() => {
+    timer = setTimer(() => {
       resolve({ ok: false, reason: 'network_error' });
       controller.abort();
     }, budget);
@@ -114,6 +119,6 @@ export async function sendSemaphoreSms(
     // One deadline covers fetch and body parsing, even if abort is ignored.
     return await Promise.race([send(), deadline]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimer(timer);
   }
 }

@@ -6,7 +6,7 @@ keys never enter the Flutter bundle, the repository, or a chat log.
 | Integration | Function | Secret names |
 | --- | --- | --- |
 | Road routing / places | `geoapify` | `GEOAPIFY_API_KEY` |
-| OTP delivery via UniSMS | `send-sms` | `SMS_PROVIDER=unisms`, `UNISMS_API_KEY`, optional `UNISMS_SENDER_ID` |
+| OTP delivery via UniSMS | `send-sms` | `SMS_PROVIDER=unisms`, `UNISMS_API_KEY`, optional `UNISMS_SENDER_ID`, optional `UNISMS_VERIFY_DELIVERY` |
 
 `send-sms` also needs `SEND_SMS_HOOK_SECRET`, which already exists on the
 project. Semaphore remains the default provider; adding the UniSMS names does
@@ -20,12 +20,23 @@ accepted when the provider answers 2xx with `message.status` of `pending`,
 `message.success == false` is treated as a rejection. `UNISMS_SENDER_ID`
 defaults to `Unisoft` when unset.
 
+Because UniSMS settles asynchronously, the adapter also reads
+`GET /api/sms/:reference_id` and reports an asynchronous `failed` status as a
+rejection. Set `UNISMS_VERIFY_DELIVERY=false` only if that endpoint is
+unavailable.
+
+The message body must follow UniSMS's OTP content rule: brand, code, purpose
+and expiry. A shorter message is accepted with `201` and then rejected with
+`Unacceptable content: OTP does not follow valid format`. The enforced body is
+`Your SurGo OTP code is 123456. Please do not share. Expires in 1 minute.`
+
 Coverage caveat: the default `Unisoft` sender only reaches **Globe and DITO**.
 Sending to Smart, TNT or Sun answers HTTP 422
 (`This Sender ID can't send to Smart, TNT or Sun numbers…`), which the function
-surfaces as `sms_delivery_failed`. To cover every network, apply for a custom
-Sender ID in the UniSMS console (`/sender_ids/new`, organization adoption).
-Until then, test OTP with a Globe/DITO handset; demo PIN login is unaffected.
+reports to Auth as a delivery failure. To cover every network, apply for a
+custom Sender ID in the UniSMS console (`/sender_ids/new`, organization
+adoption). Until then, test OTP with a Globe/DITO handset; demo PIN login is
+unaffected.
 
 ## Where to paste local values
 
@@ -40,6 +51,8 @@ GEOAPIFY_API_KEY=
 SMS_PROVIDER=unisms
 UNISMS_API_KEY=
 UNISMS_SENDER_ID=Unisoft
+# Optional; leave unset (enabled) unless the status endpoint is unavailable.
+# UNISMS_VERIFY_DELIVERY=true
 
 # A handset you control, used only for the real-SMS acceptance check.
 SURGO_TEST_PHONE=
@@ -105,11 +118,11 @@ A real handset must receive the OTP before phone auth is reported as working.
 2. In **Auth → Hooks → Send SMS**, the HTTP hook points at
    `/functions/v1/send-sms` and is enabled.
 3. Request a code for `SURGO_TEST_PHONE`. Exactly one SMS arrives with
-   `Your SurGo verification code is: <code>. Do not share this code with
-   anyone.`
-4. Function logs show `200`; failures show only a reason and upstream status.
-5. A demo identity number is refused with `demo_number_blocked` and never
-   reaches the provider.
+   `Your SurGo OTP code is <code>. Please do not share. Expires in 1 minute.`
+4. Function logs show a provider acceptance (`200`, optional UniSMS
+   `referenceId`); failures show only a reason and upstream status.
+5. A demo identity number is refused with `http_code: 403` and never reaches
+   the provider.
 
 ## OAuth providers (Google + Facebook)
 

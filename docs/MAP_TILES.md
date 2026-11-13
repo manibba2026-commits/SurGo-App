@@ -1,10 +1,12 @@
 # SurGo Map Tiles — Configuration Guide
 
-SurGo renders **MapTiler Dataviz Dark** vector tiles through MapLibre
+SurGo renders **MapTiler Streets Dark** vector tiles through MapLibre
 (`package:maplibre`), with SurGo's own purple pins, route lines and
 safe-area-aware overlays on top.
 
-- Style: `https://api.maptiler.com/maps/dataviz-dark/style.json`
+- Style: `https://api.maptiler.com/maps/01a1cb9c-c444-77a5-893d-2d51c9539591/style.json`
+  (see `MapBootstrap.styleId`)
+- The style document is prefetched once at startup and reused by every map.
 - Attribution: **© MapTiler · © OpenStreetMap contributors** (always shown)
 - The key is injected at **compile time** through `--dart-define`. It is never
   read from source, never committed, and never stored at runtime.

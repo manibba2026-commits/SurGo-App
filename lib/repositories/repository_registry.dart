@@ -65,7 +65,11 @@ class RepositoryRegistry {
       isSupabaseBacked: true,
       profiles: SupabaseProfileRepository(backend),
       catalog: SupabaseCatalogRepository(backend),
-      vehicles: SupabaseVehicleRepository(backend),
+      vehicles: SupabaseVehicleRepository(
+        backend,
+        writer: writer,
+        storage: storage,
+      ),
       rides: SupabaseRideRepository(backend, writer: writer),
       rideLocations: SupabaseRideLocationRepository(backend),
       realtime: backend is SurgoRealtimeBackend
@@ -73,7 +77,7 @@ class RepositoryRegistry {
           : null,
       rentals: SupabaseRentalRepository(backend, writer: writer),
       pasuyo: SupabasePasuyoRepository(backend, writer: writer),
-      notifications: SupabaseNotificationRepository(backend),
+      notifications: SupabaseNotificationRepository(backend, writer: writer),
       wallet: SupabaseWalletRepository(backend),
       verifications: SupabaseVerificationRepository(backend, writer: writer),
       attachments: SupabaseAttachmentRepository(
@@ -106,6 +110,5 @@ class RepositoryRegistry {
 
   /// What a diagnostics note should say about where this build's data comes
   /// from.
-  String get description =>
-      isSupabaseBacked ? 'Supabase (read-only)' : 'local mock seed';
+  String get description => isSupabaseBacked ? 'Supabase' : 'local mock seed';
 }

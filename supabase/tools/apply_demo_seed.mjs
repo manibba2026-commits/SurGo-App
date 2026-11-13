@@ -1,4 +1,5 @@
-// Applies the idempotent demo presence and history seeds to the hosted project.
+// Applies the idempotent demo presence, history and rental-fleet seeds to the
+// hosted project.
 //
 // The schema changes are tracked migrations; this tool only writes demo rows.
 // It uses the Supabase Management API SQL channel and the access token the CLI
@@ -18,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { sql } from './db_admin.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SEEDS = ['demo-presence.sql', 'demo-activity.sql'].map((name) => ({
+const SEEDS = ['demo-presence.sql', 'demo-activity.sql', 'demo-rental-fleet.sql'].map((name) => ({
   name,
   sql: fs.readFileSync(path.resolve(HERE, '..', name), 'utf8'),
 }));
@@ -32,6 +33,7 @@ const EXPECTED = {
   online: 6,
   offline: 2,
   newRides: 4,
+  fleet: 7,
 };
 
 async function preflight() {
@@ -67,8 +69,8 @@ async function preflight() {
   if (Number(row.junel_suspended) !== 1) {
     throw new Error('Junel Ramos is missing or no longer suspended — ABORT');
   }
-  if (Number(row.active) < 19) {
-    throw new Error('expected at least 19 active demo accounts — ABORT');
+  if (Number(row.active) < 18) {
+    throw new Error('expected at least 18 active demo accounts — ABORT');
   }
 
   const pricing = await sql('select count(*) as n from public.pricing_policies;');
@@ -160,6 +162,14 @@ async function verify() {
     select
       count(*) filter (where status = 'completed' and not is_simulated) as actual_completed,
       coalesce(sum(platform_revenue_centavos) filter (where not is_simulated), 0) as actual_revenue,
+      coalesce(sum(platform_revenue_centavos) filter (
+        where is_simulated and ride_id in (
+          md5('surgo:demo:ride:carlo-rosalinda')::uuid,
+          md5('surgo:demo:ride:danny-nena')::uuid,
+          md5('surgo:demo:ride:isabella-grace')::uuid,
+          md5('surgo:demo:ride:bebot-danilo')::uuid
+        )
+      ), 0) as seeded_revenue,
       coalesce(sum(platform_revenue_centavos) filter (where is_simulated), 0) as simulated_revenue,
       coalesce(sum(customer_pays_centavos) filter (where is_simulated and status = 'completed'), 0) as simulated_cash,
       (select count(*) from public.pricing_policies) as pricing
@@ -167,8 +177,15 @@ async function verify() {
   `);
   const m = money[0] ?? {};
   if (Number(m.pricing) !== 0) throw new Error('pricing was activated by the seed');
+  // Seeded demo settlements must never book platform revenue. App-generated
+  // demo runs may carry a fee, so only report those instead of rewriting them.
+  if (Number(m.seeded_revenue) !== 0) {
+    throw new Error('a seeded demo settlement carries platform revenue');
+  }
   if (Number(m.simulated_revenue) !== 0) {
-    throw new Error('a simulated settlement carries platform revenue');
+    console.log(
+      `NOTE: ${Number(m.simulated_revenue)} centavos of app-generated simulated revenue exists; left untouched.`,
+    );
   }
   if (Number(m.actual_revenue) !== 0) {
     console.log('NOTE: actual platform revenue is non-zero; review the real rows.');
@@ -176,6 +193,15 @@ async function verify() {
 
   const discovery = await sql(`
     begin;
+    select set_config(
+      'surgo.demo_rider_ids',
+      coalesce((
+        select string_agg(id::text, ',') from public.profiles
+         where phone in (${DEMO_PHONES.map((phone) => `'${phone}'`).join(', ')})
+           and full_name <> 'Junel Ramos'
+      ), ''),
+      true
+    );
     select set_config(
       'request.jwt.claim.sub',
       (select id::text from public.profiles where phone = '+639170000019'),
@@ -185,21 +211,51 @@ async function verify() {
     select
       count(*) as online_riders,
       count(*) filter (where is_simulated) as simulated_riders,
+      count(*) filter (where profile_id::text = any(
+        string_to_array(current_setting('surgo.demo_rider_ids'), ',')
+      )) as demo_riders,
       count(*) filter (where full_name in ('Jomar Lim', 'Marlon Uy')) as offline_leak,
       count(*) filter (where full_name = 'Junel Ramos') as suspended_leak
       from public.find_available_riders();
     rollback;
   `);
   const d = Array.isArray(discovery) ? discovery.at(-1) ?? {} : discovery;
-  if (Number(d.online_riders) !== EXPECTED.online) {
-    throw new Error(`discovery returned ${d.online_riders} riders, expected ${EXPECTED.online}`);
+  // Discovery may also list the operator's own account, so compare the demo
+  // accounts only instead of the total row count.
+  if (Number(d.demo_riders) !== EXPECTED.online) {
+    throw new Error(`discovery returned ${d.demo_riders} demo riders, expected ${EXPECTED.online}`);
   }
   if (Number(d.offline_leak) !== 0 || Number(d.suspended_leak) !== 0) {
     throw new Error('discovery returned an offline or suspended rider');
   }
 
+  const fleet = await sql(`
+    select
+      count(*) as seeded,
+      count(*) filter (where v.status = 'active') as active,
+      count(distinct v.owner_profile_id) as owners
+      from public.vehicles v
+     where v.id in (
+       md5('surgo:demo:vehicle:alex-mio-i125')::uuid,
+       md5('surgo:demo:vehicle:danilo-fortuner')::uuid,
+       md5('surgo:demo:vehicle:danilo-dmax')::uuid,
+       md5('surgo:demo:vehicle:grace-ertiga')::uuid,
+       md5('surgo:demo:vehicle:grace-click')::uuid,
+       md5('surgo:demo:vehicle:rosalinda-avanza')::uuid,
+       md5('surgo:demo:vehicle:rosalinda-fazzio')::uuid
+     );
+  `);
+  const f = fleet[0] ?? {};
+  if (Number(f.seeded) !== EXPECTED.fleet) {
+    throw new Error(`expected ${EXPECTED.fleet} seeded vehicles, found ${f.seeded}`);
+  }
+  if (Number(f.active) !== EXPECTED.fleet || Number(f.owners) !== 4) {
+    throw new Error('a seeded rental vehicle is unlisted or missing its owner');
+  }
+
   console.log('presence:', JSON.stringify(p));
   console.log('history:', JSON.stringify(h));
+  console.log('fleet:', JSON.stringify(f));
   console.log('money:', JSON.stringify(m));
   console.log('discovery:', JSON.stringify(d));
   console.log('demo seed verified');

@@ -267,19 +267,19 @@ class SupabaseBackend
     return _guard(() async {
       // Upsert on a fresh, timestamped path: a resubmission replaces the file
       // it names rather than failing because the object already exists.
-      await _client.storage.from(bucket).uploadBinary(
+      await _client.storage
+          .from(bucket)
+          .uploadBinary(
             path,
             bytes,
             fileOptions: FileOptions(contentType: contentType, upsert: true),
-          ).timeout(requestTimeout);
+          )
+          .timeout(requestTimeout);
     });
   }
 
   @override
-  Future<void> removeObject({
-    required String bucket,
-    required String path,
-  }) {
+  Future<void> removeObject({required String bucket, required String path}) {
     return _guard(() async {
       await _client.storage.from(bucket).remove([path]).timeout(requestTimeout);
     });
@@ -344,7 +344,9 @@ RepositoryFailure mapBackendError(Object error) {
     final code = error.code;
     final message = error.message.toLowerCase();
 
-    if (code == 'PGRST116') return RepositoryFailure.notFound(error);
+    if (code == 'PGRST116' || code == 'P0002') {
+      return RepositoryFailure.notFound(error);
+    }
     if (code == '42501' || code == 'PGRST301' || code == '401') {
       return RepositoryFailure.permissionDenied(error);
     }

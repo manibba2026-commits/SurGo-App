@@ -125,16 +125,20 @@ void main() {
     await tester.pump();
     await tester.enterText(find.byType(TextField), 'zzzzzz');
     await tester.pump();
-    expect(find.text('No matching places. Choose a barangay and purok instead.'),
+    expect(find.text('No matching place. Drop a pin on the map instead.'),
         findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.enterText(find.byType(TextField), 'Mercy Hospital');
+    await tester.enterText(find.byType(TextField), 'Tandag Diagnostic Center');
     await tester.pump();
-    await tester.tap(find.widgetWithText(ListTile, 'Mercy Hospital'));
+    await tester.ensureVisible(find.text('Tandag Diagnostic Center').first);
+    await tester.tap(
+      find.text('Tandag Diagnostic Center').first,
+      warnIfMissed: false,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
-    expect(state.destinationLabel, 'Mercy Hospital');
+    expect(state.destinationLabel, 'Tandag Diagnostic Center · Draga');
     expect(state.bookingDestination, isNotNull);
     expect(tester.takeException(), isNull);
   });

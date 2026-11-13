@@ -141,8 +141,10 @@ class AuthFailure implements Exception {
         'Sign-in could not return to SurGo. Contact SurGo support.',
       );
     }
-    if (text.contains('sms') &&
-        (text.contains('error') || text.contains('failed'))) {
+    if (text.contains('could not send') ||
+        text.contains('unable to send') ||
+        (text.contains('sms') &&
+            (text.contains('error') || text.contains('failed')))) {
       return const AuthFailure(
         AuthFailureCode.smsFailed,
         'We could not send the text message. Try again in a moment.',

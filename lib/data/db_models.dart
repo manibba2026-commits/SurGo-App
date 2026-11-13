@@ -42,14 +42,14 @@ class NotificationItem {
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> j) => NotificationItem(
-        id: j['id'],
-        type: j['type'],
-        title: j['title'],
-        body: j['body'],
-        time: j['time'],
-        read: j['read'] ?? false,
-        createdAt: parseIsoTimestamp(j['createdAt']),
-      );
+    id: j['id'],
+    type: j['type'],
+    title: j['title'],
+    body: j['body'],
+    time: j['time'],
+    read: j['read'] ?? false,
+    createdAt: parseIsoTimestamp(j['createdAt']),
+  );
 }
 
 class WalletTransaction {
@@ -147,11 +147,11 @@ class SavedPlace {
   });
 
   factory SavedPlace.fromJson(Map<String, dynamic> j) => SavedPlace(
-        id: j['id'],
-        label: j['label'],
-        address: j['address'],
-        icon: j['icon'],
-      );
+    id: j['id'],
+    label: j['label'],
+    address: j['address'],
+    icon: j['icon'],
+  );
 
   IconData get iconData {
     switch (icon) {
@@ -185,14 +185,14 @@ class FavoriteRider {
   });
 
   factory FavoriteRider.fromJson(Map<String, dynamic> j) => FavoriteRider(
-        id: j['id'],
-        name: j['name'],
-        initials: j['initials'],
-        rating: (j['rating'] as num).toDouble(),
-        trips: j['trips'],
-        vehicleType: j['vehicleType'],
-        plate: j['plate'],
-      );
+    id: j['id'],
+    name: j['name'],
+    initials: j['initials'],
+    rating: (j['rating'] as num).toDouble(),
+    trips: j['trips'],
+    vehicleType: j['vehicleType'],
+    plate: j['plate'],
+  );
 }
 
 class FavoriteVehicle {
@@ -211,12 +211,12 @@ class FavoriteVehicle {
   });
 
   factory FavoriteVehicle.fromJson(Map<String, dynamic> j) => FavoriteVehicle(
-        id: j['id'],
-        name: j['name'],
-        type: j['type'],
-        pricePerDay: j['pricePerDay'],
-        ownerName: j['ownerName'],
-      );
+    id: j['id'],
+    name: j['name'],
+    type: j['type'],
+    pricePerDay: j['pricePerDay'],
+    ownerName: j['ownerName'],
+  );
 }
 
 class EmergencyContactItem {
@@ -267,32 +267,32 @@ class RideHistoryItem {
   });
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> j) => RideHistoryItem(
-        id: j['id'],
-        route: j['route'],
-        date: j['date'],
-        fare: j['fare'],
-        status: j['status'],
-        vehicleType: j['vehicleType'],
-        driverName: j['driverName'],
-        rating: j['rating'],
-        completedAt: parseIsoTimestamp(j['completedAt']),
-      );
+    id: j['id'],
+    route: j['route'],
+    date: j['date'],
+    fare: j['fare'],
+    status: j['status'],
+    vehicleType: j['vehicleType'],
+    driverName: j['driverName'],
+    rating: j['rating'],
+    completedAt: parseIsoTimestamp(j['completedAt']),
+  );
 
   /// The same completed ride with the passenger's rating applied.
   ///
   /// The row is written when the trip settles, before the rating screen
   /// appears, so rating is an update to that row rather than a second insert.
   RideHistoryItem withRating(int rating) => RideHistoryItem(
-        id: id,
-        route: route,
-        date: date,
-        fare: fare,
-        status: status,
-        vehicleType: vehicleType,
-        driverName: driverName,
-        rating: rating,
-        completedAt: completedAt,
-      );
+    id: id,
+    route: route,
+    date: date,
+    fare: fare,
+    status: status,
+    vehicleType: vehicleType,
+    driverName: driverName,
+    rating: rating,
+    completedAt: completedAt,
+  );
 }
 
 class RentalHistoryItem {
@@ -360,16 +360,16 @@ class RiderTripItem {
   });
 
   factory RiderTripItem.fromJson(Map<String, dynamic> j) => RiderTripItem(
-        id: j['id'],
-        passengerName: j['passengerName'],
-        route: j['route'],
-        date: j['date'],
-        fare: j['fare'],
-        distanceKm: (j['distanceKm'] as num).toDouble(),
-        status: j['status'],
-        rating: j['rating'],
-        completedAt: parseIsoTimestamp(j['completedAt']),
-      );
+    id: j['id'],
+    passengerName: j['passengerName'],
+    route: j['route'],
+    date: j['date'],
+    fare: j['fare'],
+    distanceKm: (j['distanceKm'] as num).toDouble(),
+    status: j['status'],
+    rating: j['rating'],
+    completedAt: parseIsoTimestamp(j['completedAt']),
+  );
 }
 
 class DailyEarning {
@@ -385,10 +385,10 @@ class DailyEarning {
   DailyEarning({required this.day, required this.amount, this.date});
 
   factory DailyEarning.fromJson(Map<String, dynamic> j) => DailyEarning(
-        day: j['day'],
-        amount: j['amount'],
-        date: parseIsoTimestamp(j['date']),
-      );
+    day: j['day'],
+    amount: j['amount'],
+    date: parseIsoTimestamp(j['date']),
+  );
 }
 
 class PayoutItem {
@@ -411,13 +411,13 @@ class PayoutItem {
   });
 
   factory PayoutItem.fromJson(Map<String, dynamic> j) => PayoutItem(
-        id: j['id'],
-        date: j['date'],
-        amount: j['amount'],
-        method: j['method'],
-        status: j['status'],
-        createdAt: parseIsoTimestamp(j['createdAt']),
-      );
+    id: j['id'],
+    date: j['date'],
+    amount: j['amount'],
+    method: j['method'],
+    status: j['status'],
+    createdAt: parseIsoTimestamp(j['createdAt']),
+  );
 }
 
 class PassengerProfile {
@@ -446,17 +446,17 @@ class PassengerProfile {
   });
 
   factory PassengerProfile.fromJson(Map<String, dynamic> j) => PassengerProfile(
-        id: j['id'],
-        name: j['name'],
-        firstName: j['firstName'],
-        initials: j['initials'],
-        phone: j['phone'],
-        email: j['email'],
-        rating: (j['rating'] as num).toDouble(),
-        totalRides: j['totalRides'],
-        memberSince: j['memberSince'],
-        verified: j['verified'] ?? false,
-      );
+    id: j['id'],
+    name: j['name'],
+    firstName: j['firstName'],
+    initials: j['initials'],
+    phone: j['phone'],
+    email: j['email'],
+    rating: (j['rating'] as num).toDouble(),
+    totalRides: j['totalRides'],
+    memberSince: j['memberSince'],
+    verified: j['verified'] ?? false,
+  );
 }
 
 /// What an Earner is willing to take on.
@@ -479,32 +479,31 @@ enum EarnerCapability {
   /// capability the role had before this list existed - so an older seed keeps
   /// working instead of loading with nothing enabled.
   static EarnerCapability fromJson(Object? raw) => switch ('$raw') {
-        'rides' => EarnerCapability.rides,
-        'errands' => EarnerCapability.errands,
-        'deliveries' => EarnerCapability.deliveries,
-        _ => EarnerCapability.rides,
-      };
+    'rides' => EarnerCapability.rides,
+    'errands' => EarnerCapability.errands,
+    'deliveries' => EarnerCapability.deliveries,
+    _ => EarnerCapability.rides,
+  };
 
   String get jsonKey => switch (this) {
-        EarnerCapability.rides => 'rides',
-        EarnerCapability.errands => 'errands',
-        EarnerCapability.deliveries => 'deliveries',
-      };
+    EarnerCapability.rides => 'rides',
+    EarnerCapability.errands => 'errands',
+    EarnerCapability.deliveries => 'deliveries',
+  };
 
   /// Label for the capability toggles, e.g. "Passenger rides".
   String get label => switch (this) {
-        EarnerCapability.rides => 'Passenger rides',
-        EarnerCapability.errands => 'Errands',
-        EarnerCapability.deliveries => 'Deliveries',
-      };
+    EarnerCapability.rides => 'Passenger rides',
+    EarnerCapability.errands => 'Errands',
+    EarnerCapability.deliveries => 'Deliveries',
+  };
 
   /// One line explaining what the capability covers, for the toggle's subtitle.
   String get hint => switch (this) {
-        EarnerCapability.rides => 'Drive passengers around Tandag.',
-        EarnerCapability.errands =>
-          'Shop, pick up medicine, drop off parcels.',
-        EarnerCapability.deliveries => 'Bring food and parcels to a buyer.',
-      };
+    EarnerCapability.rides => 'Drive passengers around Tandag.',
+    EarnerCapability.errands => 'Shop, pick up medicine, drop off parcels.',
+    EarnerCapability.deliveries => 'Bring food and parcels to a buyer.',
+  };
 }
 
 /// Whether one [EarnerCapability] is switched on for a given earner.
@@ -512,15 +511,12 @@ class EarnerAvailability {
   final EarnerCapability capability;
   final bool enabled;
 
-  const EarnerAvailability({
-    required this.capability,
-    required this.enabled,
-  });
+  const EarnerAvailability({required this.capability, required this.enabled});
 
   EarnerAvailability copyWith({bool? enabled}) => EarnerAvailability(
-        capability: capability,
-        enabled: enabled ?? this.enabled,
-      );
+    capability: capability,
+    enabled: enabled ?? this.enabled,
+  );
 }
 
 /// The signed-in Earner: their identity, their vehicle, and what they take.
@@ -566,10 +562,11 @@ class EarnerProfile {
     required this.documentsStatus,
     required Map<EarnerCapability, EarnerAvailability> capabilities,
   }) : capabilities = {
-          for (final c in EarnerCapability.values)
-            c: capabilities[c] ??
-                EarnerAvailability(capability: c, enabled: false),
-        };
+         for (final c in EarnerCapability.values)
+           c:
+               capabilities[c] ??
+               EarnerAvailability(capability: c, enabled: false),
+       };
 
   /// Whether this Earner takes [capability].
   bool accepts(EarnerCapability capability) =>
@@ -588,8 +585,9 @@ class EarnerProfile {
     if (!enabled && accepts(capability) && activeCapabilities.length <= 1) {
       return false;
     }
-    capabilities[capability] =
-        capabilities[capability]!.copyWith(enabled: enabled);
+    capabilities[capability] = capabilities[capability]!.copyWith(
+      enabled: enabled,
+    );
     return true;
   }
 
@@ -673,26 +671,26 @@ enum CapabilityType {
   vehicleOwner;
 
   static CapabilityType fromJson(Object? raw) => switch ('$raw') {
-        'passenger' => CapabilityType.passenger,
-        'earner' => CapabilityType.earner,
-        'rider' => CapabilityType.rider,
-        'vehicleOwner' => CapabilityType.vehicleOwner,
-        _ => CapabilityType.passenger,
-      };
+    'passenger' => CapabilityType.passenger,
+    'earner' => CapabilityType.earner,
+    'rider' => CapabilityType.rider,
+    'vehicleOwner' => CapabilityType.vehicleOwner,
+    _ => CapabilityType.passenger,
+  };
 
   String get jsonKey => switch (this) {
-        CapabilityType.passenger => 'passenger',
-        CapabilityType.earner => 'earner',
-        CapabilityType.rider => 'rider',
-        CapabilityType.vehicleOwner => 'vehicleOwner',
-      };
+    CapabilityType.passenger => 'passenger',
+    CapabilityType.earner => 'earner',
+    CapabilityType.rider => 'rider',
+    CapabilityType.vehicleOwner => 'vehicleOwner',
+  };
 
   String get label => switch (this) {
-        CapabilityType.passenger => 'Passenger',
-        CapabilityType.earner => 'Earner',
-        CapabilityType.rider => 'Rider',
-        CapabilityType.vehicleOwner => 'Vehicle Owner',
-      };
+    CapabilityType.passenger => 'Passenger',
+    CapabilityType.earner => 'Earner',
+    CapabilityType.rider => 'Rider',
+    CapabilityType.vehicleOwner => 'Vehicle Owner',
+  };
 }
 
 /// Whether an [Account] may sign in and use its approved capabilities at all.
@@ -704,9 +702,9 @@ enum AccountStatus {
       '$raw' == 'suspended' ? AccountStatus.suspended : AccountStatus.active;
 
   String get label => switch (this) {
-        AccountStatus.active => 'Active',
-        AccountStatus.suspended => 'Suspended',
-      };
+    AccountStatus.active => 'Active',
+    AccountStatus.suspended => 'Suspended',
+  };
 }
 
 /// How far verification for one [CapabilityType] has progressed.
@@ -719,31 +717,31 @@ enum VerificationStatus {
   needsResubmission;
 
   static VerificationStatus fromJson(Object? raw) => switch ('$raw') {
-        'submitted' => VerificationStatus.submitted,
-        'underReview' => VerificationStatus.underReview,
-        'approved' => VerificationStatus.approved,
-        'rejected' => VerificationStatus.rejected,
-        'needsResubmission' => VerificationStatus.needsResubmission,
-        _ => VerificationStatus.draft,
-      };
+    'submitted' => VerificationStatus.submitted,
+    'underReview' => VerificationStatus.underReview,
+    'approved' => VerificationStatus.approved,
+    'rejected' => VerificationStatus.rejected,
+    'needsResubmission' => VerificationStatus.needsResubmission,
+    _ => VerificationStatus.draft,
+  };
 
   String get jsonKey => switch (this) {
-        VerificationStatus.draft => 'draft',
-        VerificationStatus.submitted => 'submitted',
-        VerificationStatus.underReview => 'underReview',
-        VerificationStatus.approved => 'approved',
-        VerificationStatus.rejected => 'rejected',
-        VerificationStatus.needsResubmission => 'needsResubmission',
-      };
+    VerificationStatus.draft => 'draft',
+    VerificationStatus.submitted => 'submitted',
+    VerificationStatus.underReview => 'underReview',
+    VerificationStatus.approved => 'approved',
+    VerificationStatus.rejected => 'rejected',
+    VerificationStatus.needsResubmission => 'needsResubmission',
+  };
 
   String get label => switch (this) {
-        VerificationStatus.draft => 'Draft',
-        VerificationStatus.submitted => 'Submitted',
-        VerificationStatus.underReview => 'Under review',
-        VerificationStatus.approved => 'Approved',
-        VerificationStatus.rejected => 'Rejected',
-        VerificationStatus.needsResubmission => 'Action needed',
-      };
+    VerificationStatus.draft => 'Draft',
+    VerificationStatus.submitted => 'Submitted',
+    VerificationStatus.underReview => 'Under review',
+    VerificationStatus.approved => 'Approved',
+    VerificationStatus.rejected => 'Rejected',
+    VerificationStatus.needsResubmission => 'Action needed',
+  };
 }
 
 /// The local demo record that points at the profiles a signed-in SurGo user
@@ -797,13 +795,15 @@ class Account {
     Set<CapabilityType>? approvedCapabilities,
     Set<CapabilityType>? eligibleCapabilities,
     this.status = AccountStatus.active,
-  })  : approvedCapabilities = approvedCapabilities ??
-            Account._defaultApprovedFor(passengerId, riderId, ownerId),
-        eligibleCapabilities = eligibleCapabilities ??
-            {
-              for (final c in CapabilityType.values)
-                if (!(approvedCapabilities ?? const {}).contains(c)) c,
-            };
+  }) : approvedCapabilities =
+           approvedCapabilities ??
+           Account._defaultApprovedFor(passengerId, riderId, ownerId),
+       eligibleCapabilities =
+           eligibleCapabilities ??
+           {
+             for (final c in CapabilityType.values)
+               if (!(approvedCapabilities ?? const {}).contains(c)) c,
+           };
 
   bool get isActive => status == AccountStatus.active;
 
@@ -853,7 +853,10 @@ class Account {
   /// earner profile — before this list an earner profile could always enter
   /// rider mode.
   static Set<CapabilityType> _defaultApprovedFor(
-      String? passengerId, String? riderId, String? ownerId) {
+    String? passengerId,
+    String? riderId,
+    String? ownerId,
+  ) {
     return {
       if (passengerId != null) CapabilityType.passenger,
       if (riderId != null) CapabilityType.rider,
@@ -987,26 +990,26 @@ class VerificationApplication {
 
   /// Serialized for the local JSON server; the seed file uses the same shape.
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'accountId': accountId,
-        'capability': capabilityType.jsonKey,
-        'status': status.jsonKey,
-        'submittedAt': submittedAt?.toIso8601String(),
-        'reviewedAt': reviewedAt?.toIso8601String(),
-        'reviewerNote': reviewerNote,
-        'documents': [
-          for (final d in documents)
-            {
-              'id': d.id,
-              'capability': d.capabilityType.jsonKey,
-              'label': d.label,
-              'hint': d.hint,
-              'required': d.required,
-              'uploaded': d.uploaded,
-              'fileName': d.fileName,
-            },
-        ],
-      };
+    'id': id,
+    'accountId': accountId,
+    'capability': capabilityType.jsonKey,
+    'status': status.jsonKey,
+    'submittedAt': submittedAt?.toIso8601String(),
+    'reviewedAt': reviewedAt?.toIso8601String(),
+    'reviewerNote': reviewerNote,
+    'documents': [
+      for (final d in documents)
+        {
+          'id': d.id,
+          'capability': d.capabilityType.jsonKey,
+          'label': d.label,
+          'hint': d.hint,
+          'required': d.required,
+          'uploaded': d.uploaded,
+          'fileName': d.fileName,
+        },
+    ],
+  };
 }
 
 /// One barangay in Tandag City, together with its puroks — used to power
@@ -1018,9 +1021,9 @@ class Barangay {
   const Barangay({required this.name, required this.puroks});
 
   factory Barangay.fromJson(Map<String, dynamic> j) => Barangay(
-        name: j['barangay'],
-        puroks: (j['puroks'] as List).map((e) => e.toString()).toList(),
-      );
+    name: j['barangay'],
+    puroks: (j['puroks'] as List).map((e) => e.toString()).toList(),
+  );
 }
 
 /// A named landmark with coordinates, from `locations.json`.
@@ -1054,15 +1057,15 @@ class PlaceItem {
   });
 
   factory PlaceItem.fromJson(Map<String, dynamic> j) => PlaceItem(
-        id: j['id'],
-        label: j['label'],
-        address: j['address'] ?? '',
-        barangay: j['barangay'] ?? '',
-        purok: j['purok'] ?? '',
-        latitude: (j['latitude'] as num).toDouble(),
-        longitude: (j['longitude'] as num).toDouble(),
-        category: j['category'] ?? 'other',
-      );
+    id: j['id'],
+    label: j['label'],
+    address: j['address'] ?? '',
+    barangay: j['barangay'] ?? '',
+    purok: j['purok'] ?? '',
+    latitude: (j['latitude'] as num).toDouble(),
+    longitude: (j['longitude'] as num).toDouble(),
+    category: j['category'] ?? 'other',
+  );
 
   IconData get icon {
     switch (category) {
@@ -1168,64 +1171,64 @@ class RideRequestItem {
   });
 
   factory RideRequestItem.fromJson(Map<String, dynamic> j) => RideRequestItem(
-        id: j['id'],
-        passengerId: j['passengerId'] ?? j['passenger_id'],
-        riderId: j['riderId'] ?? j['rider_id'],
-        vehicleId: j['vehicleId'] ?? j['vehicle_id'],
-        passengerName: j['passengerName'],
-        passengerInitials: j['passengerInitials'],
-        passengerRating: (j['passengerRating'] as num).toDouble(),
-        pickupBarangay: j['pickupBarangay'],
-        pickupPurok: j['pickupPurok'],
-        pickup: j['pickup'],
-        pickupLatitude: (j['pickupLatitude'] as num?)?.toDouble(),
-        pickupLongitude: (j['pickupLongitude'] as num?)?.toDouble(),
-        dropoffBarangay: j['dropoffBarangay'],
-        dropoffPurok: j['dropoffPurok'],
-        dropoff: j['dropoff'],
-        dropoffLatitude: (j['dropoffLatitude'] as num?)?.toDouble(),
-        dropoffLongitude: (j['dropoffLongitude'] as num?)?.toDouble(),
-        distanceKm: (j['distanceKm'] as num).toDouble(),
-        etaMinutes: j['etaMinutes'],
-        fare: j['fare'],
-        platformFeeCentavos: j['platformFeeCentavos'],
-        riderName: j['riderName'],
-        paymentMethod: j['paymentMethod'],
-        note: j['note'] ?? '',
-        requestedAt: j['requestedAt'] ?? 'Just now',
-        requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
-        status: RideStatus.fromJson(j['status'] ?? 'Pending'),
-      );
+    id: j['id'],
+    passengerId: j['passengerId'] ?? j['passenger_id'],
+    riderId: j['riderId'] ?? j['rider_id'],
+    vehicleId: j['vehicleId'] ?? j['vehicle_id'],
+    passengerName: j['passengerName'],
+    passengerInitials: j['passengerInitials'],
+    passengerRating: (j['passengerRating'] as num).toDouble(),
+    pickupBarangay: j['pickupBarangay'],
+    pickupPurok: j['pickupPurok'],
+    pickup: j['pickup'],
+    pickupLatitude: (j['pickupLatitude'] as num?)?.toDouble(),
+    pickupLongitude: (j['pickupLongitude'] as num?)?.toDouble(),
+    dropoffBarangay: j['dropoffBarangay'],
+    dropoffPurok: j['dropoffPurok'],
+    dropoff: j['dropoff'],
+    dropoffLatitude: (j['dropoffLatitude'] as num?)?.toDouble(),
+    dropoffLongitude: (j['dropoffLongitude'] as num?)?.toDouble(),
+    distanceKm: (j['distanceKm'] as num).toDouble(),
+    etaMinutes: j['etaMinutes'],
+    fare: j['fare'],
+    platformFeeCentavos: j['platformFeeCentavos'],
+    riderName: j['riderName'],
+    paymentMethod: j['paymentMethod'],
+    note: j['note'] ?? '',
+    requestedAt: j['requestedAt'] ?? 'Just now',
+    requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
+    status: RideStatus.fromJson(j['status'] ?? 'Pending'),
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'passengerId': passengerId,
-        'riderId': riderId,
-        'vehicleId': vehicleId,
-        'passengerName': passengerName,
-        'passengerInitials': passengerInitials,
-        'passengerRating': passengerRating,
-        'pickupBarangay': pickupBarangay,
-        'pickupPurok': pickupPurok,
-        'pickup': pickup,
-        'pickupLatitude': pickupLatitude,
-        'pickupLongitude': pickupLongitude,
-        'dropoffBarangay': dropoffBarangay,
-        'dropoffPurok': dropoffPurok,
-        'dropoff': dropoff,
-        'dropoffLatitude': dropoffLatitude,
-        'dropoffLongitude': dropoffLongitude,
-        'distanceKm': distanceKm,
-        'etaMinutes': etaMinutes,
-        'fare': fare,
-        'platformFeeCentavos': platformFeeCentavos,
-        'riderName': riderName,
-        'paymentMethod': paymentMethod,
-        'note': note,
-        'requestedAt': requestedAt,
-        'requestedAtIso': requestedAtIso?.toIso8601String(),
-        'status': status.wireValue,
-      };
+    'id': id,
+    'passengerId': passengerId,
+    'riderId': riderId,
+    'vehicleId': vehicleId,
+    'passengerName': passengerName,
+    'passengerInitials': passengerInitials,
+    'passengerRating': passengerRating,
+    'pickupBarangay': pickupBarangay,
+    'pickupPurok': pickupPurok,
+    'pickup': pickup,
+    'pickupLatitude': pickupLatitude,
+    'pickupLongitude': pickupLongitude,
+    'dropoffBarangay': dropoffBarangay,
+    'dropoffPurok': dropoffPurok,
+    'dropoff': dropoff,
+    'dropoffLatitude': dropoffLatitude,
+    'dropoffLongitude': dropoffLongitude,
+    'distanceKm': distanceKm,
+    'etaMinutes': etaMinutes,
+    'fare': fare,
+    'platformFeeCentavos': platformFeeCentavos,
+    'riderName': riderName,
+    'paymentMethod': paymentMethod,
+    'note': note,
+    'requestedAt': requestedAt,
+    'requestedAtIso': requestedAtIso?.toIso8601String(),
+    'status': status.wireValue,
+  };
 
   /// True when [target] is this request's one legal next status.
   bool canAdvanceTo(RideStatus target) => status.next == target;
@@ -1313,9 +1316,19 @@ class OwnedVehicle {
   final String category; // 2-Wheel, 3-Wheel, 4-Wheel, Truck
   final String plate;
   final int pricePerDay;
-  String status; // Listed, Rented, Maintenance
+  String status; // Listed, Rented, Maintenance, Unlisted
   final double rating;
   final int totalRentals;
+
+  /// Optional details the owner can edit in the shared vehicle form.
+  final String? make;
+  final String? model;
+  final int? modelYear;
+  final String? color;
+
+  /// Local previews only in the seeded build. Hosted rows carry storage paths
+  /// and render through [VehicleRecord.photoPaths].
+  final List<String> photoPaths;
 
   OwnedVehicle({
     required this.id,
@@ -1327,19 +1340,28 @@ class OwnedVehicle {
     required this.status,
     required this.rating,
     required this.totalRentals,
+    this.make,
+    this.model,
+    this.modelYear,
+    this.color,
+    this.photoPaths = const [],
   });
 
   factory OwnedVehicle.fromJson(Map<String, dynamic> j) => OwnedVehicle(
-        id: j['id'],
-        name: j['name'],
-        type: j['type'],
-        category: j['category'] ?? categoryForType(j['type']),
-        plate: j['plate'],
-        pricePerDay: j['pricePerDay'],
-        status: j['status'],
-        rating: (j['rating'] as num).toDouble(),
-        totalRentals: j['totalRentals'],
-      );
+    id: j['id'],
+    name: j['name'],
+    type: j['type'],
+    category: j['category'] ?? categoryForType(j['type']),
+    plate: j['plate'],
+    pricePerDay: j['pricePerDay'],
+    status: j['status'],
+    rating: (j['rating'] as num).toDouble(),
+    totalRentals: j['totalRentals'],
+    make: j['make'] as String?,
+    model: j['model'] as String?,
+    modelYear: j['modelYear'] as int?,
+    color: j['color'] as String?,
+  );
 
   /// Best-guess category for vehicles that predate the `category` field.
   static String categoryForType(String type) {
@@ -1509,9 +1531,9 @@ class MapPoint {
   const MapPoint(this.latitude, this.longitude);
 
   factory MapPoint.fromJson(Map<String, dynamic> j) => MapPoint(
-        (j['latitude'] as num).toDouble(),
-        (j['longitude'] as num).toDouble(),
-      );
+    (j['latitude'] as num).toDouble(),
+    (j['longitude'] as num).toDouble(),
+  );
 }
 
 class MapConfigData {
@@ -1528,11 +1550,11 @@ class MapConfigData {
   });
 
   factory MapConfigData.fromJson(Map<String, dynamic> j) => MapConfigData(
-        defaultCenter: MapPoint.fromJson(j['default_center']),
-        defaultZoom: (j['default_zoom'] as num).toDouble(),
-        city: j['city'] ?? 'Tandag City',
-        province: j['province'] ?? 'Surigao del Sur',
-      );
+    defaultCenter: MapPoint.fromJson(j['default_center']),
+    defaultZoom: (j['default_zoom'] as num).toDouble(),
+    city: j['city'] ?? 'Tandag City',
+    province: j['province'] ?? 'Surigao del Sur',
+  );
 }
 
 /// A fixed mock rider/driver shown on the map (motorcycle or tricycle).
@@ -1593,24 +1615,24 @@ class MapRider {
   }
 
   factory MapRider.fromJson(Map<String, dynamic> j) => MapRider(
-        id: j['id'],
-        name: j['name'],
-        vehicleType: j['vehicle_type'],
-        vehicleModel: j['vehicle_model'],
-        markerType: j['marker_type'] ?? j['vehicle_type'],
-        position: MapPoint(
-          (j['latitude'] as num).toDouble(),
-          (j['longitude'] as num).toDouble(),
-        ),
-        barangay: j['barangay'] ?? '',
-        purok: j['purok'] ?? '',
-        rating: (j['rating'] as num?)?.toDouble() ?? 0,
-        available: j['available'] ?? false,
-        verified: j['verified'] ?? false,
-        estimatedFare: (j['estimated_fare'] as num?)?.toInt() ?? 0,
-        vehiclePlate: j['vehicle_plate'] ?? '',
-        totalTrips: (j['total_trips'] as num?)?.toInt() ?? 0,
-      );
+    id: j['id'],
+    name: j['name'],
+    vehicleType: j['vehicle_type'],
+    vehicleModel: j['vehicle_model'],
+    markerType: j['marker_type'] ?? j['vehicle_type'],
+    position: MapPoint(
+      (j['latitude'] as num).toDouble(),
+      (j['longitude'] as num).toDouble(),
+    ),
+    barangay: j['barangay'] ?? '',
+    purok: j['purok'] ?? '',
+    rating: (j['rating'] as num?)?.toDouble() ?? 0,
+    available: j['available'] ?? false,
+    verified: j['verified'] ?? false,
+    estimatedFare: (j['estimated_fare'] as num?)?.toInt() ?? 0,
+    vehiclePlate: j['vehicle_plate'] ?? '',
+    totalTrips: (j['total_trips'] as num?)?.toInt() ?? 0,
+  );
 }
 
 /// A fixed mock rental vehicle shown on the map.
@@ -1646,23 +1668,23 @@ class MapRentalVehicle {
   });
 
   factory MapRentalVehicle.fromJson(Map<String, dynamic> j) => MapRentalVehicle(
-        id: j['id'],
-        ownerId: j['owner_id'] ?? '',
-        name: j['name'],
-        vehicleType: j['vehicle_type'],
-        markerType: j['marker_type'] ?? 'rental',
-        position: MapPoint(
-          (j['latitude'] as num).toDouble(),
-          (j['longitude'] as num).toDouble(),
-        ),
-        barangay: j['barangay'] ?? '',
-        purok: j['purok'] ?? '',
-        pricePerDay: (j['price_per_day'] as num?)?.toInt() ?? 0,
-        pricePerHour: (j['price_per_hour'] as num?)?.toInt() ?? 0,
-        rating: (j['rating'] as num?)?.toDouble() ?? 0,
-        available: j['available'] ?? false,
-        verified: j['verified'] ?? false,
-      );
+    id: j['id'],
+    ownerId: j['owner_id'] ?? '',
+    name: j['name'],
+    vehicleType: j['vehicle_type'],
+    markerType: j['marker_type'] ?? 'rental',
+    position: MapPoint(
+      (j['latitude'] as num).toDouble(),
+      (j['longitude'] as num).toDouble(),
+    ),
+    barangay: j['barangay'] ?? '',
+    purok: j['purok'] ?? '',
+    pricePerDay: (j['price_per_day'] as num?)?.toInt() ?? 0,
+    pricePerHour: (j['price_per_hour'] as num?)?.toInt() ?? 0,
+    rating: (j['rating'] as num?)?.toDouble() ?? 0,
+    available: j['available'] ?? false,
+    verified: j['verified'] ?? false,
+  );
 }
 
 /// A fixed mock passenger shown on the map (rider-mode view).
@@ -1688,18 +1710,18 @@ class MapPassenger {
   });
 
   factory MapPassenger.fromJson(Map<String, dynamic> j) => MapPassenger(
-        id: j['id'],
-        name: j['name'],
-        position: MapPoint(
-          (j['latitude'] as num).toDouble(),
-          (j['longitude'] as num).toDouble(),
-        ),
-        barangay: j['barangay'] ?? '',
-        purok: j['purok'] ?? '',
-        rating: (j['rating'] as num?)?.toDouble() ?? 0,
-        verified: j['verified'] ?? false,
-        requestStatus: j['request_status'] ?? 'waiting',
-      );
+    id: j['id'],
+    name: j['name'],
+    position: MapPoint(
+      (j['latitude'] as num).toDouble(),
+      (j['longitude'] as num).toDouble(),
+    ),
+    barangay: j['barangay'] ?? '',
+    purok: j['purok'] ?? '',
+    rating: (j['rating'] as num?)?.toDouble() ?? 0,
+    verified: j['verified'] ?? false,
+    requestStatus: j['request_status'] ?? 'waiting',
+  );
 }
 
 /// A fixed mock incoming ride request, linked to a [MapPassenger] by id.
@@ -1915,31 +1937,31 @@ class PasuyoTask {
   });
 
   factory PasuyoTask.fromJson(Map<String, dynamic> j) => PasuyoTask(
-        id: j['id'],
-        customerId: j['customerId'] ?? j['customer_id'] ?? '',
-        helperId: j['helperId'] ?? j['helper_id'],
-        category: PasuyoCategory.fromJson(j['category']),
-        title: j['title'] ?? '',
-        items: ((j['items'] as List?) ?? const []).map((e) => '$e').toList(),
-        pickupBarangay: j['pickupBarangay'] ?? '',
-        pickupPurok: j['pickupPurok'] ?? '',
-        pickup: j['pickup'] ?? '',
-        dropoffBarangay: j['dropoffBarangay'] ?? '',
-        dropoffPurok: j['dropoffPurok'] ?? '',
-        dropoff: j['dropoff'] ?? '',
-        budget: j['budget'] ?? 0,
-        note: j['note'] ?? '',
-        bookedForSomeone: j['bookedForSomeone'] ?? j['booked_for_someone'] ?? false,
-        recipientName: j['recipientName'] ?? j['recipient_name'] ?? '',
-        recipientPhone: j['recipientPhone'] ?? j['recipient_phone'] ?? '',
-        platformFee: j['platformFee'] ?? j['platform_fee'] ?? 0,
-        itemCost: j['itemCost'] ?? j['item_cost'] ?? 0,
-        requestedAt: j['requestedAt'] ?? 'Just now',
-        requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
-        status: PasuyoStatus.fromJson(j['status'] ?? 'available'),
-        rating: j['rating'] ?? 0,
-        rated: j['rated'] ?? false,
-      );
+    id: j['id'],
+    customerId: j['customerId'] ?? j['customer_id'] ?? '',
+    helperId: j['helperId'] ?? j['helper_id'],
+    category: PasuyoCategory.fromJson(j['category']),
+    title: j['title'] ?? '',
+    items: ((j['items'] as List?) ?? const []).map((e) => '$e').toList(),
+    pickupBarangay: j['pickupBarangay'] ?? '',
+    pickupPurok: j['pickupPurok'] ?? '',
+    pickup: j['pickup'] ?? '',
+    dropoffBarangay: j['dropoffBarangay'] ?? '',
+    dropoffPurok: j['dropoffPurok'] ?? '',
+    dropoff: j['dropoff'] ?? '',
+    budget: j['budget'] ?? 0,
+    note: j['note'] ?? '',
+    bookedForSomeone: j['bookedForSomeone'] ?? j['booked_for_someone'] ?? false,
+    recipientName: j['recipientName'] ?? j['recipient_name'] ?? '',
+    recipientPhone: j['recipientPhone'] ?? j['recipient_phone'] ?? '',
+    platformFee: j['platformFee'] ?? j['platform_fee'] ?? 0,
+    itemCost: j['itemCost'] ?? j['item_cost'] ?? 0,
+    requestedAt: j['requestedAt'] ?? 'Just now',
+    requestedAtIso: parseIsoTimestamp(j['requestedAtIso']),
+    status: PasuyoStatus.fromJson(j['status'] ?? 'available'),
+    rating: j['rating'] ?? 0,
+    rated: j['rated'] ?? false,
+  );
 
   /// Position in [PasuyoStatus.flow], or -1 for a cancelled errand.
   int get stepIndex => status.stepIndex;

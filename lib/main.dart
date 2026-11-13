@@ -31,12 +31,17 @@ import 'data/data_source.dart';
 import 'repositories/backend.dart';
 import 'repositories/repository_registry.dart';
 import 'services/supabase_bootstrap.dart';
+import 'services/map_bootstrap.dart';
 import 'services/passenger_ride_session.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Start the map stack before the first screen: the style document is
+  // fetched once and reused by every map, and the Geoapify warm-up runs as
+  // soon as a hosted session exists.
+  MapBootstrap.instance.start();
   // The presentation build signs in against the existing seed accounts. It
   // skips Supabase entirely so the demo works offline and no hosted identity
   // or session is touched. Without the flag nothing below changes.

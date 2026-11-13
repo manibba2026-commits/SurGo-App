@@ -224,6 +224,24 @@ void main() {
           'created_at': stamp,
         },
       ],
+      'service_transactions': [
+        {
+          'id': 'settlement-ride-done',
+          'service_type': 'ride',
+          'ride_id': 'ride-done',
+          'customer_id': 'passenger-other',
+          'provider_id': hostedUserId,
+          'fare_centavos': 12345,
+          'platform_fee_centavos': 0,
+          'customer_pays_centavos': 12345,
+          'provider_payout_centavos': 12345,
+          'platform_revenue_centavos': 0,
+          'payment_method': 'cash',
+          'status': 'completed',
+          'settled_at': stamp,
+          'created_at': stamp,
+        },
+      ],
       'service_areas': [
         {
           'id': 'sa-tandag-city',
@@ -281,7 +299,8 @@ void main() {
         state.cache.stateOf<Object?>(DomainSlot.riderPresence).hasData, isTrue);
     expect(state.cache.stateOf<Object?>(DomainSlot.riderIncomingRides).hasData,
         isTrue);
-    expect(state.cache.stateOf<Object?>(DomainSlot.earnerWalletEntries).hasData,
+    expect(
+        state.cache.stateOf<Object?>(DomainSlot.earnerSettlements).hasData,
         isTrue);
     expect(
         state.cache.stateOf<Object?>(DomainSlot.openErrands).hasData, isTrue);

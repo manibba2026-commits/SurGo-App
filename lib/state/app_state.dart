@@ -16,6 +16,7 @@ import '../repositories/repository_failure.dart';
 import '../repositories/repository_mappers.dart';
 import '../repositories/repository_registry.dart';
 import '../repositories/ride_location_repository.dart';
+import '../repositories/vehicle_repository.dart';
 import '../repositories/verification_repository.dart';
 import '../services/fee_calculator.dart';
 import '../services/geoapify_service.dart';
@@ -2488,8 +2489,10 @@ class AppState extends ChangeNotifier {
   }
 
   String? _barangayFrom(String label) {
-    final match =
-        RegExp(r'barangay\s+([^,]+)', caseSensitive: false).firstMatch(label);
+    final match = RegExp(
+      r'barangay\s+([^,]+)',
+      caseSensitive: false,
+    ).firstMatch(label);
     final name = match?.group(1)?.trim().toLowerCase();
     return (name == null || name.isEmpty) ? null : name;
   }
@@ -2855,10 +2858,14 @@ class AppState extends ChangeNotifier {
   // ---- notifications ----
   /// Marks the seeded notification with [id] read.
   ///
-  /// The feed screen renders repository records now, and this stage never
-  /// writes back, so a Supabase build keeps the last read on screen; the mock
-  /// seed mutates in place and the cache re-reads the slot.
+  /// A hosted build uses [markNotificationRead] instead; this synchronous path
+  /// stays for the seeded lists the tests and offline demo use.
   void markNotificationReadById(String id) {
+    for (final list in db.notificationsByUser.values) {
+      for (final n in list) {
+        if (n.id == id) n.read = true;
+      }
+    }
     for (final n in db.passengerNotifications) {
       if (n.id == id) n.read = true;
     }
@@ -2868,18 +2875,83 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearNotifications() {
-    for (final n in db.passengerNotifications) {
-      n.read = true;
+  /// Persists one acknowledgement for a hosted account and refreshes the feed
+  /// and unread badge. Returns false when the write could not be completed.
+  Future<bool> markNotificationRead({
+    required String id,
+    required bool isRider,
+  }) async {
+    if (!usesHostedRideDispatch) {
+      markNotificationReadById(id);
+      return true;
     }
+    try {
+      final profileId = cache.profileKeyFor(
+        isRider ? ActorRole.earner : ActorRole.passenger,
+      );
+      await repositories.notifications.markRead(profileId, id);
+      await _refreshNotificationSlots(isRider: isRider);
+      return true;
+    } on RepositoryFailure {
+      return false;
+    }
+  }
+
+  /// Marks the whole hosted feed read. Returns false when the write failed.
+  Future<bool> markAllNotificationsRead({required bool isRider}) async {
+    if (!usesHostedRideDispatch) {
+      if (isRider) {
+        clearRiderNotifications();
+      } else {
+        clearNotifications();
+      }
+      return true;
+    }
+    try {
+      final profileId = cache.profileKeyFor(
+        isRider ? ActorRole.earner : ActorRole.passenger,
+      );
+      await repositories.notifications.markAllRead(profileId);
+      await _refreshNotificationSlots(isRider: isRider);
+      return true;
+    } on RepositoryFailure {
+      return false;
+    }
+  }
+
+  Future<void> _refreshNotificationSlots({required bool isRider}) async {
+    final feed = isRider
+        ? DomainSlot.earnerNotificationFeed
+        : DomainSlot.passengerNotificationFeed;
+    final unread = isRider
+        ? DomainSlot.unreadEarnerNotifications
+        : DomainSlot.unreadPassengerNotifications;
+    await cache.refresh(feed);
+    await cache.refresh(unread);
+  }
+
+  void clearNotifications() {
+    _markAllRead(db.passengerNotifications);
+    _markAllRead(
+      db.notificationsByUser[cache.profileKeyFor(ActorRole.passenger)] ??
+          const <NotificationItem>[],
+    );
     notifyListeners();
   }
 
   void clearRiderNotifications() {
-    for (final n in db.earnerNotifications) {
+    _markAllRead(db.earnerNotifications);
+    _markAllRead(
+      db.notificationsByUser[cache.profileKeyFor(ActorRole.earner)] ??
+          const <NotificationItem>[],
+    );
+    notifyListeners();
+  }
+
+  static void _markAllRead(List<NotificationItem> items) {
+    for (final n in items) {
       n.read = true;
     }
-    notifyListeners();
   }
 
   // ---- wallet ----
@@ -3930,11 +4002,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Removes the seeded vehicle with [id].
-  ///
-  /// The fleet screen lists repository records now, and this stage never
-  /// writes back, so a Supabase build sees no change; in mock mode the seed
-  /// mutates in place and the cache re-reads the slot.
+  /// Removes the seeded vehicle with [id]. Hosted listings use
+  /// [setOwnedVehicleListing] so rental history and foreign keys survive.
   void removeOwnedVehicleById(String id) {
     db.ownerVehicles.removeWhere((v) => v.id == id);
     notifyListeners();
@@ -3945,6 +4014,65 @@ class AppState extends ChangeNotifier {
       if (vehicle.id == id) vehicle.status = status;
     }
     notifyListeners();
+  }
+
+  /// Creates or edits a listing and refreshes both the owner fleet and the
+  /// renter catalogue. In mock mode the repository mutates the seed; a hosted
+  /// build uploads photos and calls the owner RPCs.
+  Future<VehicleRecord> saveOwnedVehicle({
+    String? vehicleId,
+    required VehicleDraft draft,
+    List<VehiclePhotoUpload> photos = const [],
+    List<String> removePhotoPaths = const [],
+  }) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    final hosted = usesHostedRideDispatch;
+    if (hosted) _requireHostedSession(registry, revision);
+
+    final ownerId = cache.profileKeyFor(ActorRole.vehicleOwner);
+    final record = vehicleId == null
+        ? await registry.vehicles.createVehicle(
+            ownerProfileId: ownerId,
+            draft: draft,
+            photos: photos,
+          )
+        : await registry.vehicles.updateVehicle(
+            ownerProfileId: ownerId,
+            vehicleId: vehicleId,
+            draft: draft,
+            photos: photos,
+            removePhotoPaths: removePhotoPaths,
+          );
+
+    if (hosted) _requireHostedSession(registry, revision);
+    await _refreshVehicleSlots();
+    return record;
+  }
+
+  /// Lists or unlists a vehicle without deleting it.
+  Future<VehicleRecord> setOwnedVehicleListing({
+    required String id,
+    required bool listed,
+  }) async {
+    final registry = repositories;
+    final revision = _authSessionRevision;
+    final hosted = usesHostedRideDispatch;
+    if (hosted) _requireHostedSession(registry, revision);
+
+    final record = await registry.vehicles.setListingStatus(
+      vehicleId: id,
+      listed: listed,
+    );
+
+    if (hosted) _requireHostedSession(registry, revision);
+    await _refreshVehicleSlots();
+    return record;
+  }
+
+  Future<void> _refreshVehicleSlots() async {
+    await cache.refresh(DomainSlot.ownerFleet);
+    await cache.refresh(DomainSlot.rentalListings);
   }
 
   // ---- vehicle owner wallet ----

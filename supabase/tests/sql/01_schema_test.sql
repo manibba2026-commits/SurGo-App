@@ -125,7 +125,11 @@ begin
   );
 
   select count(*) into bucket_count from storage.buckets;
-  perform public.test_assert(bucket_count = 4, 'expected 4 storage buckets');
+  perform public.test_assert(bucket_count = 5, 'expected 5 storage buckets');
+  perform public.test_assert(
+    exists (select 1 from storage.buckets where id = 'vehicle-photos'),
+    'the vehicle-photos bucket exists'
+  );
 end;
 $$;
 

@@ -11,6 +11,7 @@ const END = { latitude: 9.1, longitude: 126.2 };
 const AUTOCOMPLETE = { action: 'autocomplete', text: 'Tandag' };
 const PLACES = { action: 'places', categories: ['healthcare.pharmacy'], center: CENTER, radius: 5000 };
 const ROUTE = { action: 'route', start: CENTER, end: END, mode: 'drive' };
+const REVERSE = { action: 'reverse', point: CENTER };
 
 interface FetchCall {
   url: string;
@@ -81,7 +82,7 @@ function setup(
 function assertCors(response: Response): void {
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
   assert.equal(response.headers.get('access-control-allow-methods'), 'POST, OPTIONS');
-  assert.equal(response.headers.get('access-control-allow-headers'), 'authorization, apikey, content-type');
+  assert.equal(response.headers.get('access-control-allow-headers'), 'authorization, x-client-info, apikey, content-type');
   assert.equal(response.headers.get('access-control-expose-headers'), 'Retry-After');
 }
 
@@ -107,7 +108,7 @@ test('non-POST methods are denied before authentication/provider, with CORS and 
   assert.equal(authCalls.length, 0);
 });
 
-test('autocomplete maps fixed PH filter and Tandag longitude/latitude bias, normalizing only public fields', async () => {
+test('autocomplete maps the fixed Tandag rectangle and proximity bias, normalizing only public fields', async () => {
   const { handler, calls, authCalls } = setup({}, () => jsonResponse(collection([
     place({ apiKey: API_KEY, internal: 'private', lat: 0, lon: 0 }),
   ])));
@@ -123,7 +124,7 @@ test('autocomplete maps fixed PH filter and Tandag longitude/latitude bias, norm
   const url = new URL(calls[0].url);
   assert.equal(url.origin + url.pathname, 'https://api.geoapify.com/v1/geocode/autocomplete');
   assert.deepEqual(Object.fromEntries(url.searchParams), {
-    apiKey: API_KEY, text: 'Tandag & market', limit: '2', filter: 'countrycode:ph',
+    apiKey: API_KEY, text: 'Tandag & market', limit: '2', filter: 'rect:125.95,8.95,126.35,9.25',
     bias: 'proximity:126.1985,9.0785', format: 'geojson',
   });
   assert.equal(calls[0].init.method, 'GET');
@@ -131,6 +132,31 @@ test('autocomplete maps fixed PH filter and Tandag longitude/latitude bias, norm
   assert.deepEqual(calls[0].init.headers, { Accept: 'application/json' });
   assert.ok(calls[0].init.signal instanceof AbortSignal);
   assert.ok(!calls[0].url.includes(TOKEN));
+});
+
+test('reverse geocoding sends the pinned point as lat/lon and returns at most one place', async () => {
+  const { handler, calls } = setup({}, () => jsonResponse(collection([
+    place({ place_id: 'reverse_1', formatted: 'Tandag City Public Market, Surigao del Sur' }),
+    place({ place_id: 'reverse_2' }),
+  ])));
+  const response = await handler(request({ action: 'reverse', point: CENTER }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { places: [
+    { id: 'reverse_1', label: 'Tandag City Public Market, Surigao del Sur', latitude: 9.0785, longitude: 126.1985 },
+  ] });
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0].url);
+  assert.equal(url.origin + url.pathname, 'https://api.geoapify.com/v1/geocode/reverse');
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    apiKey: API_KEY, lat: '9.0785', lon: '126.1985', limit: '1', format: 'geojson',
+  });
+});
+
+test('reverse geocoding with no matching place is a successful empty result', async () => {
+  const { handler } = setup({}, () => jsonResponse(collection()));
+  const response = await handler(request({ action: 'reverse', point: CENTER }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { places: [] });
 });
 
 test('autocomplete accepts exact text character and limit boundaries, including Unicode', async () => {
@@ -231,6 +257,9 @@ const invalidInputs: [string, unknown][] = [
   ['missing mode', { action: 'route', start: CENTER, end: END }],
   ['client units', { ...ROUTE, units: 'imperial' }],
   ['client waypoints', { ...ROUTE, waypoints: '0,0|1,1' }],
+  ['missing reverse point', { action: 'reverse' }],
+  ['reverse point outside PH', { action: 'reverse', point: { latitude: 0, longitude: 0 } }],
+  ['reverse extra field', { ...REVERSE, limit: 1 }],
 ];
 for (const [name, body] of invalidInputs) {
   test(`invalid input: ${name} is denied before authentication and provider`, async () => {

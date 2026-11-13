@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/db_service.dart';
 import '../repositories/repository_failure.dart';
+import '../services/tandag_places.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_tokens.dart';
@@ -31,6 +32,23 @@ class _BookingScreenState extends State<BookingScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) AppState.instance.refreshBookingRoute();
     });
+    _seedHostedDefaults();
+  }
+
+  /// The draft's placeholder labels describe a fictional "SM Terminal". A
+  /// hosted build starts from two real Tandag places instead, so the map,
+  /// route and fare are meaningful before the passenger touches anything.
+  void _seedHostedDefaults() {
+    final state = AppState.instance;
+    if (!state.usesHostedRideDispatch) return;
+    if (state.pickupLabel != 'Purok 3, Barangay Poblacion' ||
+        state.destinationLabel != 'SM Terminal, Downtown') {
+      return;
+    }
+    final plaza = TandagPlaces.byId('plaza');
+    final market = TandagPlaces.byId('market');
+    state.setPickup(plaza.label, coordinates: plaza.point);
+    state.setDestination(market.label, coordinates: market.point);
   }
 
   @override
@@ -115,6 +133,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       final picked = await showRideLocationPicker(
                         context,
                         title: 'Set pickup location',
+                        initialPoint: state.bookingPickup,
                       );
                       if (picked != null) {
                         state.setPickup(
@@ -133,6 +152,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       final picked = await showRideLocationPicker(
                         context,
                         title: 'Set destination',
+                        initialPoint: state.bookingDestination,
                       );
                       if (picked != null) {
                         state.setDestination(
@@ -312,6 +332,7 @@ class _PriceRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
+            flex: 2,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -335,13 +356,17 @@ class _PriceRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            value,
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: bold ? 14 : 12.5,
-              fontWeight: FontWeight.w800,
-              color: bold ? AppColors.yellow : AppColors.text,
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: bold ? 14 : 12.5,
+                fontWeight: FontWeight.w800,
+                color: bold ? AppColors.yellow : AppColors.text,
+              ),
             ),
           ),
         ],

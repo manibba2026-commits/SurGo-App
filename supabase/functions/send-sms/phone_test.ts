@@ -46,9 +46,9 @@ test('accepts numeric OTPs only', () => {
   }
 });
 
-test('builds the documented message', () => {
+test('builds the UniSMS-compliant OTP message', () => {
   assert.equal(
     buildOtpMessage('123456'),
-    'Your SurGo verification code is: 123456. Do not share this code with anyone.',
+    'Your SurGo OTP code is 123456. Please do not share. Expires in 1 minute.',
   );
 });

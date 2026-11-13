@@ -5,14 +5,24 @@
  * OTP text and only the sender name is configuration. Authentication is HTTP
  * Basic with the API key as the username and an empty password, so the key
  * never appears in a URL or a log line.
+ *
+ * The send endpoint answers 201 with `status: "pending"` and then settles the
+ * message asynchronously. The client therefore waits briefly and reads
+ * `GET /sms/:reference_id` so a content rejection or carrier failure is
+ * reported to the hook instead of being mistaken for a delivered code.
  */
 
 export const UNISMS_ENDPOINT = 'https://unismsapi.com/api/sms';
-export const UNISMS_DEFAULT_SENDER_ID = 'UniSMS';
+export const UNISMS_DEFAULT_SENDER_ID = 'Unisoft';
+
+/** Time from the start of the send to the first status check. */
+const STATUS_CHECK_TARGET_MS = 1500;
+/** Upper bound for the status request itself. */
+const STATUS_TIMEOUT_MS = 800;
 
 export interface UniSmsConfig {
   apiKey: string;
-  /** Approved alphanumeric sender name; the console default is `UniSMS`. */
+  /** Approved alphanumeric sender name; the console default is `Unisoft`. */
   senderId?: string;
 }
 
@@ -20,10 +30,26 @@ export interface UniSmsSendOptions extends UniSmsConfig {
   fetchImpl?: typeof fetch;
   /** May shorten, but never extend, the two-second provider budget. */
   timeoutMs?: number;
+  /**
+   * Read the provider's delivery status before reporting success. Defaults to
+   * true; disable only in tests that do not model the status endpoint.
+   */
+  verifyDelivery?: boolean;
+  /** Wait before the first status check, in ms. Defaults to 1500. */
+  statusDelayMs?: number;
+  /** Timeout for the status check, in ms. Defaults to 800. */
+  statusTimeoutMs?: number;
+  /** Injectable clock for tests. */
+  now?: () => number;
+  /** Injectable sleep for tests. */
+  sleepImpl?: (ms: number) => Promise<void>;
+  /** Injectable timer functions for tests. */
+  setTimeoutImpl?: (handler: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutImpl?: (timer: ReturnType<typeof setTimeout>) => void;
 }
 
 export type UniSmsSendResult =
-  | { ok: true }
+  | { ok: true; referenceId?: string }
   | {
       ok: false;
       reason:
@@ -34,6 +60,8 @@ export type UniSmsSendResult =
         | 'rejected'
         | 'invalid_response';
       status?: number;
+      /** Provider's coarse failure reason; never the message body or phone. */
+      failReason?: string;
     };
 
 function nonempty(value: unknown): value is string {
@@ -78,6 +106,63 @@ function bodyAccepted(value: unknown): boolean {
   return ACCEPTED_STATUSES.has(status);
 }
 
+function referenceIdOf(value: unknown): string | undefined {
+  const envelope = record(value);
+  const message = envelope ? record(envelope.message) : null;
+  const reference = message?.reference_id;
+  return typeof reference === 'string' && reference.length > 0
+    ? reference
+    : undefined;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Reads the provider's delivery status. Any failure (network, timeout, bad
+ * body) is treated as "unknown" so it never turns an accepted send into a
+ * false failure.
+ */
+async function readDeliveryStatus(
+  referenceId: string,
+  authorization: string,
+  options: UniSmsSendOptions,
+): Promise<{ status?: string; failReason?: string }> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const setTimer = options.setTimeoutImpl ?? setTimeout;
+  const clearTimer = options.clearTimeoutImpl ?? clearTimeout;
+  const budget = Number.isFinite(options.statusTimeoutMs) &&
+      options.statusTimeoutMs! > 0
+    ? options.statusTimeoutMs!
+    : STATUS_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimer(() => controller.abort(), budget);
+  try {
+    const response = await fetchImpl(`${UNISMS_ENDPOINT}/${referenceId}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: authorization },
+      signal: controller.signal,
+    });
+    if (!response.ok) return {};
+    const parsed = JSON.parse(await response.text());
+    const message = record(parsed?.message);
+    return {
+      status: typeof message?.status === 'string'
+        ? message.status.toLowerCase()
+        : undefined,
+      failReason: typeof message?.fail_reason === 'string' &&
+          message.fail_reason.length > 0
+        ? message.fail_reason
+        : undefined,
+    };
+  } catch {
+    return {};
+  } finally {
+    clearTimer(timer);
+  }
+}
+
 export async function sendUniSms(
   number: string,
   message: string,
@@ -92,16 +177,20 @@ export async function sendUniSms(
   const authorization = `Basic ${btoa(`${options.apiKey.trim()}:`)}`;
 
   const controller = new AbortController();
+  const setTimer = options.setTimeoutImpl ?? setTimeout;
+  const clearTimer = options.clearTimeoutImpl ?? clearTimeout;
   const budget = Number.isFinite(options.timeoutMs) && options.timeoutMs! > 0
     ? Math.min(options.timeoutMs!, 2000)
     : 2000;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<UniSmsSendResult>((resolve) => {
-    timer = setTimeout(() => {
+    timer = setTimer(() => {
       resolve({ ok: false, reason: 'timeout' });
       controller.abort();
     }, budget);
   });
+
+  const startedAt = (options.now ?? Date.now)();
 
   const send = async (): Promise<UniSmsSendResult> => {
     let response: Response;
@@ -134,15 +223,48 @@ export async function sendUniSms(
     } catch {
       return { ok: false, reason: 'invalid_response', status: response.status };
     }
-    return bodyAccepted(parsed)
-      ? { ok: true }
-      : { ok: false, reason: 'rejected', status: response.status };
+    if (!bodyAccepted(parsed)) {
+      return { ok: false, reason: 'rejected', status: response.status };
+    }
+    return { ok: true, referenceId: referenceIdOf(parsed) };
   };
 
+  let accepted: UniSmsSendResult;
   try {
     // Abort alone cannot bound a fetch mock or stalled response body.
-    return await Promise.race([send(), deadline]);
+    accepted = await Promise.race([send(), deadline]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimer(timer);
   }
+
+  if (!accepted.ok) return accepted;
+  if (options.verifyDelivery === false || !accepted.referenceId) return accepted;
+
+  // Settle the asynchronous part of the delivery, but keep the whole call
+  // well inside Supabase's five-second hook budget: the status check starts
+  // about 1.5s after the send began and is capped at 800ms.
+  const elapsed = (options.now ?? Date.now)() - startedAt;
+  const target = Number.isFinite(options.statusDelayMs) &&
+      options.statusDelayMs! >= 0
+    ? options.statusDelayMs!
+    : STATUS_CHECK_TARGET_MS;
+  const wait = Math.max(0, target - elapsed);
+  if (wait > 0) {
+    await (options.sleepImpl ?? defaultSleep)(wait);
+  }
+
+  const status = await readDeliveryStatus(
+    accepted.referenceId,
+    authorization,
+    options,
+  );
+  if (status.status === 'failed' || status.failReason) {
+    return {
+      ok: false,
+      reason: 'rejected',
+      status: 200,
+      failReason: status.failReason,
+    };
+  }
+  return accepted;
 }

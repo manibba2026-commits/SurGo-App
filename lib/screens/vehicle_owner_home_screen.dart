@@ -13,6 +13,7 @@ import '../widgets/common.dart';
 import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/surgo_notice.dart';
+import '../widgets/vehicle_photo.dart';
 import 'vehicle_owner_vehicles_screen.dart';
 import 'active_rental_screen.dart';
 
@@ -458,12 +459,19 @@ class VehicleOwnerHomeScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(13),
                     child: Row(
                       children: [
-                        SbToneIcon(
-                          tone: SbTone.vehicle,
-                          icon: iconForVehicle(v.category, v.vehicleType),
-                          size: 42,
-                          iconSize: 20,
-                        ),
+                        if (v.photoPaths.isNotEmpty)
+                          VehiclePhoto(
+                            storagePath: v.photoPaths.first,
+                            width: 42,
+                            height: 42,
+                          )
+                        else
+                          SbToneIcon(
+                            tone: SbTone.vehicle,
+                            icon: iconForVehicle(v.category, v.vehicleType),
+                            size: 42,
+                            iconSize: 20,
+                          ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

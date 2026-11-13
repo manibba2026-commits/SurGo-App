@@ -1,9 +1,10 @@
 /**
  * Phone helpers for the Send SMS hook.
  *
- * Supabase Auth delivers the recipient in E.164 form (`+639175124809`).
- * Semaphore expects the country code without the leading `+`, so both forms
- * normalize to the same 12-digit `63` + mobile number.
+ * Supabase Auth delivers the recipient with or without a leading `+`
+ * (`+639175124809` or `639175124809`). Semaphore expects the country code
+ * without the leading `+`, so both forms normalize to the same 12-digit
+ * `63` + mobile number.
  */
 
 const PH_MOBILE = /^9\d{9}$/;

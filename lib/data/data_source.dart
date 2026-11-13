@@ -13,13 +13,13 @@ class DataSourceConfig {
     defaultValue: 'mock',
   );
 
-  static const DataSourceMode mode =
-      _raw == 'supabase' ? DataSourceMode.supabase : DataSourceMode.mock;
+  static const DataSourceMode mode = _raw == 'supabase'
+      ? DataSourceMode.supabase
+      : DataSourceMode.mock;
 
   static bool get usesSupabase => mode == DataSourceMode.supabase;
 
   static bool get usesMock => mode == DataSourceMode.mock;
 
-  static String get description =>
-      usesSupabase ? 'Supabase (read-only)' : 'local mock';
+  static String get description => usesSupabase ? 'Supabase' : 'local mock';
 }

@@ -2,6 +2,7 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import 'backend.dart';
 import 'backend_rows.dart';
+import 'repository_failure.dart';
 
 /// In-app notification feed.
 abstract interface class NotificationRepository {
@@ -11,15 +12,25 @@ abstract interface class NotificationRepository {
   });
 
   Future<int> countUnread(String profileId);
+
+  /// Marks one notification read. The RPC refuses a notification owned by a
+  /// different profile; [profileId] is only used by the seeded implementation.
+  Future<void> markRead(String profileId, String notificationId);
+
+  /// Marks every unread notification for [profileId] read and returns the count
+  /// the database changed.
+  Future<int> markAllRead(String profileId);
 }
 
 class SupabaseNotificationRepository implements NotificationRepository {
-  SupabaseNotificationRepository(SurgoBackend backend) : _backend = backend;
+  SupabaseNotificationRepository(SurgoBackend backend, {this._writer})
+    : _backend = backend;
 
   static const String _columns =
       'id, notification_type, title, body, data, read_at, created_at';
 
   final SurgoBackend _backend;
+  final SurgoWriteBackend? _writer;
 
   @override
   Future<List<NotificationRecord>> fetchNotifications(
@@ -48,12 +59,49 @@ class SupabaseNotificationRepository implements NotificationRepository {
     );
     return rows.length;
   }
+
+  @override
+  Future<void> markRead(String profileId, String notificationId) async {
+    final result = await _requireWriter().rpc(
+      function: 'mark_notification_read',
+      params: {'p_notification_id': notificationId},
+    );
+    if (_rpcCount(result) == 0) {
+      throw RepositoryFailure.notFound();
+    }
+  }
+
+  @override
+  Future<int> markAllRead(String profileId) async {
+    final result = await _requireWriter().rpc(
+      function: 'mark_all_notifications_read',
+    );
+    return _rpcCount(result);
+  }
+
+  SurgoWriteBackend _requireWriter() {
+    final writer = _writer;
+    if (writer == null) {
+      throw RepositoryFailure.unsupported(
+        'This build cannot update notifications.',
+      );
+    }
+    return writer;
+  }
+
+  static int _rpcCount(Object? result) {
+    if (result is int) return result;
+    if (result is num) return result.toInt();
+    if (result is String) return int.tryParse(result) ?? 0;
+    if (result is List && result.isNotEmpty) return _rpcCount(result.first);
+    return 0;
+  }
 }
 
 /// Reads the notification slices the seed keeps per profile.
 class MockNotificationRepository implements NotificationRepository {
   MockNotificationRepository([DbService? database])
-      : _db = database ?? DbService.instance;
+    : _db = database ?? DbService.instance;
 
   final DbService _db;
 
@@ -71,6 +119,25 @@ class MockNotificationRepository implements NotificationRepository {
   Future<int> countUnread(String profileId) async =>
       _itemsFor(profileId).where((item) => !item.read).length;
 
+  @override
+  Future<void> markRead(String profileId, String notificationId) async {
+    for (final item in _itemsFor(profileId)) {
+      if (item.id == notificationId) item.read = true;
+    }
+  }
+
+  @override
+  Future<int> markAllRead(String profileId) async {
+    var changed = 0;
+    for (final item in _itemsFor(profileId)) {
+      if (!item.read) {
+        item.read = true;
+        changed++;
+      }
+    }
+    return changed;
+  }
+
   List<NotificationItem> _itemsFor(String profileId) {
     final stored = _db.notificationsByUser[profileId];
     if (stored != null) return stored;
@@ -80,13 +147,13 @@ class MockNotificationRepository implements NotificationRepository {
   }
 
   NotificationRecord _toRecord(NotificationItem item) => NotificationRecord(
-        id: item.id,
-        type: item.type,
-        title: item.title,
-        body: item.body,
-        isRead: item.read,
-        // The seed pairs its "2h ago" label with a real ISO time, so mock mode
-        // reports the same sort key the database column gives.
-        createdAt: item.createdAt,
-      );
+    id: item.id,
+    type: item.type,
+    title: item.title,
+    body: item.body,
+    isRead: item.read,
+    // The seed pairs its "2h ago" label with a real ISO time, so mock mode
+    // reports the same sort key the database column gives.
+    createdAt: item.createdAt,
+  );
 }

@@ -4,10 +4,12 @@ import '../data/db_models.dart';
 import '../repositories/repository_failure.dart';
 import '../services/fee_calculator.dart';
 import '../services/money.dart';
+import '../services/tandag_places.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/location_picker.dart';
+import '../widgets/surgo_map.dart';
 import '../widgets/surgo_notice.dart';
 import 'pasuyo_task_screen.dart';
 
@@ -40,6 +42,8 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
   String? _pickupPurokId;
   String? _dropoffBarangayId;
   String? _dropoffPurokId;
+  MapPoint? _pickupPoint;
+  MapPoint? _dropoffPoint;
   bool _bookedForSomeone = false;
   bool _submitting = false;
   int _budget = 15000;
@@ -72,35 +76,57 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
     final parts = label.split(',').map((p) => p.trim()).toList();
     final purok = parts.isNotEmpty ? parts.first : '';
     final barangay = parts.length > 1 ? parts[1] : '';
+    final anchor = TandagPlaces.barangayAnchors[barangay];
     setState(() {
       if (isPickup) {
         _pickup = label;
         _pickupPurok = purok;
         _pickupBarangay = barangay;
+        _pickupPoint = anchor == null ? null : _purokPoint(anchor, purok);
       } else {
         _dropoff = label;
         _dropoffPurok = purok;
         _dropoffBarangay = barangay;
+        _dropoffPoint = anchor == null ? null : _purokPoint(anchor, purok);
       }
     });
   }
 
+  /// A stable point inside the barangay for the preview map; the actual
+  /// errand uses the barangay and purok ids, not this coordinate.
+  static MapPoint _purokPoint(MapPoint anchor, String purok) {
+    var hash = 0;
+    for (final unit in purok.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    return MapPoint(
+      anchor.latitude + ((hash % 13) - 6) / 10000,
+      anchor.longitude + (((hash >> 5) % 13) - 6) / 10000,
+    );
+  }
+
   /// Hosted variant: keeps the chosen barangay and purok ids so the database
-  /// row can reference them instead of a free-text label.
-  void _applyHostedLocation(PickedLocation picked, {required bool isPickup}) {
+  /// row can reference them instead of a free-text label, and remembers the
+  /// pin for the shared map preview.
+  void _applyRideLocation(
+    RideLocationChoice picked, {
+    required bool isPickup,
+  }) {
     setState(() {
       if (isPickup) {
         _pickup = picked.label;
-        _pickupBarangay = picked.barangayName;
+        _pickupBarangay = picked.barangayName ?? '';
         _pickupPurok = picked.purokName ?? '';
         _pickupBarangayId = picked.barangayId;
         _pickupPurokId = picked.purokId;
+        _pickupPoint = picked.point;
       } else {
         _dropoff = picked.label;
-        _dropoffBarangay = picked.barangayName;
+        _dropoffBarangay = picked.barangayName ?? '';
         _dropoffPurok = picked.purokName ?? '';
         _dropoffBarangayId = picked.barangayId;
         _dropoffPurokId = picked.purokId;
+        _dropoffPoint = picked.point;
       }
     });
   }
@@ -123,12 +149,13 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
       }
       return;
     }
-    final picked = await showHostedLocationPicker(
+    final picked = await showRideLocationPicker(
       context,
       title: isPickup ? 'Pickup location' : 'Drop-off location',
+      initialPoint: isPickup ? _pickupPoint : _dropoffPoint,
     );
     if (current() && picked != null) {
-      _applyHostedLocation(picked, isPickup: isPickup);
+      _applyRideLocation(picked, isPickup: isPickup);
     }
   }
 
@@ -390,6 +417,38 @@ class _PasuyoPostScreenState extends State<PasuyoPostScreen> {
               ),
               onTap: () => _pickLocation(isPickup: false),
             ),
+            if (_pickupPoint != null && _dropoffPoint != null) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SurgoMap(
+                  height: 190,
+                  borderRadius: BorderRadius.circular(16),
+                  showUserLocation: false,
+                  initialZoom: 13.5,
+                  cameraPadding: const EdgeInsets.fromLTRB(18, 30, 18, 30),
+                  route: [_pickupPoint!, _dropoffPoint!],
+                  routeIsEstimate: true,
+                  markers: [
+                    SurgoMapMarker(
+                      id: 'pasuyo-pickup',
+                      position: _pickupPoint!,
+                      icon: Icons.storefront_outlined,
+                      title: 'Pickup',
+                      subtitle: _pickup,
+                      color: AppColors.secondary,
+                    ),
+                    SurgoMapMarker(
+                      id: 'pasuyo-dropoff',
+                      position: _dropoffPoint!,
+                      icon: Icons.place,
+                      title: 'Drop-off',
+                      subtitle: _dropoff,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

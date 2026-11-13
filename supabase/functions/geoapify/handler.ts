@@ -16,7 +16,8 @@ interface MapPoint {
 type Action =
   | { action: 'autocomplete'; text: string; limit: number }
   | { action: 'places'; categories: string[]; center: MapPoint; radius: number; limit: number }
-  | { action: 'route'; start: MapPoint; end: MapPoint; mode: 'drive' | 'motorcycle' | 'walk' };
+  | { action: 'route'; start: MapPoint; end: MapPoint; mode: 'drive' | 'motorcycle' | 'walk' }
+  | { action: 'reverse'; point: MapPoint };
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -39,6 +40,7 @@ const ENDPOINTS = {
   autocomplete: 'https://api.geoapify.com/v1/geocode/autocomplete',
   places: 'https://api.geoapify.com/v2/places',
   route: 'https://api.geoapify.com/v1/routing',
+  reverse: 'https://api.geoapify.com/v1/geocode/reverse',
 };
 
 class BodyTooLarge extends Error {}
@@ -154,6 +156,10 @@ function parseAction(body: unknown): Action | null {
       (body.mode !== 'drive' && body.mode !== 'motorcycle' && body.mode !== 'walk')) return null;
     return { action: 'route', start: body.start, end: body.end, mode: body.mode };
   }
+  if (body.action === 'reverse') {
+    if (!onlyKeys(body, ['action', 'point']) || !point(body.point)) return null;
+    return { action: 'reverse', point: body.point };
+  }
   return null;
 }
 
@@ -164,7 +170,9 @@ function providerUrl(action: Action, apiKey: string): URL {
   if (action.action === 'autocomplete') {
     params.set('text', action.text);
     params.set('limit', String(action.limit));
-    params.set('filter', 'countrycode:ph');
+    // Tandag service area: keep suggestions local instead of returning
+    // nationwide matches for a short query.
+    params.set('filter', 'rect:125.95,8.95,126.35,9.25');
     // Geoapify proximity/filter coordinates are longitude,latitude.
     params.set('bias', 'proximity:126.1985,9.0785');
     params.set('format', 'geojson');
@@ -173,6 +181,11 @@ function providerUrl(action: Action, apiKey: string): URL {
     params.set('filter', `circle:${action.center.longitude},${action.center.latitude},${action.radius}`);
     params.set('bias', `proximity:${action.center.longitude},${action.center.latitude}`);
     params.set('limit', String(action.limit));
+  } else if (action.action === 'reverse') {
+    params.set('lat', String(action.point.latitude));
+    params.set('lon', String(action.point.longitude));
+    params.set('limit', '1');
+    params.set('format', 'geojson');
   } else {
     // Routing waypoints are the opposite order: latitude,longitude.
     params.set('waypoints', `${action.start.latitude},${action.start.longitude}|${action.end.latitude},${action.end.longitude}`);
@@ -322,6 +335,7 @@ export function createGeoapifyHandler(config: GeoapifyHandlerConfig): (request: 
         return readBoundedJson(response, MAX_UPSTREAM_BYTES, signal);
       }, upstreamTimeoutMs);
       if (!record(body) || body.type !== 'FeatureCollection' || !Array.isArray(body.features)) throw new Error('invalid_response');
+      if (action.action === 'reverse') return json(normalizePlaces(body.features, 1, config.apiKey));
       if (action.action !== 'route') return json(normalizePlaces(body.features, action.limit, config.apiKey));
       if (body.features.length === 0) return json({ error: 'route_not_found' }, 404);
       return json(normalizeRoute(body.features));

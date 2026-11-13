@@ -5,12 +5,15 @@ import '../data/db_models.dart';
 import '../data/db_service.dart';
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_failure.dart';
+import '../repositories/repository_mappers.dart';
 import '../repositories/repository_registry.dart';
 import '../services/money.dart';
+import '../services/vehicle_map_locations.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/common.dart';
 import '../widgets/surgo_map.dart';
+import 'rental_detail_screen.dart';
 
 /// Passenger-side Map V1: real OpenStreetMap centered on the user's live
 /// GPS, with riders and rental vehicles shown as tappable pins.
@@ -29,11 +32,17 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
   String filter = 'All'; // All, Riders, Rentals
 
   Timer? _refreshTimer;
+  Timer? _rentalTimer;
   List<RiderCandidateRecord> _candidates = const [];
+  List<VehicleRecord> _rentals = const [];
   bool _loadingRiders = false;
   bool _readingRiders = false;
+  bool _loadingRentals = false;
+  bool _readingRentals = false;
+  bool _rentalRequested = false;
   int _readGeneration = 0;
   String? _riderError;
+  String? _rentalError;
   (RepositoryRegistry, String?, String?, UserMode, bool)? _session;
 
   bool get _hosted => AppState.instance.usesHostedRideDispatch;
@@ -41,6 +50,7 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
       _hosted &&
       AppState.instance.isSignedIn &&
       AppState.instance.mode == UserMode.passenger;
+  bool get _canReadRentals => _hosted && AppState.instance.isSignedIn;
 
   (RepositoryRegistry, String?, String?, UserMode, bool) get _sessionKey {
     final state = AppState.instance;
@@ -68,9 +78,15 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
     _readGeneration++;
     _refreshTimer?.cancel();
     _refreshTimer = null;
+    _rentalTimer?.cancel();
+    _rentalTimer = null;
     _candidates = const [];
+    _rentals = const [];
+    _rentalRequested = false;
     _riderError = null;
+    _rentalError = null;
     _loadingRiders = _canRead;
+    _loadingRentals = false;
     if (rebuild) setState(() {});
     if (_canRead) {
       scheduleMicrotask(() => unawaited(_loadRiders()));
@@ -82,14 +98,70 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
         (_) => unawaited(_loadRiders(silent: true)),
       );
     }
+    // Rental listings only load when the passenger asks for them, so opening
+    // the map does not depend on a second hosted read.
+    if (filter == 'Rentals') _ensureRentals();
+  }
+
+  void _selectFilter(String label) {
+    setState(() => filter = label);
+    if (label == 'Rentals') _ensureRentals();
+  }
+
+  void _ensureRentals() {
+    if (!_canReadRentals) return;
+    if (!_rentalRequested) {
+      _rentalRequested = true;
+      _loadingRentals = true;
+      _rentalTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => unawaited(_loadRentals(silent: true)),
+      );
+    }
+    unawaited(_loadRentals());
   }
 
   @override
   void dispose() {
     AppState.instance.removeListener(_onSessionChanged);
     _refreshTimer?.cancel();
+    _rentalTimer?.cancel();
     _readGeneration++;
     super.dispose();
+  }
+
+  Future<void> _loadRentals({bool silent = false}) async {
+    _syncSession();
+    if (!mounted || !_canReadRentals || _readingRentals) return;
+    _readingRentals = true;
+    final generation = _readGeneration;
+    final registry = AppState.instance.repositories;
+    bool valid() =>
+        mounted && generation == _readGeneration && _session == _sessionKey;
+    if (!silent) setState(() => _loadingRentals = true);
+    try {
+      final records = await registry.vehicles.fetchListedVehicles().timeout(
+        const Duration(seconds: 20),
+      );
+      if (!valid()) return;
+      setState(() {
+        _rentals = records;
+        _rentalError = null;
+        _loadingRentals = false;
+      });
+    } catch (error) {
+      if (!valid()) return;
+      setState(() {
+        _rentalError = error is TimeoutException
+            ? 'Rental listings timed out. Try refreshing.'
+            : error is RepositoryFailure
+            ? error.message
+            : RepositoryFailure.unavailable(error).message;
+        _loadingRentals = false;
+      });
+    } finally {
+      _readingRentals = false;
+    }
   }
 
   Future<void> _loadRiders({bool silent = false}) async {
@@ -166,7 +238,11 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
             ),
           );
 
-    final rentalMarkers = _hosted || filter == 'Riders'
+    final rentalMarkers = _hosted
+        ? (filter == 'Riders'
+              ? const <SurgoMapMarker>[]
+              : _hostedRentalMarkers())
+        : filter == 'Riders'
         ? const <SurgoMapMarker>[]
         : db.mapRentalVehicles.map(
             (v) => SurgoMapMarker(
@@ -241,7 +317,10 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
                     const SizedBox(width: 8),
                     SbIconButton(
                       icon: Icons.refresh,
-                      onTap: () => unawaited(_loadRiders()),
+                      onTap: () {
+                        unawaited(_loadRiders());
+                        if (_rentalRequested) unawaited(_loadRentals());
+                      },
                     ),
                   ],
                 ],
@@ -300,20 +379,70 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
     ];
   }
 
+  List<SurgoMapMarker> _hostedRentalMarkers() {
+    return [
+      for (final record in _rentals)
+        () {
+          final location = approximateVehicleLocation(record.id);
+          final listing = rentalListingFromRecord(record);
+          return SurgoMapMarker(
+            id: 'rental-${record.id}',
+            position: location.point,
+            icon: surgoMarkerIcon(record.vehicleType.toLowerCase()),
+            title: record.name,
+            subtitle:
+                '${_titleCase(record.vehicleType)} · ${location.barangay}',
+            details: [
+              MapEntry('Per day', Money.format(record.pricePerDayCentavos)),
+              MapEntry('Rating', '⭐ ${record.rating.toStringAsFixed(1)}'),
+              MapEntry('Rentals', '${record.totalRentals}'),
+              MapEntry('Owner', record.ownerName ?? 'Vehicle owner'),
+              MapEntry('Pickup', location.label),
+            ],
+            actionLabel: 'View vehicle',
+            onAction: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => RentalDetailScreen(vehicle: listing),
+              ),
+            ),
+          );
+        }(),
+    ];
+  }
+
   Widget _hostedRentalNotice() {
+    final message = _rentalError != null
+        ? _rentalError!
+        : _loadingRentals
+        ? 'Loading rental vehicles…'
+        : _rentals.isEmpty
+        ? 'No vehicles are listed right now. Browse the catalogue instead.'
+        : '${_rentals.length} rental vehicle${_rentals.length == 1 ? '' : 's'} · '
+              'pin locations are approximate pickup areas';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: AppColors.panel.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: _rentalError == null ? AppColors.border : AppColors.danger,
+        ),
       ),
       child: Row(
         children: [
-          const Expanded(
+          Icon(
+            _rentalError == null
+                ? Icons.directions_car_filled_outlined
+                : Icons.cloud_off_outlined,
+            size: 16,
+            color: _rentalError == null ? AppColors.yellow : AppColors.danger,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
-              'Rental locations are not available. Browse the catalogue instead.',
-              style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+              message,
+              style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
             ),
           ),
           TextButton(
@@ -378,7 +507,7 @@ class _PassengerMapScreenState extends State<PassengerMapScreen> {
     final selected = filter == label;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => filter = label),
+        onTap: () => _selectFilter(label),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 1),
           alignment: Alignment.center,

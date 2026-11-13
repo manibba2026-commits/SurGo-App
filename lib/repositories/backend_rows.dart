@@ -62,6 +62,18 @@ DateTime? optionalTime(Map<String, dynamic> row, String column) {
   return null;
 }
 
+/// A Postgres `text[]` column. Unknown entries are dropped rather than turned
+/// into empty paths that would later be handed to Storage.
+List<String> _textList(Object? value) {
+  if (value is List) {
+    return [
+      for (final entry in value)
+        if (entry is String && entry.isNotEmpty) entry,
+    ];
+  }
+  return const [];
+}
+
 /// A Postgres `date` rendered as `YYYY-MM-DD`.
 DateTime? optionalDay(Map<String, dynamic> row, String column) =>
     optionalTime(row, column);
@@ -71,7 +83,7 @@ List<Map<String, dynamic>> embeddedRows(Map<String, dynamic> row, String key) {
   if (value is List) {
     return [
       for (final e in value)
-        if (e is Map<String, dynamic>) e
+        if (e is Map<String, dynamic>) e,
     ];
   }
   if (value is Map<String, dynamic>) return [value];
@@ -93,88 +105,85 @@ Map<String, dynamic>? embeddedRow(Map<String, dynamic> row, String key) {
 /// default status, because a wrong status shows the wrong action button and
 /// could accept a ride nobody has assigned.
 RideStatus rideStatusFromDb(String token) => switch (token) {
-      'searching' => RideStatus.searching,
-      'awaiting_acceptance' => RideStatus.awaitingAcceptance,
-      'accepted' => RideStatus.accepted,
-      'heading_to_pickup' => RideStatus.headingToPickup,
-      'arrived' => RideStatus.arrived,
-      'in_progress' => RideStatus.inProgress,
-      'completed' => RideStatus.completed,
-      'cancelled' => RideStatus.cancelled,
-      _ => throw RepositoryFailure.invalidData('Unknown ride status "$token".'),
-    };
+  'searching' => RideStatus.searching,
+  'awaiting_acceptance' => RideStatus.awaitingAcceptance,
+  'accepted' => RideStatus.accepted,
+  'heading_to_pickup' => RideStatus.headingToPickup,
+  'arrived' => RideStatus.arrived,
+  'in_progress' => RideStatus.inProgress,
+  'completed' => RideStatus.completed,
+  'cancelled' => RideStatus.cancelled,
+  _ => throw RepositoryFailure.invalidData('Unknown ride status "$token".'),
+};
 
 /// The server's spelling of a rental status; the enum's Dart name is already
 /// the wire value except for `awaitingOwner`.
 String rentalStatusToDb(RentalStatus status) => switch (status) {
-      RentalStatus.awaitingOwner => 'awaiting_owner',
-      RentalStatus.requested => 'requested',
-      RentalStatus.accepted => 'accepted',
-      RentalStatus.active => 'active',
-      RentalStatus.returned => 'returned',
-      RentalStatus.completed => 'completed',
-      RentalStatus.declined => 'declined',
-      RentalStatus.cancelled => 'cancelled',
-    };
+  RentalStatus.awaitingOwner => 'awaiting_owner',
+  RentalStatus.requested => 'requested',
+  RentalStatus.accepted => 'accepted',
+  RentalStatus.active => 'active',
+  RentalStatus.returned => 'returned',
+  RentalStatus.completed => 'completed',
+  RentalStatus.declined => 'declined',
+  RentalStatus.cancelled => 'cancelled',
+};
 
 RentalStatus rentalStatusFromDb(String token) => switch (token) {
-      'requested' => RentalStatus.requested,
-      'awaiting_owner' => RentalStatus.awaitingOwner,
-      'accepted' => RentalStatus.accepted,
-      'active' => RentalStatus.active,
-      'returned' => RentalStatus.returned,
-      'completed' => RentalStatus.completed,
-      'declined' => RentalStatus.declined,
-      'cancelled' => RentalStatus.cancelled,
-      _ =>
-        throw RepositoryFailure.invalidData('Unknown rental status "$token".'),
-    };
+  'requested' => RentalStatus.requested,
+  'awaiting_owner' => RentalStatus.awaitingOwner,
+  'accepted' => RentalStatus.accepted,
+  'active' => RentalStatus.active,
+  'returned' => RentalStatus.returned,
+  'completed' => RentalStatus.completed,
+  'declined' => RentalStatus.declined,
+  'cancelled' => RentalStatus.cancelled,
+  _ => throw RepositoryFailure.invalidData('Unknown rental status "$token".'),
+};
 
 /// The server's spelling of an errand status; the enum's Dart name is already
 /// the wire value except for the camel-cased middle steps.
 String pasuyoStatusToDb(PasuyoStatus status) => switch (status) {
-      PasuyoStatus.available => 'available',
-      PasuyoStatus.accepted => 'accepted',
-      PasuyoStatus.goingToPickup => 'going_to_pickup',
-      PasuyoStatus.atPickup => 'at_pickup',
-      PasuyoStatus.pickedUp => 'picked_up',
-      PasuyoStatus.delivering => 'delivering',
-      PasuyoStatus.atCustomer => 'at_customer',
-      PasuyoStatus.delivered => 'delivered',
-      PasuyoStatus.cancelled => 'cancelled',
-    };
+  PasuyoStatus.available => 'available',
+  PasuyoStatus.accepted => 'accepted',
+  PasuyoStatus.goingToPickup => 'going_to_pickup',
+  PasuyoStatus.atPickup => 'at_pickup',
+  PasuyoStatus.pickedUp => 'picked_up',
+  PasuyoStatus.delivering => 'delivering',
+  PasuyoStatus.atCustomer => 'at_customer',
+  PasuyoStatus.delivered => 'delivered',
+  PasuyoStatus.cancelled => 'cancelled',
+};
 
 PasuyoStatus pasuyoStatusFromDb(String token) => switch (token) {
-      'available' => PasuyoStatus.available,
-      'accepted' => PasuyoStatus.accepted,
-      'going_to_pickup' => PasuyoStatus.goingToPickup,
-      'at_pickup' => PasuyoStatus.atPickup,
-      'picked_up' => PasuyoStatus.pickedUp,
-      'delivering' => PasuyoStatus.delivering,
-      'at_customer' => PasuyoStatus.atCustomer,
-      'delivered' => PasuyoStatus.delivered,
-      'cancelled' => PasuyoStatus.cancelled,
-      _ =>
-        throw RepositoryFailure.invalidData('Unknown errand status "$token".'),
-    };
+  'available' => PasuyoStatus.available,
+  'accepted' => PasuyoStatus.accepted,
+  'going_to_pickup' => PasuyoStatus.goingToPickup,
+  'at_pickup' => PasuyoStatus.atPickup,
+  'picked_up' => PasuyoStatus.pickedUp,
+  'delivering' => PasuyoStatus.delivering,
+  'at_customer' => PasuyoStatus.atCustomer,
+  'delivered' => PasuyoStatus.delivered,
+  'cancelled' => PasuyoStatus.cancelled,
+  _ => throw RepositoryFailure.invalidData('Unknown errand status "$token".'),
+};
 
 /// The database spells the food errand category `food_delivery`, while the
 /// seed vocabulary and [PasuyoCategory.jsonKey] use `food`.
 String pasuyoCategoryTokenToDb(PasuyoCategory category) =>
     category == PasuyoCategory.foodDelivery
-        ? 'food_delivery'
-        : category.jsonKey;
+    ? 'food_delivery'
+    : category.jsonKey;
 
 PasuyoCategory pasuyoCategoryFromDb(String token) => switch (token) {
-      'groceries' => PasuyoCategory.groceries,
-      'food_delivery' || 'food' => PasuyoCategory.foodDelivery,
-      'pharmacy' => PasuyoCategory.pharmacy,
-      'parcel' => PasuyoCategory.parcel,
-      'laundry' => PasuyoCategory.laundry,
-      'other' => PasuyoCategory.other,
-      _ => throw RepositoryFailure.invalidData(
-          'Unknown errand category "$token".'),
-    };
+  'groceries' => PasuyoCategory.groceries,
+  'food_delivery' || 'food' => PasuyoCategory.foodDelivery,
+  'pharmacy' => PasuyoCategory.pharmacy,
+  'parcel' => PasuyoCategory.parcel,
+  'laundry' => PasuyoCategory.laundry,
+  'other' => PasuyoCategory.other,
+  _ => throw RepositoryFailure.invalidData('Unknown errand category "$token".'),
+};
 
 // ---------------------------------------------------------------------------
 // Identity and profiles
@@ -210,18 +219,18 @@ class ProfileRecord {
   bool get isSuspended => accountStatus == 'suspended';
 
   factory ProfileRecord.fromRow(Map<String, dynamic> row) => ProfileRecord(
-        id: requireText(row, 'id'),
-        fullName: requireText(row, 'full_name'),
-        firstName: optionalText(row, 'first_name'),
-        email: optionalText(row, 'email'),
-        phone: optionalText(row, 'phone'),
-        avatarPath: optionalText(row, 'avatar_path'),
-        accountStatus: optionalText(row, 'account_status') ?? 'active',
-        rating: optionalDouble(row, 'rating') ?? 5,
-        totalRides: optionalInt(row, 'total_rides'),
-        lastSeenAt: optionalTime(row, 'last_seen_at'),
-        createdAt: optionalTime(row, 'created_at'),
-      );
+    id: requireText(row, 'id'),
+    fullName: requireText(row, 'full_name'),
+    firstName: optionalText(row, 'first_name'),
+    email: optionalText(row, 'email'),
+    phone: optionalText(row, 'phone'),
+    avatarPath: optionalText(row, 'avatar_path'),
+    accountStatus: optionalText(row, 'account_status') ?? 'active',
+    rating: optionalDouble(row, 'rating') ?? 5,
+    totalRides: optionalInt(row, 'total_rides'),
+    lastSeenAt: optionalTime(row, 'last_seen_at'),
+    createdAt: optionalTime(row, 'created_at'),
+  );
 }
 
 class RoleGrantRecord {
@@ -241,10 +250,10 @@ class RoleGrantRecord {
   bool get isApproved => status == 'approved';
 
   factory RoleGrantRecord.fromRow(Map<String, dynamic> row) => RoleGrantRecord(
-        role: requireText(row, 'role'),
-        status: requireText(row, 'status'),
-        approvedAt: optionalTime(row, 'approved_at'),
-      );
+    role: requireText(row, 'role'),
+    status: requireText(row, 'status'),
+    approvedAt: optionalTime(row, 'approved_at'),
+  );
 }
 
 class ProviderProfileRecord {
@@ -282,7 +291,7 @@ class ProviderProfileRecord {
       capabilityTokens: raw is List
           ? [
               for (final c in raw)
-                if (c is String) c
+                if (c is String) c,
             ]
           : const [],
       serviceAreaId: optionalText(row, 'service_area_id'),
@@ -344,10 +353,10 @@ class PurokRecord {
   final String? barangayId;
 
   factory PurokRecord.fromRow(Map<String, dynamic> row) => PurokRecord(
-        id: requireText(row, 'id'),
-        name: requireText(row, 'name'),
-        barangayId: optionalText(row, 'barangay_id'),
-      );
+    id: requireText(row, 'id'),
+    name: requireText(row, 'name'),
+    barangayId: optionalText(row, 'barangay_id'),
+  );
 }
 
 class BarangayRecord {
@@ -364,13 +373,13 @@ class BarangayRecord {
   final List<PurokRecord> puroks;
 
   factory BarangayRecord.fromRow(Map<String, dynamic> row) => BarangayRecord(
-        id: requireText(row, 'id'),
-        name: requireText(row, 'name'),
-        serviceAreaId: requireText(row, 'service_area_id'),
-        puroks: [
-          for (final p in embeddedRows(row, 'puroks')) PurokRecord.fromRow(p),
-        ],
-      );
+    id: requireText(row, 'id'),
+    name: requireText(row, 'name'),
+    serviceAreaId: requireText(row, 'service_area_id'),
+    puroks: [
+      for (final p in embeddedRows(row, 'puroks')) PurokRecord.fromRow(p),
+    ],
+  );
 }
 
 class PricingPolicyRecord {
@@ -417,8 +426,10 @@ class PricingPolicyRecord {
         perKmCentavos: optionalInt(row, 'per_km_centavos'),
         perMinuteCentavos: optionalInt(row, 'per_minute_centavos'),
         minimumFareCentavos: optionalInt(row, 'minimum_fare_centavos'),
-        platformFeeFixedCentavos:
-            optionalInt(row, 'platform_fee_fixed_centavos'),
+        platformFeeFixedCentavos: optionalInt(
+          row,
+          'platform_fee_fixed_centavos',
+        ),
         platformFeeBps: optionalInt(row, 'platform_fee_bps'),
         effectiveFrom: optionalTime(row, 'effective_from'),
         effectiveTo: optionalTime(row, 'effective_to'),
@@ -446,6 +457,7 @@ class VehicleRecord {
     this.status = 'pending_verification',
     this.rating = 5,
     this.totalRentals = 0,
+    this.photoPaths = const [],
     this.ownerName,
     this.serviceAreaName,
   });
@@ -464,6 +476,10 @@ class VehicleRecord {
   final int? modelYear;
   final String? color;
   final int pricePerDayCentavos;
+
+  /// Storage paths in the private `vehicle-photos` bucket, in display order.
+  /// Empty for a listing without photos and for every seeded vehicle.
+  final List<String> photoPaths;
 
   /// Raw `vehicle_status` enum token.
   final String status;
@@ -487,14 +503,14 @@ class VehicleRecord {
   /// seed's own availability words, kept label-correct so the same record reads
   /// the same way in both modes.
   String get statusLabel => switch (status) {
-        'active' => 'Listed',
-        'rented' => 'Rented',
-        'maintenance' => 'Maintenance',
-        'pending_verification' => 'Pending verification',
-        'inactive' => 'Unlisted',
-        'suspended' => 'Suspended',
-        _ => status,
-      };
+    'active' => 'Listed',
+    'rented' => 'Rented',
+    'maintenance' => 'Maintenance',
+    'pending_verification' => 'Pending verification',
+    'inactive' => 'Unlisted',
+    'suspended' => 'Suspended',
+    _ => status,
+  };
 
   factory VehicleRecord.fromRow(Map<String, dynamic> row) {
     final owner = embeddedRow(row, 'owner');
@@ -514,12 +530,14 @@ class VehicleRecord {
           : optionalInt(row, 'model_year'),
       color: optionalText(row, 'color'),
       pricePerDayCentavos: optionalInt(row, 'price_per_day_centavos'),
+      photoPaths: _textList(row['photo_paths']),
       status: optionalText(row, 'status') ?? 'pending_verification',
       rating: optionalDouble(row, 'rating') ?? 5,
       totalRentals: optionalInt(row, 'total_rentals'),
       ownerName: owner == null ? null : optionalText(owner, 'full_name'),
-      serviceAreaName:
-          serviceArea == null ? null : optionalText(serviceArea, 'name'),
+      serviceAreaName: serviceArea == null
+          ? null
+          : optionalText(serviceArea, 'name'),
     );
   }
 }
@@ -663,8 +681,9 @@ class RideRecord {
       pickupAddress: requireText(row, 'pickup_address'),
       pickupBarangayId: optionalText(row, 'pickup_barangay_id'),
       pickupPurokId: optionalText(row, 'pickup_purok_id'),
-      pickupBarangayName:
-          pickupBarangay == null ? null : optionalText(pickupBarangay, 'name'),
+      pickupBarangayName: pickupBarangay == null
+          ? null
+          : optionalText(pickupBarangay, 'name'),
       pickupLatitude: optionalDouble(row, 'pickup_latitude'),
       pickupLongitude: optionalDouble(row, 'pickup_longitude'),
       dropoffAddress: requireText(row, 'dropoff_address'),
@@ -687,8 +706,9 @@ class RideRecord {
       completedAt: optionalTime(row, 'completed_at'),
       cancelledAt: optionalTime(row, 'cancelled_at'),
       cancellationReason: optionalText(row, 'cancellation_reason'),
-      passengerName:
-          passenger == null ? null : optionalText(passenger, 'full_name'),
+      passengerName: passenger == null
+          ? null
+          : optionalText(passenger, 'full_name'),
       riderName: rider == null ? null : optionalText(rider, 'full_name'),
     );
   }
@@ -879,11 +899,15 @@ class RentalRecord {
       cancelledAt: optionalTime(row, 'cancelled_at'),
       cancellationReason: optionalText(row, 'cancellation_reason'),
       vehicleName: vehicle == null ? null : optionalText(vehicle, 'name'),
-      vehiclePlateNumber:
-          vehicle == null ? null : optionalText(vehicle, 'plate_number'),
-      vehicleType:
-          vehicle == null ? null : optionalText(vehicle, 'vehicle_type'),
-      vehicleCategory: vehicle == null ? null : optionalText(vehicle, 'category'),
+      vehiclePlateNumber: vehicle == null
+          ? null
+          : optionalText(vehicle, 'plate_number'),
+      vehicleType: vehicle == null
+          ? null
+          : optionalText(vehicle, 'vehicle_type'),
+      vehicleCategory: vehicle == null
+          ? null
+          : optionalText(vehicle, 'category'),
       renterName: renter == null ? null : optionalText(renter, 'full_name'),
       ownerName: owner == null ? null : optionalText(owner, 'full_name'),
     );
@@ -924,12 +948,12 @@ class ServiceRequestItemRecord {
         unit: optionalText(row, 'unit'),
         estimatedUnitPriceCentavos:
             optionalInt(row, 'estimated_unit_price_centavos', or: -1) == -1
-                ? null
-                : optionalInt(row, 'estimated_unit_price_centavos'),
+            ? null
+            : optionalInt(row, 'estimated_unit_price_centavos'),
         actualUnitPriceCentavos:
             optionalInt(row, 'actual_unit_price_centavos', or: -1) == -1
-                ? null
-                : optionalInt(row, 'actual_unit_price_centavos'),
+            ? null
+            : optionalInt(row, 'actual_unit_price_centavos'),
         notes: optionalText(row, 'notes'),
       );
 }
@@ -1042,8 +1066,9 @@ class ServiceRequestRecord {
       pickupAddress: requireText(row, 'pickup_address'),
       pickupBarangayId: optionalText(row, 'pickup_barangay_id'),
       pickupPurokId: optionalText(row, 'pickup_purok_id'),
-      pickupBarangayName:
-          pickupBarangay == null ? null : optionalText(pickupBarangay, 'name'),
+      pickupBarangayName: pickupBarangay == null
+          ? null
+          : optionalText(pickupBarangay, 'name'),
       pickupLatitude: optionalDouble(row, 'pickup_latitude'),
       pickupLongitude: optionalDouble(row, 'pickup_longitude'),
       dropoffAddress: optionalText(row, 'dropoff_address'),
@@ -1068,10 +1093,12 @@ class ServiceRequestRecord {
         for (final item in embeddedRows(row, 'items'))
           ServiceRequestItemRecord.fromRow(item),
       ],
-      customerName:
-          customer == null ? null : optionalText(customer, 'full_name'),
-      providerName:
-          provider == null ? null : optionalText(provider, 'full_name'),
+      customerName: customer == null
+          ? null
+          : optionalText(customer, 'full_name'),
+      providerName: provider == null
+          ? null
+          : optionalText(provider, 'full_name'),
       bookedForSomeone: optionalBool(row, 'booked_for_someone'),
       recipientName: optionalText(row, 'recipient_name'),
       recipientPhone: optionalText(row, 'recipient_phone'),
@@ -1555,7 +1582,8 @@ class AttachmentRecord {
     return '$sizeBytes B';
   }
 
-  factory AttachmentRecord.fromRow(Map<String, dynamic> row) => AttachmentRecord(
+  factory AttachmentRecord.fromRow(Map<String, dynamic> row) =>
+      AttachmentRecord(
         id: requireText(row, 'id'),
         ownerProfileId: requireText(row, 'owner_profile_id'),
         bucketId: requireText(row, 'bucket_id'),

@@ -22,6 +22,7 @@ const FUNCTION_SECRETS = new Set([
   'SMS_PROVIDER',
   'UNISMS_API_KEY',
   'UNISMS_SENDER_ID',
+  'UNISMS_VERIFY_DELIVERY',
 ]);
 
 // Local-only helpers that must never be uploaded.
@@ -73,6 +74,10 @@ function validate(values) {
   if (provider !== 'unisms') return;
   if (!values.has('UNISMS_API_KEY')) {
     throw new Error('SMS_PROVIDER=unisms requires UNISMS_API_KEY');
+  }
+  const verify = values.get('UNISMS_VERIFY_DELIVERY');
+  if (verify !== undefined && verify !== 'true' && verify !== 'false') {
+    throw new Error('UNISMS_VERIFY_DELIVERY must be true or false');
   }
 }
 

@@ -19,6 +19,12 @@ export interface SendSmsHandlerConfig {
   fetchImpl?: typeof fetch;
   nowSeconds?: number;
   timeoutMs?: number;
+  /**
+   * Read UniSMS's delivery status before reporting success. Defaults to true
+   * so an asynchronous content rejection is surfaced instead of pretending
+   * the code was delivered.
+   */
+  verifyDelivery?: boolean;
 }
 
 function json(body: Record<string, unknown>, status: number): Response {
@@ -28,11 +34,20 @@ function json(body: Record<string, unknown>, status: number): Response {
   });
 }
 
+/**
+ * Supabase Auth only forwards a hook error to the app when the hook answers
+ * HTTP 200 with `{ error: { http_code, message } }`. A bare 400/502 is
+ * replaced by a generic 500, so every expected failure uses this shape.
+ */
+function hookError(httpCode: number, message: string): Response {
+  return json({ error: { http_code: httpCode, message } }, 200);
+}
+
 const MAX_BODY_BYTES = 32 * 1024;
 
 /**
  * Handles one Send SMS hook request. Supabase Auth owns OTP generation,
- * expiry and verification; this function only verifies the webhook signature
+ * expiry and verification; this function only verifies the signature
  * and hands the already-generated code to the selected provider.
  */
 export async function handleSendSms(
@@ -47,15 +62,18 @@ export async function handleSendSms(
     ? Boolean(config.semaphoreApiKey)
     : provider === 'unisms' && isUniSmsConfigured(config.unisms);
   if (!config.hookSecret || !configured) {
-    return json({ error: 'not_configured' }, 500);
+    return hookError(
+      500,
+      'Sign-in is temporarily unavailable. Please try again.',
+    );
   }
 
   const rawBody = await request.text();
   if (!rawBody) {
-    return json({ error: 'invalid_payload' }, 400);
+    return hookError(400, 'That request could not be processed. Try again.');
   }
   if (rawBody.length > MAX_BODY_BYTES) {
-    return json({ error: 'payload_too_large' }, 413);
+    return hookError(413, 'That request is too large. Try again.');
   }
 
   const verified = await verifyStandardWebhook(rawBody, request.headers, {
@@ -63,6 +81,8 @@ export async function handleSendSms(
     nowSeconds: config.nowSeconds,
   });
   if (!verified.ok) {
+    // Signature failures are configuration errors, not user errors. Keep the
+    // 401 so the reason is visible in the function logs.
     return json({ error: 'invalid_signature' }, 401);
   }
 
@@ -70,25 +90,28 @@ export async function handleSendSms(
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    return json({ error: 'invalid_payload' }, 400);
+    return hookError(400, 'That request could not be processed. Try again.');
   }
 
   const extracted = extractSmsHookPayload(payload);
   if (!extracted) {
-    return json({ error: 'invalid_payload' }, 400);
+    return hookError(400, 'That request could not be processed. Try again.');
   }
 
   const number = normalizePhilippineNumber(extracted.phone);
   if (!number) {
-    return json({ error: 'invalid_phone' }, 400);
+    return hookError(
+      400,
+      'Invalid phone number. Enter a valid Philippine mobile number.',
+    );
   }
   // Demo identities sign in with a PIN; their phone must never receive an OTP.
   if (isDemoNumber(number)) {
     console.error('send-sms: refused a demo number');
-    return json({ error: 'demo_number_blocked' }, 403);
+    return hookError(403, 'This number cannot receive a SurGo code.');
   }
   if (!isValidOtp(extracted.otp)) {
-    return json({ error: 'invalid_otp' }, 400);
+    return hookError(400, 'That code could not be sent. Try again.');
   }
 
   // Exactly one provider call: configuration/rejection never triggers fallback.
@@ -97,6 +120,7 @@ export async function handleSendSms(
       ...config.unisms!,
       fetchImpl: config.fetchImpl,
       timeoutMs: config.timeoutMs,
+      verifyDelivery: config.verifyDelivery ?? true,
     })
     : await sendSemaphoreSms(number, buildOtpMessage(extracted.otp), {
       apiKey: config.semaphoreApiKey!,
@@ -106,14 +130,26 @@ export async function handleSendSms(
     });
 
   if (!accepted.ok) {
-    // Reason and HTTP status are safe to log; the payload, phone and OTP are not.
+    // Reason and HTTP status only: provider failure text can echo the message
+    // body, which contains the OTP, so it must never reach the logs.
     console.error(`send-sms: ${provider} acceptance failed`, {
       reason: accepted.reason,
       status: accepted.status,
     });
-    return json({ error: 'sms_delivery_failed' }, 502);
+    return hookError(
+      422,
+      'We could not send the SurGo code to this number. Try again in a moment.',
+    );
   }
 
-  // The provider accepted the SMS; this is not a delivery receipt.
+  // The provider accepted the message. For UniSMS this is backed by a status
+  // check; for Semaphore it is the synchronous queue acceptance. Neither is a
+  // handset delivery receipt.
+  const referenceId = 'referenceId' in accepted
+    ? accepted.referenceId
+    : undefined;
+  if (provider === 'unisms' && referenceId) {
+    console.log('send-sms: unisms accepted', { referenceId });
+  }
   return json({ ok: true }, 200);
 }

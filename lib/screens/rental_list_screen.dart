@@ -3,6 +3,7 @@ import '../data/models.dart';
 import '../repositories/backend_rows.dart';
 import '../repositories/repository_mappers.dart';
 import '../services/money.dart';
+import '../services/vehicle_map_locations.dart';
 import '../state/app_state.dart';
 import '../state/domain_cache.dart';
 import '../state/rental_availability.dart';
@@ -11,6 +12,8 @@ import '../theme/app_tokens.dart';
 import '../widgets/common.dart';
 import '../widgets/repository_states.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/surgo_map.dart';
+import '../widgets/vehicle_photo.dart';
 import 'rental_detail_screen.dart';
 
 class RentalListScreen extends StatefulWidget {
@@ -32,9 +35,11 @@ class _RentalListScreenState extends State<RentalListScreen> {
     if (state.usesHostedIdentity && state.repositories.isSupabaseBacked) {
       return RepositoryView<List<VehicleRecord>>(
         slot: DomainSlot.rentalListings,
-        data: (context, records) => _buildList([
-          for (final record in records) rentalListingFromRecord(record),
-        ], hosted: true),
+        data: (context, records) => _buildList(
+          [for (final record in records) rentalListingFromRecord(record)],
+          hosted: true,
+          hostedRecords: {for (final record in records) record.id: record},
+        ),
         empty: (_) => _scaffold(
           const SbEmptyState(
             message: 'No vehicles are listed for rent yet.',
@@ -46,7 +51,11 @@ class _RentalListScreenState extends State<RentalListScreen> {
     return _buildList(MockData.rentalVehicles, hosted: false);
   }
 
-  Widget _buildList(List<RentalVehicle> all, {required bool hosted}) {
+  Widget _buildList(
+    List<RentalVehicle> all, {
+    required bool hosted,
+    Map<String, VehicleRecord> hostedRecords = const {},
+  }) {
     final query = _query.trim().toLowerCase();
     final vehicles = all.where((vehicle) {
       return (activeFilter == 'All' || vehicle.type == activeFilter) &&
@@ -64,6 +73,33 @@ class _RentalListScreenState extends State<RentalListScreen> {
         ),
       );
     }
+
+    // Only hosted records carry a real listing id, so pins use the same
+    // deterministic pickup area the passenger map shows for that vehicle.
+    final markers = <SurgoMapMarker>[];
+    for (final vehicle in vehicles) {
+      final record = hostedRecords[vehicle.id];
+      if (record == null) continue;
+      final location = approximateVehicleLocation(record.id);
+      markers.add(
+        SurgoMapMarker(
+          id: 'rental-${record.id}',
+          position: location.point,
+          icon: surgoMarkerIcon(record.vehicleType.toLowerCase()),
+          title: vehicle.name,
+          subtitle: '${vehicle.type} · ${location.barangay}',
+          details: [
+            MapEntry('Per day', Money.format(vehicle.pricePerDay)),
+            MapEntry('Rating', '⭐ ${vehicle.rating}'),
+            MapEntry('Owner', record.ownerName ?? 'Vehicle owner'),
+            MapEntry('Pickup', location.label),
+          ],
+          actionLabel: 'View vehicle',
+          onAction: () => _openDetail(context, vehicle),
+        ),
+      );
+    }
+
     return _scaffold(
       ListView.separated(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
@@ -80,25 +116,34 @@ class _RentalListScreenState extends State<RentalListScreen> {
                     ? RentalListingState.available
                     : RentalListingState.unknown)
               : AppState.instance.rentalListingState(v.id);
+          final record = hostedRecords[v.id];
+          final photoPath = record != null && record.photoPaths.isNotEmpty
+              ? record.photoPaths.first
+              : null;
           return SbTintedCard(
             tone: SbTone.rent,
             padding: const EdgeInsets.all(12),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => RentalDetailScreen(vehicle: v)),
-            ),
+            onTap: () => _openDetail(context, v),
             child: Row(
               children: [
-                Container(
-                  width: 84,
-                  height: 66,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
+                if (photoPath != null)
+                  VehiclePhoto(
+                    storagePath: photoPath,
+                    width: 84,
+                    height: 66,
                     borderRadius: BorderRadius.circular(SbRadius.sm - 2),
-                    gradient: SbGradients.panel,
+                  )
+                else
+                  Container(
+                    width: 84,
+                    height: 66,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(SbRadius.sm - 2),
+                      gradient: SbGradients.panel,
+                    ),
+                    child: Icon(v.icon, size: 30, color: SbTone.rent.accent),
                   ),
-                  child: Icon(v.icon, size: 30, color: SbTone.rent.accent),
-                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -171,10 +216,18 @@ class _RentalListScreenState extends State<RentalListScreen> {
           );
         },
       ),
+      markers: markers,
     );
   }
 
-  Widget _scaffold(Widget body) {
+  void _openDetail(BuildContext context, RentalVehicle vehicle) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RentalDetailScreen(vehicle: vehicle)),
+    );
+  }
+
+  Widget _scaffold(Widget body, {List<SurgoMapMarker> markers = const []}) {
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -195,6 +248,48 @@ class _RentalListScreenState extends State<RentalListScreen> {
                 ],
               ),
             ),
+            if (markers.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                child: Stack(
+                  children: [
+                    SurgoMap(
+                      markers: markers,
+                      showUserLocation: false,
+                      initialZoom: 13.5,
+                      height: 176,
+                      borderRadius: BorderRadius.circular(SbRadius.md),
+                      cameraPadding: const EdgeInsets.fromLTRB(14, 38, 14, 34),
+                    ),
+                    Positioned(
+                      left: 10,
+                      top: 10,
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.panel.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Text(
+                            '${markers.length} vehicle'
+                            '${markers.length == 1 ? '' : 's'} on the map · '
+                            'tap a pin',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
               child: Container(

@@ -303,12 +303,12 @@
     },
     {
       "id": "PL006",
-      "label": "Mercy Hospital",
-      "address": "Mercy Hospital, Dagocdoc (Poblacion), Tandag City",
+      "label": "Tandag Diagnostic Center",
+      "address": "Tandag Diagnostic Center, Serra Street, Dagocdoc (Poblacion), Tandag City",
       "barangay": "Dagocdoc (Poblacion)",
       "purok": "Purok 1",
-      "latitude": 9.0785,
-      "longitude": 126.2065,
+      "latitude": 9.080546,
+      "longitude": 126.196138,
       "category": "hospital"
     },
     {

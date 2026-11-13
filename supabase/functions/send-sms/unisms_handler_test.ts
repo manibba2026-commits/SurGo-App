@@ -13,6 +13,9 @@ const CONFIG: SendSmsHandlerConfig = {
   hookSecret: `v1,whsec_${KEY}`,
   smsProvider: 'unisms',
   nowSeconds: NOW,
+  // The status endpoint is exercised in unisms_test.ts; keep these handler
+  // tests to one provider call each.
+  verifyDelivery: false,
   unisms: {
     apiKey: 'uni_test_key',
     senderId: 'Unisoft',
@@ -42,6 +45,11 @@ function uniOk(): Response {
   }), { status: 201 });
 }
 
+/** Every expected failure is HTTP 200 with an Auth-readable error envelope. */
+function hookError(httpCode: number, message: string) {
+  return { error: { http_code: httpCode, message } };
+}
+
 test('signed UniSMS hooks send the OTP text with Basic auth and a normalized PH recipient', async () => {
   let calls = 0;
   const cases = [
@@ -62,7 +70,8 @@ test('signed UniSMS hooks send the OTP text with Basic auth and a normalized PH 
         );
         assert.deepEqual(JSON.parse(String(init?.body)), {
           recipient: '+639175124809',
-          content: `Your SurGo verification code is: ${otp}. Do not share this code with anyone.`,
+          content:
+            `Your SurGo OTP code is ${otp}. Please do not share. Expires in 1 minute.`,
           sender_id: 'Unisoft',
         });
         return uniOk();
@@ -90,8 +99,11 @@ test('unknown providers and incomplete UniSMS configuration fail closed despite 
       ...config, semaphoreApiKey: 'sem_test_key',
       fetchImpl: (async () => { calls++; return uniOk(); }) as typeof fetch,
     });
-    assert.equal(response.status, 500);
-    assert.deepEqual(await response.json(), { error: 'not_configured' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      await response.json(),
+      hookError(500, 'Sign-in is temporarily unavailable. Please try again.'),
+    );
   }
   assert.equal(calls, 0);
 });
@@ -124,8 +136,11 @@ test('UniSMS blocks demo identities in all normalized forms', async (t) => {
     const response = await handleSendSms(await signedRequest(payload(phone)), {
       ...CONFIG, fetchImpl: (async () => { calls++; return uniOk(); }) as typeof fetch,
     });
-    assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), { error: 'demo_number_blocked' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      await response.json(),
+      hookError(403, 'This number cannot receive a SurGo code.'),
+    );
   }
   assert.equal(calls, 0);
 });
@@ -142,8 +157,11 @@ test('UniSMS preserves PH phone, OTP, method and payload validation', async () =
   ];
   let calls = 0;
   const fetchImpl = (async () => { calls++; return uniOk(); }) as typeof fetch;
-  for (const [body, status] of cases) {
-    assert.equal((await handleSendSms(await signedRequest(body), { ...CONFIG, fetchImpl })).status, status);
+  for (const [body, httpCode] of cases) {
+    const response = await handleSendSms(await signedRequest(body), { ...CONFIG, fetchImpl });
+    assert.equal(response.status, 200, body);
+    const json = await response.json() as { error: { http_code: number } };
+    assert.equal(json.error.http_code, httpCode, body);
   }
   assert.equal((await handleSendSms(new Request('https://example.test'), { ...CONFIG, fetchImpl })).status, 405);
   assert.equal(calls, 0);
@@ -168,8 +186,14 @@ test('UniSMS rejection, network and body failures never fall back, retry or leak
         return failedFetch(input, init);
       }) as typeof fetch,
     });
-    assert.equal(response.status, 502);
-    assert.deepEqual(await response.json(), { error: 'sms_delivery_failed' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      await response.json(),
+      hookError(
+        422,
+        'We could not send the SurGo code to this number. Try again in a moment.',
+      ),
+    );
     assert.equal(urls.length, 1);
     assert.equal(urls[0], UNISMS_ENDPOINT);
     assert.notEqual(urls[0], SEMAPHORE_ENDPOINT);
@@ -198,8 +222,14 @@ test('signed UniSMS hook timeouts cover fetch and parsing with one call and no f
           : new Promise<Response>(() => {});
       }) as typeof fetch,
     });
-    assert.equal(response.status, 502);
-    assert.deepEqual(await response.json(), { error: 'sms_delivery_failed' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      await response.json(),
+      hookError(
+        422,
+        'We could not send the SurGo code to this number. Try again in a moment.',
+      ),
+    );
     assert.equal(signal?.aborted, true);
     assert.equal(calls, 1);
     assert.ok(performance.now() - start < 1000);
@@ -223,7 +253,19 @@ test('Semaphore remains the default or explicit provider and never falls back to
           return new Response(JSON.stringify([{ message_id: 42, status: success ? 'Queued' : 'Failed' }]));
         }) as typeof fetch,
       });
-      assert.equal(response.status, success ? 200 : 502);
+      assert.equal(response.status, 200);
+      const json = await response.json();
+      if (success) {
+        assert.deepEqual(json, { ok: true });
+      } else {
+        assert.deepEqual(
+          json,
+          hookError(
+            422,
+            'We could not send the SurGo code to this number. Try again in a moment.',
+          ),
+        );
+      }
       assert.equal(calls, 1);
     }
   }
@@ -232,7 +274,11 @@ test('Semaphore remains the default or explicit provider and never falls back to
     ...CONFIG, smsProvider: 'semaphore',
     fetchImpl: (async () => { calls++; return uniOk(); }) as typeof fetch,
   });
-  assert.equal(response.status, 500);
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    await response.json(),
+    hookError(500, 'Sign-in is temporarily unavailable. Please try again.'),
+  );
   assert.equal(calls, 0);
 });
 
@@ -243,6 +289,7 @@ test('index reads runtime UniSMS env values, defaults the sender, and rejects un
     ['SMS_PROVIDER', 'unisms'],
     ['UNISMS_API_KEY', 'env_test_key'],
     ['UNISMS_SENDER_ID', 'EnvApprovedSender'],
+    ['UNISMS_VERIFY_DELIVERY', 'false'],
   ]);
   let serve: ((request: Request) => Promise<Response>) | undefined;
   let calls = 0;
@@ -270,17 +317,27 @@ test('index reads runtime UniSMS env values, defaults the sender, and rejects un
     );
     assert.deepEqual(bodies[0], {
       recipient: '+639175124809',
-      content: 'Your SurGo verification code is: 001234. Do not share this code with anyone.',
+      content: 'Your SurGo OTP code is 001234. Please do not share. Expires in 1 minute.',
       sender_id: 'EnvApprovedSender',
     });
     env.delete('UNISMS_SENDER_ID');
     assert.equal((await serve(await request())).status, 200);
-    assert.equal(bodies[1].sender_id, 'UniSMS');
+    assert.equal(bodies[1].sender_id, 'Unisoft');
     env.delete('UNISMS_API_KEY');
-    assert.equal((await serve(await request())).status, 500);
+    const missingKey = await serve(await request());
+    assert.equal(missingKey.status, 200);
+    assert.deepEqual(
+      await missingKey.json(),
+      hookError(500, 'Sign-in is temporarily unavailable. Please try again.'),
+    );
     env.set('SMS_PROVIDER', 'typo');
     env.set('SEMAPHORE_API_KEY', 'sem_test_key');
-    assert.equal((await serve(await request())).status, 500);
+    const unknownProvider = await serve(await request());
+    assert.equal(unknownProvider.status, 200);
+    assert.deepEqual(
+      await unknownProvider.json(),
+      hookError(500, 'Sign-in is temporarily unavailable. Please try again.'),
+    );
     assert.equal(calls, 2);
   } finally {
     if (descriptor) Object.defineProperty(globalThis, 'Deno', descriptor);

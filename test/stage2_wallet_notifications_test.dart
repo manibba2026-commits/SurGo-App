@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -122,12 +123,12 @@ void main() {
 
   /// The unread dot each feed card draws: a primary-coloured circle.
   Finder unreadDots() => find.byWidgetPredicate((widget) {
-        if (widget is! Container) return false;
-        final decoration = widget.decoration;
-        return decoration is BoxDecoration &&
-            decoration.shape == BoxShape.circle &&
-            decoration.color == AppColors.primary;
-      });
+    if (widget is! Container) return false;
+    final decoration = widget.decoration;
+    return decoration is BoxDecoration &&
+        decoration.shape == BoxShape.circle &&
+        decoration.color == AppColors.primary;
+  });
 
   /// Marks the whole feed unread.
   ///
@@ -141,24 +142,34 @@ void main() {
   }
 
   group('wallet balance', () {
-    testWidgets('a seeded build shows the wallet the app actually writes to',
-        (tester) async {
+    testWidgets('a seeded build shows the wallet the app actually writes to', (
+      tester,
+    ) async {
       await open(tester, const WalletScreen());
 
-      expect(find.text(Money.format(db.passengerWalletBalance)), findsOneWidget);
-      expect(find.text('—'), findsNothing,
-          reason: 'the read has landed, so the placeholder amount is gone');
+      expect(
+        find.text(Money.format(db.passengerWalletBalance)),
+        findsOneWidget,
+      );
+      expect(
+        find.text('—'),
+        findsNothing,
+        reason: 'the read has landed, so the placeholder amount is gone',
+      );
 
       state.topUpPassengerWallet(Money.pesos(100), 'GCash');
       await land(tester);
 
-      expect(find.text(Money.format(passengerWallet + Money.pesos(100))),
-          findsOneWidget,
-          reason: 'the read follows the write, not the seed table');
+      expect(
+        find.text(Money.format(passengerWallet + Money.pesos(100))),
+        findsOneWidget,
+        reason: 'the read follows the write, not the seed table',
+      );
     });
 
-    testWidgets('a payout wallet reads the earner account, not the passenger',
-        (tester) async {
+    testWidgets('a payout wallet reads the earner account, not the passenger', (
+      tester,
+    ) async {
       await open(tester, const WalletScreen(isRider: true));
 
       expect(find.text('Available for payout'), findsOneWidget);
@@ -166,53 +177,72 @@ void main() {
       expect(find.text(Money.format(passengerWallet)), findsNothing);
     });
 
-    testWidgets('a Supabase build shows the account row it was given',
-        (tester) async {
-      await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'wallet_accounts': [
-          {
-            'id': 'wa-1',
-            'profile_id': 'auth-uuid-1',
-            'account_type': 'passenger',
-            'balance_centavos': 250000,
-            'is_active': true,
-          },
-        ],
-      })));
+    testWidgets('a Supabase build shows the account row it was given', (
+      tester,
+    ) async {
+      await use(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'wallet_accounts': [
+                {
+                  'id': 'wa-1',
+                  'profile_id': 'auth-uuid-1',
+                  'account_type': 'passenger',
+                  'balance_centavos': 250000,
+                  'is_active': true,
+                },
+              ],
+            },
+          ),
+        ),
+      );
 
       await open(tester, const WalletScreen());
 
       expect(find.text('₱2,500.00'), findsOneWidget);
-      expect(find.text(Money.format(passengerWallet)), findsNothing,
-          reason: 'a production read must not show the seeded balance');
+      expect(
+        find.text(Money.format(passengerWallet)),
+        findsNothing,
+        reason: 'a production read must not show the seeded balance',
+      );
     });
 
-    testWidgets('an unreachable read fails visibly and recovers on retry',
-        (tester) async {
+    testWidgets('an unreachable read fails visibly and recovers on retry', (
+      tester,
+    ) async {
       await use(RepositoryRegistry.supabase(const UnreachableBackend()));
 
       await open(tester, const WalletScreen());
 
-      expect(find.text('The data service is unavailable right now.'),
-          findsNWidgets(2),
-          reason: 'the balance card and the history list each report it');
+      expect(
+        find.text('The data service is unavailable right now.'),
+        findsNWidgets(2),
+        reason: 'the balance card and the history list each report it',
+      );
       expect(find.text('—'), findsOneWidget);
       expect(find.text('Try again'), findsNWidgets(2));
       expect(find.text(Money.format(passengerWallet)), findsNothing);
 
       // Swapping the registry without restarting keeps the failure on screen,
       // so the retry button is what re-reads each slot.
-      state.configureRepositories(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'wallet_accounts': [
-          {
-            'id': 'wa-1',
-            'profile_id': 'auth-uuid-1',
-            'account_type': 'passenger',
-            'balance_centavos': 123400,
-            'is_active': true,
-          },
-        ],
-      })));
+      state.configureRepositories(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'wallet_accounts': [
+                {
+                  'id': 'wa-1',
+                  'profile_id': 'auth-uuid-1',
+                  'account_type': 'passenger',
+                  'balance_centavos': 123400,
+                  'is_active': true,
+                },
+              ],
+            },
+          ),
+        ),
+      );
       // Each read retries its own slot, so both controls have to be used.
       for (var attempt = 0; attempt < 2; attempt++) {
         await tester.tap(find.text('Try again').first);
@@ -224,19 +254,26 @@ void main() {
       expect(find.text('No transactions yet'), findsOneWidget);
     });
 
-    testWidgets('a wallet that is closed reads as zero, not as a guess',
-        (tester) async {
-      await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'wallet_accounts': [
-          {
-            'id': 'wa-1',
-            'profile_id': 'auth-uuid-1',
-            'account_type': 'passenger',
-            'balance_centavos': 900000,
-            'is_active': false,
-          },
-        ],
-      })));
+    testWidgets('a wallet that is closed reads as zero, not as a guess', (
+      tester,
+    ) async {
+      await use(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'wallet_accounts': [
+                {
+                  'id': 'wa-1',
+                  'profile_id': 'auth-uuid-1',
+                  'account_type': 'passenger',
+                  'balance_centavos': 900000,
+                  'is_active': false,
+                },
+              ],
+            },
+          ),
+        ),
+      );
 
       await open(tester, const WalletScreen());
 
@@ -245,8 +282,9 @@ void main() {
   });
 
   group('wallet history', () {
-    testWidgets('a seeded build lists the ledger the app writes to',
-        (tester) async {
+    testWidgets('a seeded build lists the ledger the app writes to', (
+      tester,
+    ) async {
       await open(tester, const WalletScreen());
 
       final seeded = db.passengerTransactions.length;
@@ -256,37 +294,47 @@ void main() {
       state.topUpPassengerWallet(Money.pesos(100), 'GCash');
       await land(tester);
 
-      expect(find.byType(SbTintedCard), findsNWidgets(seeded + 1),
-          reason: 'the read follows the write, not the seed table');
+      expect(
+        find.byType(SbTintedCard),
+        findsNWidgets(seeded + 1),
+        reason: 'the read follows the write, not the seed table',
+      );
       expect(find.text('Wallet Top-up via GCash'), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('a Supabase build lists the ledger rows it was given',
-        (tester) async {
+    testWidgets('a Supabase build lists the ledger rows it was given', (
+      tester,
+    ) async {
       final now = DateTime.now().toUtc().toIso8601String();
-      await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'wallet_accounts': [
-          {
-            'id': 'wa-1',
-            'profile_id': 'auth-uuid-1',
-            'account_type': 'passenger',
-            'balance_centavos': 250000,
-            'is_active': true,
-          },
-        ],
-        'wallet_transactions': [
-          {
-            'id': 'wt-1',
-            'wallet_account_id': 'wa-1',
-            'transaction_type': 'top_up',
-            'direction': 'credit',
-            'amount_centavos': 250000,
-            'balance_after_centavos': 250000,
-            'description': 'GCash top-up',
-            'created_at': now,
-          },
-        ],
-      })));
+      await use(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'wallet_accounts': [
+                {
+                  'id': 'wa-1',
+                  'profile_id': 'auth-uuid-1',
+                  'account_type': 'passenger',
+                  'balance_centavos': 250000,
+                  'is_active': true,
+                },
+              ],
+              'wallet_transactions': [
+                {
+                  'id': 'wt-1',
+                  'wallet_account_id': 'wa-1',
+                  'transaction_type': 'top_up',
+                  'direction': 'credit',
+                  'amount_centavos': 250000,
+                  'balance_after_centavos': 250000,
+                  'description': 'GCash top-up',
+                  'created_at': now,
+                },
+              ],
+            },
+          ),
+        ),
+      );
 
       await open(tester, const WalletScreen());
 
@@ -295,22 +343,31 @@ void main() {
       // wallet_transactions has no status column, so the type says what the
       // row was.
       expect(find.textContaining(' · Top-up'), findsOneWidget);
-      expect(find.text(db.passengerTransactions.first.title), findsNothing,
-          reason: 'a production read must not show the seeded ledger');
+      expect(
+        find.text(db.passengerTransactions.first.title),
+        findsNothing,
+        reason: 'a production read must not show the seeded ledger',
+      );
     });
 
     testWidgets('a wallet with no entries says so', (tester) async {
-      await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'wallet_accounts': [
-          {
-            'id': 'wa-1',
-            'profile_id': 'auth-uuid-1',
-            'account_type': 'passenger',
-            'balance_centavos': 250000,
-            'is_active': true,
-          },
-        ],
-      })));
+      await use(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'wallet_accounts': [
+                {
+                  'id': 'wa-1',
+                  'profile_id': 'auth-uuid-1',
+                  'account_type': 'passenger',
+                  'balance_centavos': 250000,
+                  'is_active': true,
+                },
+              ],
+            },
+          ),
+        ),
+      );
 
       await open(tester, const WalletScreen());
 
@@ -329,65 +386,89 @@ void main() {
       state.clearNotifications();
       await land(tester);
 
-      expect(badge('0'), findsNothing,
-          reason: 'a zero count shows no badge at all');
+      expect(
+        badge('0'),
+        findsNothing,
+        reason: 'a zero count shows no badge at all',
+      );
     });
 
-    testWidgets('the rider home counts the earner feed, not the passenger one',
-        (tester) async {
-      makeUnread(db.earnerNotifications);
-      state.clearNotifications();
-      expect(unread(db.passengerNotifications), 0);
+    testWidgets(
+      'the rider home counts the earner feed, not the passenger one',
+      (tester) async {
+        makeUnread(db.earnerNotifications);
+        state.clearNotifications();
+        expect(unread(db.passengerNotifications), 0);
 
-      await open(tester, const RiderHomeScreen(embedded: false));
+        await open(tester, const RiderHomeScreen(embedded: false));
 
-      expect(badge('${unread(earnerNotifications)}'), findsOneWidget);
-    });
+        expect(badge('${unread(earnerNotifications)}'), findsOneWidget);
+      },
+    );
 
-    testWidgets('a Supabase build counts the rows RLS returned', (tester) async {
-      await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'notifications': [
-          for (var i = 1; i <= 7; i++) {'id': 'n$i'},
-        ],
-      })));
+    testWidgets('a Supabase build counts the rows RLS returned', (
+      tester,
+    ) async {
+      await use(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'notifications': [
+                for (var i = 1; i <= 7; i++) {'id': 'n$i'},
+              ],
+            },
+          ),
+        ),
+      );
 
       await open(tester, const HomeScreen(embedded: false));
 
       expect(badge('7'), findsOneWidget);
     });
 
-    testWidgets('an unreachable feed shows no badge instead of a seeded count',
-        (tester) async {
-      makeUnread(db.passengerNotifications);
-      expect(unread(passengerNotifications), greaterThan(0),
-          reason: 'the seed must have something unread to hide');
-      await use(RepositoryRegistry.supabase(const UnreachableBackend()));
+    testWidgets(
+      'an unreachable feed shows no badge instead of a seeded count',
+      (tester) async {
+        makeUnread(db.passengerNotifications);
+        expect(
+          unread(passengerNotifications),
+          greaterThan(0),
+          reason: 'the seed must have something unread to hide',
+        );
+        await use(RepositoryRegistry.supabase(const UnreachableBackend()));
 
-      await open(tester, const HomeScreen(embedded: false));
+        await open(tester, const HomeScreen(embedded: false));
 
-      expect(badge('${unread(passengerNotifications)}'), findsNothing);
-    });
+        expect(badge('${unread(passengerNotifications)}'), findsNothing);
+      },
+    );
   });
 
   group('notification feed', () {
-    testWidgets('a seeded build lists the feed the repository returns',
-        (tester) async {
+    testWidgets('a seeded build lists the feed the repository returns', (
+      tester,
+    ) async {
       await open(tester, const NotificationsScreen());
 
-      expect(find.byType(SbTintedCard),
-          findsNWidgets(db.passengerNotifications.length));
+      expect(
+        find.byType(SbTintedCard),
+        findsNWidgets(db.passengerNotifications.length),
+      );
       expect(find.text(db.passengerNotifications.first.title), findsOneWidget);
     });
 
     testWidgets('the rider flag reads the earner feed instead', (tester) async {
       await open(tester, const NotificationsScreen(isRider: true));
 
-      expect(find.byType(SbTintedCard),
-          findsNWidgets(db.earnerNotifications.length));
+      expect(
+        find.byType(SbTintedCard),
+        findsNWidgets(db.earnerNotifications.length),
+      );
     });
 
-    testWidgets('a card read by the passenger clears its own dot',
-        (tester) async {
+    testWidgets('a card read by the passenger clears its own dot', (
+      tester,
+    ) async {
       makeUnread(db.passengerNotifications);
       // The seed was edited behind the cache's back, so the settled feed read
       // has to be dropped before the screen is opened.
@@ -400,8 +481,10 @@ void main() {
       await land(tester);
 
       expect(unreadDots(), findsNWidgets(unread(db.passengerNotifications)));
-      expect(unread(db.passengerNotifications),
-          lessThan(passengerNotifications.length));
+      expect(
+        unread(db.passengerNotifications),
+        lessThan(passengerNotifications.length),
+      );
 
       await tester.tap(find.text('Mark all read'));
       await land(tester);
@@ -409,35 +492,45 @@ void main() {
       expect(unreadDots(), findsNothing);
     });
 
-    testWidgets('a Supabase build lists the rows it was given, not the seed',
-        (tester) async {
+    testWidgets('a Supabase build lists the rows it was given, not the seed', (
+      tester,
+    ) async {
       final now = DateTime.now().toUtc().toIso8601String();
-      await use(RepositoryRegistry.supabase(_FixedBackend(rowsByTable: {
-        'notifications': [
-          {
-            'id': 'n-1',
-            'notification_type': 'ride',
-            'title': 'Rider assigned',
-            'body': 'Your rider has accepted the trip.',
-            'created_at': now,
-          },
-          {
-            'id': 'n-2',
-            'notification_type': 'promo',
-            'title': 'Weekend rides are half price',
-            'body': 'Book before Sunday to save.',
-            'read_at': now,
-            'created_at': now,
-          },
-        ],
-      })));
+      await use(
+        RepositoryRegistry.supabase(
+          _FixedBackend(
+            rowsByTable: {
+              'notifications': [
+                {
+                  'id': 'n-1',
+                  'notification_type': 'ride',
+                  'title': 'Rider assigned',
+                  'body': 'Your rider has accepted the trip.',
+                  'created_at': now,
+                },
+                {
+                  'id': 'n-2',
+                  'notification_type': 'promo',
+                  'title': 'Weekend rides are half price',
+                  'body': 'Book before Sunday to save.',
+                  'read_at': now,
+                  'created_at': now,
+                },
+              ],
+            },
+          ),
+        ),
+      );
 
       await open(tester, const NotificationsScreen());
 
       expect(find.text('Rider assigned'), findsOneWidget);
       expect(find.text('Weekend rides are half price'), findsOneWidget);
-      expect(find.text(db.passengerNotifications.first.title), findsNothing,
-          reason: 'a production read must not show the seeded feed');
+      expect(
+        find.text(db.passengerNotifications.first.title),
+        findsNothing,
+        reason: 'a production read must not show the seeded feed',
+      );
       // read_at is the database truth, so only the unread row keeps its dot.
       expect(unreadDots(), findsOneWidget);
       expect(find.text('Just now'), findsNWidgets(2));
@@ -453,7 +546,7 @@ void main() {
     });
 
     for (final isRider in [false, true]) {
-      testWidgets('hosted feed cannot fake acknowledgements; rider=$isRider', (
+      testWidgets('hosted feed marks read through the RPC; rider=$isRider', (
         tester,
       ) async {
         makeUnread(db.passengerNotifications);
@@ -463,52 +556,48 @@ void main() {
           rowsByTable: {
             'notifications': [
               {
-                'id': (isRider
-                        ? db.earnerNotifications
-                        : db.passengerNotifications)
-                    .first
-                    .id,
+                'id':
+                    (isRider
+                            ? db.earnerNotifications
+                            : db.passengerNotifications)
+                        .first
+                        .id,
                 'notification_type': 'ride',
                 'title': 'Hosted notification',
-                'body': 'SELECT only',
+                'body': 'Stored in the database',
               },
             ],
           },
         );
         await use(RepositoryRegistry.supabase(backend));
         await open(tester, NotificationsScreen(isRider: isRider));
-        final reads = backend.notificationReads;
-        expect(
-          tester.widget<SbTintedCard>(find.byType(SbTintedCard)).onTap,
-          isNull,
-        );
+        expect(unreadDots(), findsOneWidget);
+
         await tester.tap(find.byType(SbTintedCard));
+        await land(tester);
+        expect(backend.rpcCalls, contains('mark_notification_read'));
+        expect(unreadDots(), findsNothing);
+
         await tester.tap(find.text('Mark all read'));
         await land(tester);
-        expect(
-          find.text(
-            'Marking notifications read is not synced for live '
-            'accounts yet.',
-          ),
-          findsOneWidget,
-        );
-        expect(unreadDots(), findsOneWidget);
+        expect(backend.rpcCalls, contains('mark_all_notifications_read'));
+        expect(unreadDots(), findsNothing);
+        // The seeded lists are untouched: the write went to the hosted feed.
         expect(db.passengerNotifications.every((n) => !n.read), isTrue);
         expect(db.earnerNotifications.every((n) => !n.read), isTrue);
-        expect(backend.notificationReads, reads);
         await tester.pumpWidget(const SizedBox.shrink());
       });
 
-      testWidgets(
-          'hosted identity with offline registry still marks; '
+      testWidgets('hosted identity with offline registry still marks; '
           'rider=$isRider', (tester) async {
         makeUnread(db.passengerNotifications);
         makeUnread(db.earnerNotifications);
         state.configureAuth(_HostedIdentity());
         await use(RepositoryRegistry.mock(db));
         await open(tester, NotificationsScreen(isRider: isRider));
-        final items =
-            isRider ? db.earnerNotifications : db.passengerNotifications;
+        final items = isRider
+            ? db.earnerNotifications
+            : db.passengerNotifications;
         await tester.tap(find.byType(SbTintedCard).first);
         await land(tester);
         expect(items.first.read, isTrue);
@@ -612,11 +701,13 @@ void main() {
 
 /// A backend that answers from fixed rows, so a screen test can show which
 /// source its numbers came from.
-class _FixedBackend implements SurgoBackend {
+class _FixedBackend
+    implements SurgoBackend, SurgoWriteBackend, SurgoStorageBackend {
   _FixedBackend({this.rowsByTable = const {}});
 
   final Map<String, List<Map<String, dynamic>>> rowsByTable;
   int notificationReads = 0;
+  final List<String> rpcCalls = [];
   Future<List<Map<String, dynamic>>> Function()? notificationRead;
 
   @override
@@ -654,6 +745,58 @@ class _FixedBackend implements SurgoBackend {
     }
     return found.first;
   }
+
+  @override
+  Future<dynamic> rpc({
+    required String function,
+    Map<String, dynamic> params = const {},
+  }) async {
+    rpcCalls.add(function);
+    final rows = rowsByTable['notifications'] ?? const [];
+    if (function == 'mark_notification_read') {
+      final id = params['p_notification_id'];
+      var changed = 0;
+      for (final row in rows) {
+        if (row['id'] == id && row['read_at'] == null) {
+          row['read_at'] = DateTime.now().toUtc().toIso8601String();
+          changed++;
+        }
+      }
+      return changed;
+    }
+    if (function == 'mark_all_notifications_read') {
+      var changed = 0;
+      for (final row in rows) {
+        if (row['read_at'] == null) {
+          row['read_at'] = DateTime.now().toUtc().toIso8601String();
+          changed++;
+        }
+      }
+      return changed;
+    }
+    return null;
+  }
+
+  @override
+  Future<void> uploadObject({
+    required String bucket,
+    required String path,
+    required Uint8List bytes,
+    required String contentType,
+  }) async {}
+
+  @override
+  Future<void> removeObject({
+    required String bucket,
+    required String path,
+  }) async {}
+
+  @override
+  Future<String> signedObjectUrl({
+    required String bucket,
+    required String path,
+    Duration expiresIn = const Duration(minutes: 5),
+  }) async => 'https://example.test/$path';
 }
 
 /// Identity flag only: no hosted session, network, or credentials are needed.

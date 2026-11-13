@@ -123,6 +123,14 @@ Future<void> _open(WidgetTester tester) async {
 List<SurgoMapMarker> _markers(WidgetTester tester) =>
     tester.widget<SurgoMap>(find.byType(SurgoMap)).markers;
 
+List<SurgoMapMarker> _riderMarkers(WidgetTester tester) => _markers(
+  tester,
+).where((marker) => !marker.id.startsWith('rental-')).toList();
+
+List<SurgoMapMarker> _rentalMarkers(WidgetTester tester) => _markers(
+  tester,
+).where((marker) => marker.id.startsWith('rental-')).toList();
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final state = AppState.instance;
@@ -217,17 +225,17 @@ void main() {
     await _open(tester);
     expect(state.usesHostedRideDispatch, isTrue);
     expect(rides.calls, 1);
-    expect(_markers(tester).map((marker) => marker.id), [
+    expect(_riderMarkers(tester).map((marker) => marker.id), [
       'real-rider',
       'demo-rider',
     ]);
+    expect(_rentalMarkers(tester), isEmpty);
     await tester.tap(find.text('Rentals'));
-    await tester.pump();
-    expect(_markers(tester), isEmpty);
+    await tester.pumpAndSettle();
+    expect(_riderMarkers(tester), isEmpty);
+    expect(_rentalMarkers(tester), isNotEmpty);
     expect(
-      find.text(
-        'Rental locations are not available. Browse the catalogue instead.',
-      ),
+      find.textContaining('rental vehicles · pin locations'),
       findsOneWidget,
     );
     expect(find.textContaining('riders online'), findsNothing);

@@ -34,6 +34,14 @@ class GeoapifyService {
 
   final GeoFunctionCall _invoke;
 
+  /// The Tandag pilot area. The deployed function currently biases only to the
+  /// Philippines, so suggestions are also clipped here; local barangay and
+  /// landmark matches are unaffected.
+  static const serviceAreaSouth = 8.95;
+  static const serviceAreaNorth = 9.25;
+  static const serviceAreaWest = 125.95;
+  static const serviceAreaEast = 126.35;
+
   static Future<Object?> _invokeHosted(
     String name,
     Map<String, Object?> body,
@@ -50,12 +58,21 @@ class GeoapifyService {
 
   Future<List<GeoPlace>> autocomplete(String text) async {
     if (text.trim().length < 2) return const [];
-    return _places(
+    final places = _places(
       await _invoke('geoapify', {
         'action': 'autocomplete',
         'text': text.trim(),
       }),
     );
+    return List.unmodifiable(places.where(_insideServiceArea));
+  }
+
+  static bool _insideServiceArea(GeoPlace place) {
+    final point = place.point;
+    return point.latitude >= serviceAreaSouth &&
+        point.latitude <= serviceAreaNorth &&
+        point.longitude >= serviceAreaWest &&
+        point.longitude <= serviceAreaEast;
   }
 
   Future<List<GeoPlace>> nearbyPlaces({
@@ -69,6 +86,20 @@ class GeoapifyService {
       'radius': 3000,
     }),
   );
+
+  /// The street address nearest [point], used when the user drops a pin on
+  /// the map instead of typing. Returns null when the provider has no match
+  /// for that spot (open water, a new road), so callers can fall back to a
+  /// coordinate label.
+  Future<GeoPlace?> reverseGeocode(MapPoint point) async {
+    final places = _places(
+      await _invoke('geoapify', {
+        'action': 'reverse',
+        'point': _coordinates(point),
+      }),
+    );
+    return places.isEmpty ? null : places.first;
+  }
 
   Future<GeoRoute> route({
     required MapPoint start,

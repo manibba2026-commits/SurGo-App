@@ -4,9 +4,10 @@
 -- row is keyed by the existing profile's phone, so rerunning updates the same
 -- row and never creates a replacement account or a second presence record.
 --
--- Six eligible riders are online and free; two are deliberately offline. Junel
--- Ramos is suspended and gets no presence row, so the suspended account cannot
--- become dispatchable by rerunning the seed.
+-- Six eligible riders are online and free; two are deliberately offline.
+-- Junel Ramos is suspended and gets no presence row, so the suspended account
+-- cannot become dispatchable by rerunning the seed. Accounts whose provider
+-- approval is still pending are likewise left out.
 --
 -- All coordinates are simulated positions around Tandag City, one per
 -- barangay, and are marked is_simulated = true. They are not device GPS.
@@ -88,8 +89,29 @@ update public.provider_profiles pp
   left join public.rider_presence rp on rp.profile_id = p.id
  where pp.profile_id = p.id
    and regexp_replace(p.phone, '^\+', '') in (
-     '639170000002', '639170000003', '639170000005', '639170000008',
-     '639170000010', '639170000012', '639170000009', '639170000015'
+     '639170000002', '639170000003', '639170000005',
+     '639170000008', '639170000010', '639170000012', '639170000009',
+     '639170000015'
+   );
+
+-- The seed is authoritative for demo presence. A demo account that is no
+-- longer listed above must not keep a dispatchable row, so a removed rider or
+-- an account whose approval was rolled back cannot linger online.
+delete from public.rider_presence rp
+ using public.profiles p
+ where rp.profile_id = p.id
+   and rp.source = 'demo'
+   and regexp_replace(p.phone, '^\+', '') in (
+     '639170000001', '639170000002', '639170000003', '639170000004',
+     '639170000005', '639170000006', '639170000007', '639170000008',
+     '639170000009', '639170000010', '639170000011', '639170000012',
+     '639170000013', '639170000014', '639170000015', '639170000016',
+     '639170000017', '639170000018', '639170000019'
+   )
+   and regexp_replace(p.phone, '^\+', '') not in (
+     '639170000002', '639170000003', '639170000005',
+     '639170000008', '639170000010', '639170000012', '639170000009',
+     '639170000015'
    );
 
 -- A suspended account must not keep a dispatchable demo presence. Deleting a

@@ -166,16 +166,15 @@ test('Semaphore shares one deadline across fetch and response-body parsing', asy
   assert.ok(performance.now() - start < 1000);
 });
 
-test('Semaphore deadline cannot exceed the two-second provider budget', async (t) => {
+test('Semaphore deadline cannot exceed the two-second provider budget', async () => {
   const delays: number[] = [];
-  const original = globalThis.setTimeout;
-  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => {
-    delays.push(delay);
-    return original(callback, 5);
-  });
   for (const timeoutMs of [undefined, 5000, Infinity, NaN, -1, 0]) {
     const result = await sendSemaphoreSms('639175124809', 'code', {
       apiKey: 'sem_test_key', timeoutMs,
+      setTimeoutImpl: (callback, delay) => {
+        delays.push(delay);
+        return setTimeout(callback, 5);
+      },
       fetchImpl: (() => new Promise<Response>(() => {})) as typeof fetch,
     });
     assert.deepEqual(result, { ok: false, reason: 'network_error' });

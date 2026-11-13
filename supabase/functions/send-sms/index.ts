@@ -14,5 +14,9 @@ Deno.serve((request) =>
       apiKey: Deno.env.get('UNISMS_API_KEY') ?? '',
       senderId: Deno.env.get('UNISMS_SENDER_ID') || undefined,
     },
+    // UniSMS settles asynchronously; read the status before reporting success.
+    // Set UNISMS_VERIFY_DELIVERY=false only if the provider's status endpoint
+    // is unavailable.
+    verifyDelivery: Deno.env.get('UNISMS_VERIFY_DELIVERY') !== 'false',
   })
 );
